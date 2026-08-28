@@ -64,7 +64,31 @@ test('why prints the full record', () => {
 })
 
 test('why on an unknown hash exits 1', () => {
-  expect(run(['why', 'nope', '--cwd', cwd])).toBe(1)
+  expect(run(['why', 'deadbeefdeadbeef', '--cwd', cwd])).toBe(1)
+  expect(out.join('\n')).toContain('No record for')
+})
+
+// argv reaches the record path, and a record path lookup can end in a delete. Both
+// commands refuse anything that is not a real fingerprint rather than passing it on.
+
+test('why refuses a hash that is not a fingerprint and exits 1', () => {
+  for (const bad of ['nope', '../../victim', '', 'ABCDEF0123456789', 'abcdef012345678']) {
+    out.length = 0
+    expect(run(['why', bad, '--cwd', cwd])).toBe(1)
+    expect(out.join('\n')).toContain('Not a fingerprint')
+  }
+})
+
+test('forget refuses a hash that is not a fingerprint and exits 1', () => {
+  upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
+  for (const bad of ['nope', '../../victim', 'ABCDEF0123456789']) {
+    out.length = 0
+    expect(run(['forget', bad, '--cwd', cwd])).toBe(1)
+    expect(out.join('\n')).toContain('Not a fingerprint')
+  }
+  out.length = 0
+  expect(run(['list', '--cwd', cwd])).toBe(0)
+  expect(out.join('\n')).toContain('bun test')
 })
 
 test('forget removes one record', () => {
