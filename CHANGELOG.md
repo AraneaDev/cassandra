@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.3](https://github.com/AraneaDev/cassandra/compare/v0.0.2...v0.0.3) (2026-08-28)
+
+
+### Fixes
+
+* install from the marketplace that actually carries this plugin ([#4](https://github.com/AraneaDev/cassandra/issues/4)) ([45d6c03](https://github.com/AraneaDev/cassandra/commit/45d6c03e569d4454c5397995213d606f65683d1f))
+
 ## [0.0.2](https://github.com/AraneaDev/cassandra/compare/v0.0.1...v0.0.2) (2026-08-28)
 
 
