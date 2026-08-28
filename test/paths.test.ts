@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { dataRoot, findRepoRoot, pathsFor, projectSlug, recordPath } from '../src/paths'
+import { dataRoot, findRepoRoot, pathsFor, pendingPath, projectSlug, recordPath } from '../src/paths'
 
 let tmp: string
 
@@ -54,4 +54,11 @@ test('two checkouts with the same basename get different slugs', () => {
 test('recordPath shards on the first two hash characters', () => {
   const p = pathsFor(tmp)
   expect(recordPath(p, 'abcdef0123456789')).toBe(join(p.records, 'ab', 'abcdef0123456789.json'))
+})
+
+test('pendingPath never escapes the pending directory', () => {
+  const p = pathsFor(tmp)
+  for (const id of ['..', '.', '', '../../etc/passwd', 'toolu_01ABC']) {
+    expect(pendingPath(p, id).startsWith(p.pending + '/')).toBe(true)
+  }
 })

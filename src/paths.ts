@@ -57,8 +57,12 @@ export function recordPath(paths: Paths, hash: string): string {
   return join(paths.records, hash.slice(0, 2), `${hash}.json`)
 }
 
-/** Marker written when the read path warns, so the outcome can be attributed without re-hashing. */
+/**
+ * Marker written when the read path warns, so the outcome can be attributed without re-hashing.
+ * Guards against path traversal: empty, ".", and ".." are replaced with a safe token.
+ */
 export function pendingPath(paths: Paths, toolUseId: string): string {
-  const safe = toolUseId.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120)
+  const cleaned = toolUseId.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120)
+  const safe = (cleaned === '' || cleaned === '.' || cleaned === '..') ? 'unknown' : cleaned
   return join(paths.pending, safe)
 }
