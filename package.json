@@ -8,8 +8,8 @@
   "engines": { "bun": ">=1.1.0" },
   "scripts": {
     "build:hook": "bun run scripts/build-hook.ts",
-    "test": "bun test",
-    "test:coverage": "bun test --coverage",
+    "test": "bun run scripts/make-fixtures.ts && bun test",
+    "test:coverage": "bun run scripts/make-fixtures.ts && bun test --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
