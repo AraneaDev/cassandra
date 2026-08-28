@@ -128,7 +128,7 @@ Instead the probe runs **only on a hit**, which is rare, so it can afford to be 
 This catches `sed -i`, heredocs, edits made in your own editor, and a `git pull`, none of
 which a counter sees. It costs roughly 20ms, and only when Cassandra has something to say.
 
-```
+```text
 fail  bun test   @ state a3f1  -> record
 sed -i src/parser.ts
 retry bun test   @ state 9c02  -> silent, state moved
@@ -161,7 +161,7 @@ it is added to the writer alone.
 
 ## Storage
 
-```
+```text
 $CLAUDE_PLUGIN_DATA/<project-slug>/
   records/<hash[0:2]>/<hash>.json
   pending/<tool_use_id>

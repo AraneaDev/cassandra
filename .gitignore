@@ -1,2 +1,9 @@
-bin/
 node_modules/
+bin/
+dist/
+coverage/
+test/fixtures/
+.env
+*.log
+.momus/
+CLAUDE.md

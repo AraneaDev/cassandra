@@ -1,0 +1,11 @@
+{
+  "name": "cassandra",
+  "displayName": "Cassandra",
+  "version": "0.0.0",
+  "description": "Remembers the tool calls that already failed, and says so before your agent runs one again unchanged.",
+  "author": { "name": "AraneaDev", "url": "https://github.com/AraneaDev" },
+  "homepage": "https://github.com/AraneaDev/cassandra",
+  "repository": "https://github.com/AraneaDev/cassandra",
+  "license": "MIT",
+  "keywords": ["hooks", "failure", "retry", "observability", "context", "compaction"]
+}

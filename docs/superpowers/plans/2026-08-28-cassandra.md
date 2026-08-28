@@ -71,9 +71,11 @@ The spec's measurement section requires attributing each warning to one of three
 ### Task 1: Project scaffold and toolchain
 
 **Files:**
+
 - Create: `package.json`, `tsconfig.json`, `eslint.config.mjs`, `knip.json`, `.markdownlint-cli2.jsonc`, `bunfig.toml`, `.gitignore`, `LICENSE`, `release-please-config.json`, `.release-please-manifest.json`, `.githooks/pre-commit`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `src/types.ts`, `test/scaffold.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: a repo where `bun run typecheck`, `bun run lint` and `bun run lint:docs` pass. `src/types.ts` exports `HookPayload`, `ToolKind`, `RecordKind`, `StateKind`, `FailureRecord`, `StateStamp`.
 
@@ -335,9 +337,11 @@ git commit -m "chore: scaffold project, toolchain and plugin manifests"
 ### Task 2: Paths and project slug
 
 **Files:**
+
 - Create: `src/paths.ts`, `test/paths.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces:
   - `dataRoot(): string`
@@ -505,9 +509,11 @@ git commit -m "feat: resolve data root, repo root and per-project index paths"
 ### Task 3: Fingerprinting
 
 **Files:**
+
 - Create: `src/fingerprint.ts`, `test/fingerprint.test.ts`
 
 **Interfaces:**
+
 - Consumes: `ToolKind` from `src/types.ts`.
 - Produces:
   - `classify(toolName: string): ToolKind`
@@ -681,9 +687,11 @@ git commit -m "feat: fingerprint Bash and MCP calls with stingy normalization"
 ### Task 4: Record storage
 
 **Files:**
+
 - Create: `src/record.ts`, `test/record.test.ts`
 
 **Interfaces:**
+
 - Consumes: `Paths`, `recordPath` from `src/paths.ts`; `FailureRecord` from `src/types.ts`.
 - Produces:
   - `readRecord(paths: Paths, hash: string): FailureRecord | null`
@@ -905,9 +913,11 @@ git commit -m "feat: store, increment and self-heal failure records"
 This is the task the user singled out. Build the probe **and** the harness that measures it in the same task, so the baseline exists before anything depends on it.
 
 **Files:**
+
 - Create: `src/freshness.ts`, `test/freshness.test.ts`, `scripts/fp-harness.ts`
 
 **Interfaces:**
+
 - Consumes: `StateStamp`, `StateKind` from `src/types.ts`; `findRepoRoot` from `src/paths.ts`.
 - Produces:
   - `stateStamp(cwd: string): StateStamp`
@@ -1310,9 +1320,11 @@ FP-1 baseline is 18/18 mutations detected."
 ### Task 6: Efficacy log
 
 **Files:**
+
 - Create: `src/stats.ts`, `test/stats.test.ts`
 
 **Interfaces:**
+
 - Consumes: `Paths` from `src/paths.ts`.
 - Produces:
   - `type Boundary = 'compaction' | 'session' | 'subagent' | 'same_context'`
@@ -1494,9 +1506,11 @@ git commit -m "feat: log warning efficacy and attribute each warning to a bounda
 ### Task 7: Session state, for compaction counting
 
 **Files:**
+
 - Create: `src/session.ts`, `test/session.test.ts`
 
 **Interfaces:**
+
 - Consumes: `Paths` from `src/paths.ts`.
 - Produces:
   - `compactionCount(paths: Paths, sessionId: string): number`
@@ -1613,9 +1627,11 @@ git commit -m "feat: count compactions per session for boundary attribution"
 ### Task 8: Hook entrypoint (CHECKPOINT FP-2)
 
 **Files:**
+
 - Create: `src/hook.ts`, `test/hook.test.ts`
 
 **Interfaces:**
+
 - Consumes: everything from Tasks 2 to 7.
 - Produces: `handle(payload: HookPayload): string | null`, returning the JSON line to print or null for silence. The module's top level reads stdin, calls `handle`, prints any result and always exits 0.
 
@@ -1973,9 +1989,11 @@ existsSync. FP-2 checkpoint unchanged at 18/18."
 ### Task 9: Robustness, the load-bearing test
 
 **Files:**
+
 - Create: `test/robustness.test.ts`
 
 **Interfaces:**
+
 - Consumes: `handle` from `src/hook.ts`.
 - Produces: nothing. This task adds guarantees, not surface.
 
@@ -2099,9 +2117,11 @@ git commit -m "test: assert the hook never throws, never exits non-zero and neve
 ### Task 10: Build script and plugin wiring
 
 **Files:**
+
 - Create: `scripts/build-hook.ts`, `hooks/hooks.json`, `hooks/scripts/session-start.sh`
 
 **Interfaces:**
+
 - Consumes: `src/hook.ts`.
 - Produces: `bin/cassandra-hook`, an executable reading a hook payload on stdin.
 
@@ -2245,9 +2265,11 @@ broken one."
 ### Task 11: CLI (CHECKPOINT FP-3)
 
 **Files:**
+
 - Create: `src/cli.ts`, `src/commands/list.ts`, `src/commands/why.ts`, `src/commands/forget.ts`, `src/commands/stats.ts`, `src/commands/export.ts`, `commands/cassandra.md`, `test/cli.test.ts`
 
 **Interfaces:**
+
 - Consumes: `listRecords`, `readRecord`, `deleteRecord` from `src/record.ts`; `readStats`, `Boundary` from `src/stats.ts`; `pathsFor`, `Paths` from `src/paths.ts`.
 - Produces: `run(argv: string[]): number` in `src/cli.ts`, returning a process exit code.
 
@@ -2595,10 +2617,12 @@ FP-3 checkpoint unchanged at 18/18."
 ### Task 12: Fixtures from real payloads
 
 **Files:**
+
 - Create: `scripts/make-fixtures.ts`, `test/fixtures.test.ts`
 - Modify: `package.json`, the `test` and `test:coverage` scripts
 
 **Interfaces:**
+
 - Consumes: `handle` from `src/hook.ts`.
 - Produces: `test/fixtures/payloads.json`, generated and gitignored.
 
@@ -2752,9 +2776,11 @@ git commit -m "test: exercise the hook against payloads harvested from real tran
 The tracked risk requires more than a synthetic harness. This task measures the probe against the actual repositories on this machine. The `runReal` function was already written in Task 5; this task runs it, interprets it, and records the baseline.
 
 **Files:**
+
 - Modify: none, unless a finding requires a fix to `src/freshness.ts`
 
 **Interfaces:**
+
 - Consumes: `scripts/fp-harness.ts`.
 - Produces: a recorded baseline. No new code surface.
 
@@ -2798,10 +2824,12 @@ nothing changes and returns inside the hot path's budget."
 ### Task 14: README and documentation
 
 **Files:**
+
 - Create: `README.md`, `docs/hooks.md`
 - Modify: `docs/superpowers/specs/2026-08-28-cassandra-design.md`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: nothing importable.
 

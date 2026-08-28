@@ -1,0 +1,33 @@
+{
+  "name": "cassandra",
+  "version": "0.0.0",
+  "description": "Remembers the tool calls that already failed, so your agent stops retrying them blind",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "cassandra": "./src/cli.ts" },
+  "engines": { "bun": ">=1.1.0" },
+  "scripts": {
+    "build:hook": "bun run scripts/build-hook.ts",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "lint:docs": "markdownlint-cli2",
+    "knip": "knip",
+    "fp": "bun run scripts/fp-harness.ts",
+    "fp:real": "bun run scripts/fp-harness.ts --real",
+    "check": "bun run lint && bun run lint:docs && bun run typecheck && bun run knip && bun run test:coverage",
+    "prepare": "git config core.hooksPath .githooks || true"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/bun": "latest",
+    "eslint": "^10.9.1",
+    "eslint-plugin-jsdoc": "^64.2.1",
+    "knip": "^6.32.2",
+    "markdownlint-cli2": "^0.23.2",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.68.0"
+  }
+}
