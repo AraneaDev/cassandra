@@ -8,7 +8,7 @@
  *
  * Re-run unchanged at checkpoints FP-2 and FP-3. Any regression is a stop.
  */
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { stateStamp } from '../src/freshness'
@@ -139,6 +139,70 @@ function runSynthetic(): number {
 }
 
 /**
+ * `mtimeStamp`'s bounds, duplicated here for reporting only. They are private
+ * constants in src/freshness.ts, and this task is barred from touching that file,
+ * so this walker cannot import them; it mirrors the SKIP set and the MAX_DEPTH /
+ * MAX_ENTRIES cutoffs by hand instead. This function never feeds a stamp: it exists
+ * solely to answer, for the parked residual in Task 5, whether a real tree's walk
+ * would be truncated by either bound, and if so how large the tree actually is.
+ */
+const BOUNDS_SKIP = new Set(['node_modules', 'dist', 'build', 'target', 'coverage', 'vendor', '__pycache__'])
+const BOUNDS_MAX_DEPTH = 6
+const BOUNDS_MAX_ENTRIES = 5000
+
+interface BoundsReport {
+  /** Files counted before either bound stopped the walk (mirrors mtimeStamp's `seen`). */
+  entriesWalked: number
+  /** True only if content existed past MAX_DEPTH that the walk never reached. */
+  hitMaxDepth: boolean
+  /** True only if the walk stopped early because MAX_ENTRIES was reached. */
+  hitMaxEntries: boolean
+}
+
+function probeMtimeBounds(root: string): BoundsReport {
+  let entriesWalked = 0
+  let hitMaxDepth = false
+  let hitMaxEntries = false
+
+  const walk = (dir: string, depth: number): void => {
+    if (hitMaxEntries) return
+    if (depth > BOUNDS_MAX_DEPTH) {
+      try {
+        const rest = readdirSync(dir, { withFileTypes: true })
+          .filter((e) => !e.name.startsWith('.') && !BOUNDS_SKIP.has(e.name))
+        if (rest.length > 0) hitMaxDepth = true
+      } catch {
+        // Unreadable past the depth bound tells us nothing usable for this report.
+      }
+      return
+    }
+    if (entriesWalked >= BOUNDS_MAX_ENTRIES) { hitMaxEntries = true; return }
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name.startsWith('.') || BOUNDS_SKIP.has(entry.name)) continue
+      if (entriesWalked >= BOUNDS_MAX_ENTRIES) { hitMaxEntries = true; return }
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) { walk(full, depth + 1); continue }
+      if (!entry.isFile()) continue
+      entriesWalked += 1
+    }
+  }
+
+  try {
+    walk(root, 0)
+  } catch {
+    // Best-effort report; an unreadable root just yields whatever was counted so far.
+  }
+
+  return { entriesWalked, hitMaxDepth, hitMaxEntries }
+}
+
+/**
  * Real-repository mode. The synthetic harness proves the probe reacts to mutations
  * in a directory built for the purpose. This proves two further things against real
  * trees: that a stamp is stable when genuinely nothing changed, which is what stops
@@ -156,6 +220,7 @@ function runReal(): number {
 
   let unstable = 0
   let slow = 0
+  let boundsHit = 0
   console.error('fp:real: probing real repositories\n')
 
   for (const root of roots) {
@@ -168,10 +233,24 @@ function runReal(): number {
     if (!stable) unstable += 1
     if (elapsed > 200) slow += 1
 
-    console.error(`  ${stable ? 'stable  ' : 'UNSTABLE'}  ${a.kind.padEnd(5)}  ${elapsed.toFixed(0).padStart(4)}ms  ${root}`)
+    const bounds = probeMtimeBounds(root)
+    const boundFlags = [
+      bounds.hitMaxDepth ? 'MAX_DEPTH HIT' : null,
+      bounds.hitMaxEntries ? 'MAX_ENTRIES HIT' : null,
+    ].filter((f): f is string => f !== null)
+    if (boundFlags.length > 0) boundsHit += 1
+    const boundsNote = boundFlags.length > 0 ? `  [${boundFlags.join(', ')}]` : ''
+
+    console.error(
+      `  ${stable ? 'stable  ' : 'UNSTABLE'}  ${a.kind.padEnd(5)}  ${elapsed.toFixed(0).padStart(4)}ms  ` +
+      `entries=${bounds.entriesWalked}${boundsNote}  ${root}`,
+    )
   }
 
-  console.error(`\nfp:real: ${roots.length - unstable}/${roots.length} stable, ${slow} over the 200ms budget`)
+  console.error(
+    `\nfp:real: ${roots.length - unstable}/${roots.length} stable, ${slow} over the 200ms budget, ` +
+    `${boundsHit} hit MAX_DEPTH or MAX_ENTRIES`,
+  )
   return unstable === 0 && slow === 0 ? 0 : 1
 }
 
