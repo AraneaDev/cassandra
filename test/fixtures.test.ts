@@ -36,11 +36,13 @@ test('replayed payloads emit warnings with the documented shape', () => {
   const toReplay = harvested.slice(0, Math.min(100, harvested.length))
 
   let warningsEmitted = 0
+  let replayed = 0
 
   for (const payload of toReplay) {
     if (!payload.tool_name) continue
     if (payload.tool_name !== 'Bash' && !payload.tool_name.startsWith('mcp__')) continue
     if (!payload.tool_input) continue
+    replayed += 1
 
     // First: simulate a failure to create a record
     handle({
@@ -64,7 +66,13 @@ test('replayed payloads emit warnings with the documented shape', () => {
     }
   }
 
-  expect(warningsEmitted).toBeGreaterThan(0)
+  // A bare `> 0` tolerated 99 of 100 payloads silently ceasing to warn, which is the
+  // regression this test exists to catch. The floor is proportional instead. It is not a
+  // strict equality because a payload can legitimately produce no fingerprint, for
+  // instance a Bash call whose command is absent or entirely whitespace. Measured today:
+  // every replayed payload warns.
+  expect(replayed).toBeGreaterThan(20)
+  expect(warningsEmitted / replayed).toBeGreaterThanOrEqual(0.9)
 })
 
 test('harvested payloads include Bash calls beyond the synthetic set', () => {
