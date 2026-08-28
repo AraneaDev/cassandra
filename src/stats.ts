@@ -8,7 +8,7 @@ export type Boundary = 'compaction' | 'session' | 'subagent' | 'same_context'
  * What happened to a warning. `false_positive` means the warned call then succeeded,
  * so the freshness probe missed a real change. `confirmed` means it failed again.
  */
-export type StatKind = 'warned' | 'false_positive' | 'confirmed'
+type StatKind = 'warned' | 'false_positive' | 'confirmed'
 
 /** One line of the efficacy log. */
 export interface StatEvent {
