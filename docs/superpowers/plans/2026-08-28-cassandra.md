@@ -2016,7 +2016,7 @@ const HOSTILE: unknown[] = [
   { command: ' ' },
   { command: 'x'.repeat(100000) },
   { command: '"; rm -rf /; echo "' },
-  { command: ' [31m' },
+  { command: '\u0000\u001b[31m' },
   { command: '\uD800' },
   { nested: { deep: { deeper: [1, 2, { x: null }] } } },
   { toString: null },
