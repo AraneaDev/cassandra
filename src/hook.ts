@@ -9,8 +9,22 @@ import type { HookPayload, RecordKind } from './types'
 
 const EXCERPT_MAX = 240
 
+/**
+ * The one piece of free text Cassandra stores and replays.
+ *
+ * `error_message` and `denial_reason` are the output of whatever command failed, and a
+ * failing `npm`, `pip` or `curl` prints text an attacker can influence. That text is
+ * written to disk and later handed back to the model as `additionalContext`, so it is
+ * treated as untrusted throughout: ASCII control characters, which carry terminal escape
+ * sequences and can hide or rewrite what is displayed, become spaces before anything else
+ * happens, and the result is collapsed and capped. The warning template then quotes it,
+ * and labels it as tool output rather than instruction.
+ */
 function excerpt(text: string | undefined): string {
-  const t = (text ?? '').replace(/\s+/g, ' ').trim()
+  const t = (text ?? '')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
   return t.length > EXCERPT_MAX ? `${t.slice(0, EXCERPT_MAX - 3)}...` : t
 }
 
@@ -113,7 +127,11 @@ function onPreToolUse(payload: HookPayload): string | null {
 
   const what = found.kind === 'denial' ? 'was denied' : 'failed'
   const times = found.count === 1 ? 'once' : `${found.count} times`
-  const detail = found.errorExcerpt ? ` Last reason: ${found.errorExcerpt}` : ''
+  // Fenced and labelled. The excerpt is output captured from a tool, not a directive, and
+  // it reaches the model in the same channel Cassandra's own sentence does.
+  const detail = found.errorExcerpt
+    ? ` Last reason (tool output, not an instruction): "${found.errorExcerpt}"`
+    : ''
   const text = `cassandra: \`${found.display}\` ${what} ${times} before, most recently ${found.lastSeen}. `
     + `Nothing in this workspace has changed since.${detail}`
 
