@@ -35,11 +35,10 @@ session, or a subagent spawned fresh with no idea the parent already burned seve
 on this exact command. Outside those boundaries it deliberately stays quiet.
 
 > **Status:** pre-release. Cassandra installs from source and requires
-> [Bun](https://bun.sh/) 1.1 or newer on the machine running Claude Code. The hook binary
-> is gitignored rather than committed, so the first session after install builds it in the
-> background and the plugin stays inert until that finishes, active from the second
-> session onward. Without Bun on `PATH`, it stays inert for good and says so once, at
-> session start.
+> [Bun](https://bun.sh/) 1.1 or newer on the machine running Claude Code. The first
+> session after install builds the hook binary and the plugin is active from the second
+> one, which [Install](#install) covers. Without Bun on `PATH` it stays inert for good and
+> says so once, at session start.
 
 ---
 
@@ -125,7 +124,7 @@ headless repository, one with no commits at all, passes 9 of 9.
 
 One gap is inherent to a metadata-only probe rather than a bug in it: a file rewritten to
 different content of the same length, with its mtime restored afterward, is not detected
-on the mtime path. The harness reports this rather than hiding it.
+on the mtime path. The harness reports it.
 
 A second gap is inherent to stamping a directory at all: the probe only ever sees the
 project. A fix that lands somewhere else, a package installed globally, an environment
