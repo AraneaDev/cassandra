@@ -60,9 +60,11 @@ export function recordPath(paths: Paths, hash: string): string {
 /**
  * Marker written when the read path warns, so the outcome can be attributed without re-hashing.
  * Guards against path traversal: empty, ".", and ".." are replaced with a safe token.
+ * Non-string tool use IDs are treated as unknown.
  */
 export function pendingPath(paths: Paths, toolUseId: string): string {
-  const cleaned = toolUseId.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120)
+  const id = typeof toolUseId === 'string' ? toolUseId : 'unknown'
+  const cleaned = id.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120)
   const safe = (cleaned === '' || cleaned === '.' || cleaned === '..') ? 'unknown' : cleaned
   return join(paths.pending, safe)
 }
