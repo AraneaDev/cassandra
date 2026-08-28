@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { stateStamp, unchanged } from '../src/freshness'
+import { isMissingSubtree, stateStamp, unchanged } from '../src/freshness'
 
 let tmp: string
 
@@ -142,4 +142,50 @@ test('mtime: two different readable-but-empty directories share the canonical em
   const withFile = join(tmp, 'p3'); mkdirSync(withFile, { recursive: true })
   writeFileSync(join(withFile, 'a.txt'), 'one')
   expect(stateStamp(withFile).value).not.toBe(s1.value)
+})
+
+// This environment runs as root, where an unreadable directory cannot be
+// simulated (chmod has no effect on the walk). The error classification is
+// factored into `isMissingSubtree` specifically so it can be unit-tested
+// directly against the error shapes readdirSync actually throws, rather than
+// relying on a real permissions failure.
+test('isMissingSubtree treats ENOENT and ENOTDIR as gone, everything else as poisoning', () => {
+  expect(isMissingSubtree({ code: 'ENOENT' })).toBe(true)
+  expect(isMissingSubtree({ code: 'ENOTDIR' })).toBe(true)
+  expect(isMissingSubtree({ code: 'EACCES' })).toBe(false)
+  expect(isMissingSubtree({ code: 'EPERM' })).toBe(false)
+  expect(isMissingSubtree({ code: 'EIO' })).toBe(false)
+  expect(isMissingSubtree(undefined)).toBe(false)
+  expect(isMissingSubtree(new Error('no code'))).toBe(false)
+})
+
+test('git: an uninitialized (zero-commit) repo yields kind git', () => {
+  const repo = join(tmp, 'r'); mkdirSync(repo, { recursive: true })
+  git(repo, 'init', '-q')
+  git(repo, 'config', 'user.email', 't@example.com')
+  git(repo, 'config', 'user.name', 'T')
+  writeFileSync(join(repo, 'a.txt'), 'one')
+  expect(stateStamp(repo).kind).toBe('git')
+})
+
+test('git: a mutation in a zero-commit repo moves the stamp', () => {
+  const repo = join(tmp, 'r'); mkdirSync(repo, { recursive: true })
+  git(repo, 'init', '-q')
+  git(repo, 'config', 'user.email', 't@example.com')
+  git(repo, 'config', 'user.name', 'T')
+  writeFileSync(join(repo, 'a.txt'), 'one')
+  const before = stateStamp(repo)
+  writeFileSync(join(repo, 'b.txt'), 'new')
+  expect(stateStamp(repo).value).not.toBe(before.value)
+})
+
+test('git: the first commit in a zero-commit repo moves the stamp again', () => {
+  const repo = join(tmp, 'r'); mkdirSync(repo, { recursive: true })
+  git(repo, 'init', '-q')
+  git(repo, 'config', 'user.email', 't@example.com')
+  git(repo, 'config', 'user.name', 'T')
+  writeFileSync(join(repo, 'a.txt'), 'one')
+  const before = stateStamp(repo)
+  git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'init')
+  expect(stateStamp(repo).value).not.toBe(before.value)
 })

@@ -21,11 +21,31 @@ function gitStamp(root: string): StateStamp | null {
     const head = Bun.spawnSync(['git', '-C', root, 'rev-parse', 'HEAD'], { stderr: 'ignore' })
     const status = Bun.spawnSync(['git', '-C', root, 'status', '--porcelain'], { stderr: 'ignore' })
     if (status.exitCode !== 0) return null
-    const text = `${head.stdout.toString()} ${status.stdout.toString()}`
+    // A repository with no commits yet fails `rev-parse HEAD`, so its exit code is
+    // checked explicitly rather than trusting whatever git wrote to stdout on
+    // failure. Substituting a fixed literal keeps the stamp defined by our own
+    // code. The repo is still stampable either way: `status --porcelain` alone
+    // already lists every untracked and staged file, so the stamp stays valid and
+    // moves both with the working tree and with the first commit.
+    const headValue = head.exitCode === 0 ? head.stdout.toString() : 'no-head'
+    const text = `${headValue} ${status.stdout.toString()}`
     return { kind: 'git', value: createHash('sha256').update(text).digest('hex').slice(0, 16) }
   } catch {
     return null
   }
+}
+
+/**
+ * Distinguishes a subdirectory that is genuinely gone from one that could not be
+ * read for some other reason. Only `ENOENT` and `ENOTDIR` mean gone: the walk may
+ * safely skip that subtree, since its absence is real information. Every other
+ * code, most importantly `EACCES`/`EPERM`, means the content is still there but
+ * invisible to the walk, and must not be treated the same as absence, or a change
+ * confined to that subtree would never move the stamp.
+ */
+export function isMissingSubtree(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code
+  return code === 'ENOENT' || code === 'ENOTDIR'
 }
 
 /**
@@ -45,6 +65,15 @@ function gitStamp(root: string): StateStamp | null {
  * apart is what lets Cassandra stay informative on an early-stage project that is
  * nothing but `node_modules/` and dotfiles, instead of going permanently silent
  * there the moment its one real file is deleted.
+ *
+ * The same distinction applies one level down, inside the walk. A nested
+ * subdirectory that has been deleted (`ENOENT`/`ENOTDIR`) is skipped: its absence
+ * is real information the walk can act on. A nested subdirectory that merely
+ * cannot be read (`EACCES`/`EPERM`, or anything unrecognised) poisons the whole
+ * stamp instead of being silently treated as an empty subtree, because its content
+ * still exists and can still change invisibly to the walk. A silent skip there
+ * would let `unchanged()` report true for a workspace that actually changed, which
+ * is the one failure mode this module exists to avoid.
  */
 function mtimeStamp(root: string): StateStamp | null {
   try {
@@ -55,15 +84,19 @@ function mtimeStamp(root: string): StateStamp | null {
 
   const parts: string[] = []
   let seen = 0
+  let poisoned = false
   const walk = (dir: string, depth: number): void => {
+    if (poisoned) return
     if (depth > MAX_DEPTH || seen >= MAX_ENTRIES) return
     let entries
     try {
       entries = readdirSync(dir, { withFileTypes: true })
-    } catch {
+    } catch (err) {
+      if (!isMissingSubtree(err)) poisoned = true
       return
     }
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (poisoned) return
       if (seen >= MAX_ENTRIES) return
       if (entry.name.startsWith('.') || SKIP.has(entry.name)) continue
       const full = join(dir, entry.name)
@@ -86,6 +119,7 @@ function mtimeStamp(root: string): StateStamp | null {
   } catch {
     return null
   }
+  if (poisoned) return null
 
   // A real entry line always has the shape `<fullpath>:<size>:<mtimeMs>`, where
   // `<fullpath>` is produced by `join` and so never begins with a space. The
