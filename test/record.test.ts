@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathsFor, recordPath, type Paths } from '../src/paths'
@@ -121,3 +121,52 @@ test('listRecords returns all records even with stray non-directory files presen
   expect(all).toHaveLength(2)
   expect(all.map((e) => e.record.display).sort()).toEqual(['bun run build', 'bun test'])
 })
+
+// `readRecord` deletes anything it cannot parse. Before the hash was validated, a
+// traversal hash resolved outside the index and that delete hit an arbitrary file:
+// `recordPath(paths, '../../victim')` landed on `<home>/victim.json`. This is the
+// regression test for that, with a real file created outside the index.
+
+test('readRecord with a traversal hash deletes nothing outside the index', () => {
+  const victimDir = join(tmp, 'outside')
+  mkdirSync(victimDir, { recursive: true })
+  const victim = join(victimDir, 'victim.json')
+  writeFileSync(victim, 'not json at all')
+
+  // The exact shape that used to escape, plus the sibling forms of it.
+  for (const hostile of [
+    '../../outside/victim',
+    join('..', '..', 'outside', 'victim'),
+    `${victimDir}/victim`,
+    '..',
+    '.',
+  ]) {
+    expect(readRecord(paths, hostile)).toBeNull()
+  }
+
+  expect(existsSync(victim)).toBe(true)
+  expect(readFileSync(victim, 'utf8')).toBe('not json at all')
+  expect(existsSync(victimDir)).toBe(true)
+})
+
+test('deleteRecord with a traversal hash deletes nothing outside the index', () => {
+  const victimDir = join(tmp, 'outside2')
+  mkdirSync(victimDir, { recursive: true })
+  const victim = join(victimDir, 'victim.json')
+  writeFileSync(victim, 'keep me')
+
+  deleteRecord(paths, '../../outside2/victim')
+  deleteRecord(paths, `${victimDir}/victim`)
+  deleteRecord(paths, '..')
+
+  expect(existsSync(victim)).toBe(true)
+})
+
+test('a record stored under a non-fingerprint hash still round-trips inside the index', () => {
+  // Everything that is not a fingerprint collapses to one fixed name, so writing and
+  // reading stay consistent rather than the write landing somewhere the read cannot see.
+  upsertRecord(paths, 'not-a-hash', seed)
+  expect(existsSync(join(paths.records, 'in', 'invalid.json'))).toBe(true)
+  expect(readRecord(paths, 'also-not-a-hash')?.display).toBe('bun test')
+})
+

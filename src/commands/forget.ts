@@ -1,5 +1,5 @@
 import { deleteRecord, listRecords } from '../record'
-import type { Paths } from '../paths'
+import { isFingerprint, type Paths } from '../paths'
 
 /** Drop one record, or the whole project index. */
 export function forget(paths: Paths, target: string | null, all: boolean): number {
@@ -11,6 +11,11 @@ export function forget(paths: Paths, target: string | null, all: boolean): numbe
   }
   if (!target) {
     console.log('Pass a hash, or --all to clear the project index.')
+    return 1
+  }
+  // argv is untrusted, and this call deletes a file. Nothing but a real fingerprint runs.
+  if (!isFingerprint(target)) {
+    console.log(`Not a fingerprint: ${target}. Use the full 16-character hash from \`cassandra list\`.`)
     return 1
   }
   deleteRecord(paths, target)

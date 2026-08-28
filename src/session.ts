@@ -1,16 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Paths } from './paths'
+import { safeSegment, type Paths } from './paths'
 
 /**
  * Compaction is the one boundary of the three that the PreToolUse payload cannot
  * reveal on its own, so a PostCompact hook counts them per session and records
  * store the count they were written at.
+ *
+ * The session id comes from the harness, so it goes through the same sanitizer as
+ * every other derived path segment rather than a copy of it.
  */
 function counterPath(paths: Paths, sessionId: string): string {
-  const cleaned = sessionId.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120)
-  const safe = (cleaned === '' || cleaned === '.' || cleaned === '..') ? 'unknown' : cleaned
-  return join(paths.root, 'sessions', safe)
+  return join(paths.root, 'sessions', safeSegment(sessionId))
 }
 
 /** How many compactions this session has been through. Unknown reads as zero. */

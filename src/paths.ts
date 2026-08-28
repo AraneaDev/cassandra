@@ -52,19 +52,53 @@ export function pathsFor(cwd: string): Paths {
   }
 }
 
-/** Sharded record location. The first two hex characters keep directories small. */
+/** Longest path segment Cassandra will derive from untrusted input. */
+const SEGMENT_MAX = 120
+
+/**
+ * The one sanitizer every derived path segment goes through.
+ *
+ * Hook payloads, CLI argv and record filenames all arrive from outside this process,
+ * and every one of them ends up as a path segment. Anything outside `[a-zA-Z0-9._-]`
+ * becomes a dash, which removes `/` and every separator with it; the result is capped
+ * so a pathological input cannot exceed the OS name limit; and the three segments that
+ * still escape a directory after that, `''`, `'.'` and `'..'`, collapse to a fixed
+ * fallback token. The output can therefore only ever name a child of the directory it
+ * is joined to.
+ *
+ * A non-string is treated as absent rather than coerced, so a hostile object cannot
+ * reach the filesystem through `toString`.
+ */
+export function safeSegment(value: string, fallback = 'unknown'): string {
+  const raw = typeof value === 'string' ? value : ''
+  const cleaned = raw.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, SEGMENT_MAX)
+  return (cleaned === '' || cleaned === '.' || cleaned === '..') ? fallback : cleaned
+}
+
+/** A real fingerprint: exactly 16 lowercase hex characters. Nothing else is one. */
+export function isFingerprint(hash: string): boolean {
+  return typeof hash === 'string' && /^[0-9a-f]{16}$/.test(hash)
+}
+
+/**
+ * Sharded record location. The first two hex characters keep directories small.
+ *
+ * The hash is the one segment with a known shape, so it is held to it. Anything that
+ * is not a real fingerprint resolves to a single fixed name inside the records
+ * directory rather than being trusted: `readRecord` deletes what it cannot parse, so
+ * a hash that escaped this directory would be an arbitrary-file delete reachable from
+ * `cassandra why` and `cassandra forget`.
+ */
 export function recordPath(paths: Paths, hash: string): string {
-  return join(paths.records, hash.slice(0, 2), `${hash}.json`)
+  const cleaned = safeSegment(hash, 'invalid')
+  const safe = isFingerprint(cleaned) ? cleaned : 'invalid'
+  return join(paths.records, safe.slice(0, 2), `${safe}.json`)
 }
 
 /**
  * Marker written when the read path warns, so the outcome can be attributed without re-hashing.
- * Guards against path traversal: empty, ".", and ".." are replaced with a safe token.
- * Non-string tool use IDs are treated as unknown.
+ * Guards against path traversal through the shared sanitizer.
  */
 export function pendingPath(paths: Paths, toolUseId: string): string {
-  const id = typeof toolUseId === 'string' ? toolUseId : 'unknown'
-  const cleaned = id.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120)
-  const safe = (cleaned === '' || cleaned === '.' || cleaned === '..') ? 'unknown' : cleaned
-  return join(paths.pending, safe)
+  return join(paths.pending, safeSegment(toolUseId))
 }
