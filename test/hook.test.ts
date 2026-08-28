@@ -150,3 +150,27 @@ test('an unknown event, empty payload or missing cwd is silent', () => {
   expect(handle({})).toBeNull()
   expect(handle({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'x' } })).toBeNull()
 })
+
+test('the same subagent retrying its own failure is same_context, not subagent', () => {
+  handle({ ...fail('bun test'), agent_id: 'a1' })
+  handle(pre('bun test', { agent_id: 'a1', tool_use_id: 't5' }))
+  expect(readStats(pathsFor(cwd)).some((e) => e.kind === 'warned' && e.boundary === 'same_context')).toBe(true)
+})
+
+test('a different subagent retrying is attributed to the subagent boundary', () => {
+  handle({ ...fail('bun test'), agent_id: 'a1' })
+  handle(pre('bun test', { agent_id: 'a2', tool_use_id: 't5' }))
+  expect(readStats(pathsFor(cwd)).some((e) => e.kind === 'warned' && e.boundary === 'subagent')).toBe(true)
+})
+
+test('the main agent retrying a subagent failure is attributed to the subagent boundary', () => {
+  handle({ ...fail('bun test'), agent_id: 'a1' })
+  handle(pre('bun test', { tool_use_id: 't5' }))
+  expect(readStats(pathsFor(cwd)).some((e) => e.kind === 'warned' && e.boundary === 'subagent')).toBe(true)
+})
+
+test('a failure record stores the agent id it was written under', () => {
+  handle({ ...fail('bun test'), agent_id: 'a1' })
+  const hash = fingerprint('Bash', { command: 'bun test' })!
+  expect(readRecord(pathsFor(cwd), hash)?.agentId).toBe('a1')
+})
