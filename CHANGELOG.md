@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.2](https://github.com/AraneaDev/cassandra/compare/v0.0.1...v0.0.2) (2026-08-28)
+
+
+### Documentation
+
+* stop saying the same thing twice, and drop a hollow contrast ([#2](https://github.com/AraneaDev/cassandra/issues/2)) ([c04d43b](https://github.com/AraneaDev/cassandra/commit/c04d43b9208ef1d45e8d6dfb39fbfd0ca6069918))
+
 ## 0.0.1 (2026-08-28)
 
 

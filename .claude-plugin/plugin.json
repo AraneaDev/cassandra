@@ -1,7 +1,7 @@
 {
   "name": "cassandra",
   "displayName": "Cassandra",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Remembers the tool calls that already failed, and says so before your agent runs one again unchanged.",
   "author": {
     "name": "AraneaDev",
