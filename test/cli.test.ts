@@ -122,6 +122,10 @@ test('stats reports the false-positive rate and boundary shares', () => {
   expect(text).toContain('2 warnings')
   expect(text).toContain('50.0%')
   expect(text).toContain('compaction')
+  // The README makes uninstalling the conclusion for a high same_context share, and the
+  // CLI is where you actually read the number, so it has to say so too.
+  expect(text).toContain('same_context')
+  expect(text).toContain('uninstalling')
 })
 
 test('stats on an empty log exits 0 and says nothing has been measured', () => {

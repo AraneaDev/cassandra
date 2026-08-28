@@ -32,7 +32,9 @@ export function stats(paths: Paths): number {
   for (const b of BOUNDARIES) {
     const n = warned.filter((e) => e.boundary === b).length
     const share = ((n / warned.length) * 100).toFixed(1)
-    const note = b === 'same_context' ? '  <- redundant, the model could already see these' : ''
+    const note = b === 'same_context'
+      ? '  <- redundant, the model could already see these; a high share here is the case for uninstalling, not tuning'
+      : ''
     console.log(`    ${b.padEnd(13)} ${String(n).padStart(4)}  ${share.padStart(5)}%${note}`)
   }
   return 0

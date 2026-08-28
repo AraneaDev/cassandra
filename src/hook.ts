@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { displayFor, fingerprint } from './fingerprint'
 import { stateStamp, unchanged } from './freshness'
 import { pathsFor, pendingPath, type Paths } from './paths'
+import { join } from 'node:path'
 import { deleteRecord, readRecord, upsertRecord } from './record'
 import { bumpCompactions, compactionCount } from './session'
 import { appendStat, attributeBoundary } from './stats'
@@ -28,10 +29,40 @@ function excerpt(text: string | undefined): string {
   return t.length > EXCERPT_MAX ? `${t.slice(0, EXCERPT_MAX - 3)}...` : t
 }
 
+/** How long a marker can sit unresolved before it is assumed to belong to a dead session. */
+const PENDING_TTL_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Drop markers whose outcome never arrived.
+ *
+ * A marker is written when a warning fires and removed when the call resolves. A
+ * session killed in between leaves one behind forever, and nothing else ever
+ * enumerates this directory, so it only grows. This runs on the warn path, which is
+ * rare by construction, over a directory that is normally near-empty. Everything about
+ * it is best effort: it cannot throw, and a marker it fails to remove is retried next
+ * time rather than reported.
+ */
+function prunePending(dir: string): void {
+  try {
+    const cutoff = Date.now() - PENDING_TTL_MS
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name)
+      try {
+        if (statSync(p).mtimeMs < cutoff) rmSync(p, { force: true })
+      } catch {
+        // A marker that vanished under us needs no cleaning.
+      }
+    }
+  } catch {
+    // Cleanup is opportunistic and must never cost a call.
+  }
+}
+
 /** Write the marker that lets PostToolUse attribute an outcome without re-hashing. */
 function markPending(paths: Paths, toolUseId: string, hash: string): void {
   try {
     mkdirSync(paths.pending, { recursive: true })
+    prunePending(paths.pending)
     writeFileSync(pendingPath(paths, toolUseId), hash)
   } catch {
     // A missing marker only costs a metric.

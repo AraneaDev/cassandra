@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathsFor, recordPath, type Paths } from '../src/paths'
@@ -168,5 +168,48 @@ test('a record stored under a non-fingerprint hash still round-trips inside the 
   upsertRecord(paths, 'not-a-hash', seed)
   expect(existsSync(join(paths.records, 'in', 'invalid.json'))).toBe(true)
   expect(readRecord(paths, 'also-not-a-hash')?.display).toBe('bun test')
+})
+
+// writeFileSync is not atomic, and Claude Code runs Bash calls in parallel. A reader
+// that saw a half-written file would judge it corrupt and delete it while the writer
+// finished into an unlinked inode: a failure silently forgotten. The write now stages
+// and renames.
+
+test('upsert leaves no staging file behind and listRecords ignores stray ones', () => {
+  upsertRecord(paths, 'aa11bb22cc33dd44', seed)
+  const shard = join(paths.records, 'aa')
+  expect(readdirSync(shard)).toEqual(['aa11bb22cc33dd44.json'])
+
+  writeFileSync(join(shard, 'aa11bb22cc33dd44.json.999.abc.tmp'), '{"half":')
+  expect(listRecords(paths)).toHaveLength(1)
+  expect(readRecord(paths, 'aa11bb22cc33dd44')?.count).toBe(1)
+})
+
+test('concurrent writers never lose the record', async () => {
+  const script = join(tmp, 'writer.ts')
+  writeFileSync(script, `
+    import { upsertRecord, readRecord } from ${JSON.stringify(join(import.meta.dir, '..', 'src', 'record.ts'))}
+    import { pathsFor } from ${JSON.stringify(join(import.meta.dir, '..', 'src', 'paths.ts'))}
+    const paths = pathsFor(process.argv[2])
+    const seed = ${JSON.stringify(seed)}
+    for (let i = 0; i < 40; i += 1) {
+      upsertRecord(paths, 'aa11bb22cc33dd44', seed)
+      readRecord(paths, 'aa11bb22cc33dd44')
+    }
+  `)
+
+  const procs = Array.from({ length: 6 }, () => Bun.spawn(
+    ['bun', 'run', script, tmp],
+    { env: { ...process.env, CASSANDRA_HOME: join(tmp, 'home') }, stdout: 'ignore', stderr: 'ignore' },
+  ))
+  for (const proc of procs) expect(await proc.exited).toBe(0)
+
+  // The count may drift under a lost update, which is acceptable. The record itself
+  // being gone is not: that is a remembered failure silently forgotten.
+  const final = readRecord(paths, 'aa11bb22cc33dd44')
+  expect(final).not.toBeNull()
+  expect(final!.count).toBeGreaterThan(0)
+  expect(final!.display).toBe('bun test')
+  expect(readdirSync(join(paths.records, 'aa')).filter((f) => f.endsWith('.tmp'))).toEqual([])
 })
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { recordPath, type Paths } from './paths'
 import type { FailureRecord } from './types'
@@ -35,7 +35,20 @@ export function readRecord(paths: Paths, hash: string): FailureRecord | null {
   }
 }
 
-/** Create a record, or increment an existing one and refresh its mutable fields. */
+/**
+ * Create a record, or increment an existing one and refresh its mutable fields.
+ *
+ * The write goes to a temp file in the same directory and is moved into place with
+ * `renameSync`, which POSIX guarantees atomic within a filesystem. `writeFileSync`
+ * alone is not: Claude Code runs Bash calls in parallel, so a concurrent `readRecord`
+ * could observe a half-written file, judge it corrupt and delete it, while this writer
+ * finished into an inode that no longer had a name. The cost of that is not a drifted
+ * count, it is a failure silently forgotten, which is the one thing the index exists
+ * to prevent.
+ *
+ * The temp name carries the pid and a random suffix so two writers cannot collide on
+ * it, and ends in `.tmp` so `listRecords`, which reads only `.json`, never sees one.
+ */
 export function upsertRecord(paths: Paths, hash: string, seed: RecordSeed): void {
   const now = new Date().toISOString()
   const existing = readRecord(paths, hash)
@@ -46,11 +59,19 @@ export function upsertRecord(paths: Paths, hash: string, seed: RecordSeed): void
     lastSeen: now,
   }
   const p = recordPath(paths, hash)
+  const staging = `${p}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
   try {
     mkdirSync(dirname(p), { recursive: true })
-    writeFileSync(p, JSON.stringify(next))
+    writeFileSync(staging, JSON.stringify(next))
+    renameSync(staging, p)
   } catch {
-    // An unwritable index must not break a session. The record is simply lost.
+    // An unwritable index must not break a session. The record is simply lost, and
+    // any half-written staging file goes with it rather than accumulating.
+    try {
+      rmSync(staging, { force: true })
+    } catch {
+      // Nothing further to try.
+    }
   }
 }
 

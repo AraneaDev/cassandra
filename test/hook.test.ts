@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { handle } from '../src/hook'
@@ -213,5 +213,42 @@ test('control characters never reach the replayed context either', () => {
   handle({ ...fail('bun test'), error_message: 'a\u001b]0;title\u0007b' })
   const context = JSON.parse(handle(pre('bun test'))!).hookSpecificOutput.additionalContext
   expect(/[\u0000-\u001F\u007F]/.test(context)).toBe(false)
+})
+
+// A marker is written when a warning fires and removed when the outcome arrives. A
+// session killed in between leaves one behind, and nothing else enumerates the
+// directory, so without this it only ever grows.
+
+test('markPending clears markers older than 24 hours and keeps fresh ones', () => {
+  const paths = pathsFor(cwd)
+  mkdirSync(paths.pending, { recursive: true })
+
+  const stale = join(paths.pending, 'toolu_dead_session')
+  const fresh = join(paths.pending, 'toolu_recent')
+  writeFileSync(stale, 'aa11bb22cc33dd44')
+  writeFileSync(fresh, 'bb11bb22cc33dd44')
+  const old = new Date(Date.now() - 25 * 60 * 60 * 1000)
+  utimesSync(stale, old, old)
+
+  // Any warning at all triggers the sweep.
+  handle(fail('bun test'))
+  expect(handle(pre('bun test'))).toBeString()
+
+  expect(existsSync(stale)).toBe(false)
+  expect(existsSync(fresh)).toBe(true)
+  expect(existsSync(pendingPath(paths, 't2'))).toBe(true)
+})
+
+test('a marker just under the cutoff survives', () => {
+  const paths = pathsFor(cwd)
+  mkdirSync(paths.pending, { recursive: true })
+  const nearly = join(paths.pending, 'toolu_23h')
+  writeFileSync(nearly, 'aa11bb22cc33dd44')
+  const when = new Date(Date.now() - 23 * 60 * 60 * 1000)
+  utimesSync(nearly, when, when)
+
+  handle(fail('bun test'))
+  handle(pre('bun test'))
+  expect(existsSync(nearly)).toBe(true)
 })
 
