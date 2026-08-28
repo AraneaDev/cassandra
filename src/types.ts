@@ -26,6 +26,7 @@ export interface FailureRecord {
   firstSeen: string
   lastSeen: string
   errorExcerpt: string
+  agentId?: string
 }
 
 /** The subset of a Claude Code hook payload Cassandra reads. All fields are optional by design. */

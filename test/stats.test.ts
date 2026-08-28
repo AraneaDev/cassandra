@@ -68,3 +68,64 @@ test('a warning inside one intact context is attributed to same_context', () => 
     { sessionId: 's1', compactions: 2 },
   )).toBe('same_context')
 })
+
+test('the same agent retrying inside the same context is same_context, not subagent', () => {
+  expect(attributeBoundary(
+    { sessionId: 's1', compactions: 0, agentId: 'a1' },
+    { sessionId: 's1', compactions: 0, agentId: 'a1' },
+  )).toBe('same_context')
+})
+
+test('a different agent is a subagent boundary', () => {
+  expect(attributeBoundary(
+    { sessionId: 's1', compactions: 0, agentId: 'a1' },
+    { sessionId: 's1', compactions: 0, agentId: 'a2' },
+  )).toBe('subagent')
+})
+
+test('an agentId on current only is a subagent boundary', () => {
+  expect(attributeBoundary(
+    { sessionId: 's1', compactions: 0 },
+    { sessionId: 's1', compactions: 0, agentId: 'a1' },
+  )).toBe('subagent')
+})
+
+test('an agentId on recorded only is a subagent boundary', () => {
+  expect(attributeBoundary(
+    { sessionId: 's1', compactions: 0, agentId: 'a1' },
+    { sessionId: 's1', compactions: 0 },
+  )).toBe('subagent')
+})
+
+test('a subagent in a later session is subagent (most specific boundary wins)', () => {
+  expect(attributeBoundary(
+    { sessionId: 's1', compactions: 0, agentId: 'a1' },
+    { sessionId: 's2', compactions: 0, agentId: 'a2' },
+  )).toBe('subagent')
+})
+
+test('appended timestamp cannot be overridden by event payload', () => {
+  const beforeTime = Date.now()
+  appendStat(paths, { kind: 'warned', hash: 'xxxx', t: 'old-time' } as any)
+  const afterTime = Date.now()
+  const events = readStats(paths)
+  expect(events).toHaveLength(1)
+  const eventTime = new Date(events[0]!.t).getTime()
+  expect(eventTime).toBeGreaterThanOrEqual(beforeTime - 100)
+  expect(eventTime).toBeLessThanOrEqual(afterTime + 100)
+  expect(events[0]!.t).not.toBe('old-time')
+})
+
+test('invalid json shapes are skipped without breaking the read', () => {
+  appendStat(paths, { kind: 'warned', hash: 'aaaa' })
+  appendFileSync(paths.stats, '42\n')
+  appendFileSync(paths.stats, '"string"\n')
+  appendFileSync(paths.stats, '[1,2,3]\n')
+  appendFileSync(paths.stats, '{}\n')
+  appendFileSync(paths.stats, 'null\n')
+  appendStat(paths, { kind: 'confirmed', hash: 'bbbb' })
+  const events = readStats(paths)
+  expect(events).toHaveLength(2)
+  expect(events[0]!.hash).toBe('aaaa')
+  expect(events[1]!.hash).toBe('bbbb')
+})

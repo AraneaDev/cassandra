@@ -22,7 +22,7 @@ export interface StatEvent {
 export function appendStat(paths: Paths, event: Omit<StatEvent, 't'>): void {
   try {
     mkdirSync(paths.root, { recursive: true })
-    appendFileSync(paths.stats, `${JSON.stringify({ t: new Date().toISOString(), ...event })}\n`)
+    appendFileSync(paths.stats, `${JSON.stringify({ ...event, t: new Date().toISOString() })}\n`)
   } catch {
     // Best effort by design.
   }
@@ -37,7 +37,13 @@ export function readStats(paths: Paths): StatEvent[] {
       .filter((line) => line.trim().length > 0)
       .map((line) => {
         try {
-          return JSON.parse(line) as StatEvent
+          const parsed = JSON.parse(line)
+          // Validate shape: must be object, not array, with required fields
+          if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') return null
+          const { kind, hash } = parsed
+          if (typeof hash !== 'string') return null
+          if (typeof kind !== 'string' || !['warned', 'false_positive', 'confirmed'].includes(kind)) return null
+          return parsed as StatEvent
         } catch {
           return null
         }
@@ -56,10 +62,10 @@ export function readStats(paths: Paths): StatEvent[] {
  * that Cassandra is not earning its place.
  */
 export function attributeBoundary(
-  recorded: { sessionId: string; compactions: number },
+  recorded: { sessionId: string; compactions: number; agentId?: string },
   current: { sessionId: string; compactions: number; agentId?: string },
 ): Boundary {
-  if (current.agentId) return 'subagent'
+  if ((current.agentId ?? '') !== (recorded.agentId ?? '')) return 'subagent'
   if (current.sessionId !== recorded.sessionId) return 'session'
   if (current.compactions > recorded.compactions) return 'compaction'
   return 'same_context'
