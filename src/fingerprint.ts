@@ -1,8 +1,12 @@
 import { createHash } from 'node:crypto'
 import type { ToolKind } from './types'
 
-/** Which extractor a tool name routes to. Edit and Write payloads never repeat, so they are ignored. */
+/**
+ * Which extractor a tool name routes to. Edit and Write payloads never repeat, so they are ignored.
+ * Non-string tool names are treated as ignored.
+ */
 export function classify(toolName: string): ToolKind {
+  if (typeof toolName !== 'string') return 'ignored'
   if (toolName === 'Bash') return 'bash'
   if (toolName.startsWith('mcp__')) return 'mcp'
   return 'ignored'
