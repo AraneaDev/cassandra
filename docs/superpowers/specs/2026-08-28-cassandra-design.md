@@ -94,8 +94,13 @@ one line of context and nothing else.
 ### Write path
 
 On `PostToolUseFailure` or `PermissionDenied`, generate the key set, capture the
-workspace state stamp, truncate `error_message` to 240 characters, and write or
-increment one record stored under every key.
+workspace state stamp, truncate `error_message` to 240 characters, and write or increment
+the record.
+
+When the key set holds more than one key, the first key is canonical and holds the record.
+Every other key is written as a pointer file containing only the canonical hash, so the
+read path resolves at most one level of indirection. On day one the set holds one key and
+no pointers exist.
 
 ### Clearing without cost
 
@@ -162,6 +167,10 @@ $CLAUDE_PLUGIN_DATA/<project-slug>/
   pending/<tool_use_id>
   stats.jsonl
 ```
+
+`<project-slug>` is derived from the session's `cwd`: the git toplevel when there is one,
+otherwise `cwd` itself, slugified and suffixed with the first 8 characters of a hash of the
+absolute path so two checkouts of the same repository never share an index.
 
 The filesystem is the hash table. Lookup is one `test -f`. There is no index file to
 read, scan, or parse.
@@ -232,10 +241,24 @@ Advisory tools are easy to believe in and hard to evaluate. The honest read is t
 inside an intact context window the model can often already see the failure, so the value
 rests entirely on the three boundary cases.
 
-Cassandra therefore records its own efficacy in `stats.jsonl`: every warning issued, and
-whether a call carrying that fingerprint ran anyway. `cassandra stats` reports how often
-a warning preceded a change of approach. If that number sits near zero after a few weeks,
-the tool has told you it is not worth keeping.
+Cassandra therefore records its own efficacy in `stats.jsonl`. Because it never blocks,
+"did the call run" is always yes and measures nothing. The signals that do carry
+information all come from events already handled:
+
+- **Outcome of the warned call.** The `pending/<tool_use_id>` marker already tells the
+  `PostToolUse` and `PostToolUseFailure` handlers that this call was warned about. If it
+  succeeded, the warning was a false positive and the freshness probe missed a real
+  change. If it failed again, the warning was correct.
+- **Recurrence after a warning.** Whether the same fingerprint appears again later in the
+  session, which indicates the warning was seen and disregarded.
+- **Boundary attribution.** Whether the warning fired after a compaction, in a different
+  session from the failure, or inside a subagent. These are the three cases the whole
+  design exists to serve, so a warning outside them is close to redundant by construction.
+
+`cassandra stats` reports the false-positive rate and the share of warnings attributable
+to each of the three boundaries. A high false-positive rate means the freshness probe
+needs work. A low share attributable to the boundaries means the tool is mostly telling
+the model things it could already see, and is not worth keeping.
 
 ## CLI surface
 
