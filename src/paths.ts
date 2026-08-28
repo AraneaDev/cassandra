@@ -1,13 +1,66 @@
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 /** Where every project's index lives. Tests set CASSANDRA_HOME; the plugin gets CLAUDE_PLUGIN_DATA. */
 export function dataRoot(): string {
-  return process.env.CASSANDRA_HOME
-    ?? process.env.CLAUDE_PLUGIN_DATA
-    ?? join(homedir(), '.cassandra')
+  const explicit = process.env.CASSANDRA_HOME ?? process.env.CLAUDE_PLUGIN_DATA
+  if (explicit) {
+    rememberDataRoot(explicit)
+    return explicit
+  }
+  return readRememberedDataRoot() ?? join(homeBase(), '.cassandra')
+}
+
+/**
+ * The home directory, preferring `$HOME`.
+ *
+ * Node's `os.homedir()` consults `$HOME` first on POSIX, but Bun's resolves from the
+ * passwd entry and ignores the environment, so a changed `HOME` is invisible to it.
+ * Reading the variable first matches what a user expects from a CLI and keeps the two
+ * runtimes agreeing.
+ */
+function homeBase(): string {
+  const h = process.env.HOME
+  return h && isAbsolute(h) ? h : homedir()
+}
+
+/** Where the pointer lives. Fixed, so a shell with no plugin environment can still find it. */
+function pointerPath(): string {
+  return join(homeBase(), '.cassandra', 'data-root')
+}
+
+/**
+ * Record where the hooks are writing.
+ *
+ * Claude Code sets `CLAUDE_PLUGIN_DATA` for a plugin hook but not for a shell, so the CLI
+ * would otherwise resolve a different directory from the one the hooks use and report an
+ * empty index while the plugin was actively warning. The hook leaves this pointer behind
+ * so `cassandra list`, `stats` and the rest read the same place. Best effort throughout:
+ * losing the pointer costs discoverability, never correctness.
+ */
+function rememberDataRoot(root: string): void {
+  try {
+    const p = pointerPath()
+    if (existsSync(p) && readFileSync(p, 'utf8').trim() === root) return
+    mkdirSync(dirname(p), { recursive: true })
+    writeFileSync(p, root)
+  } catch {
+    // A read-only home is not a reason to fail a tool call.
+  }
+}
+
+/** Read the pointer a hook left behind, or null when there is none worth trusting. */
+function readRememberedDataRoot(): string | null {
+  try {
+    const p = pointerPath()
+    if (!existsSync(p)) return null
+    const v = readFileSync(p, 'utf8').trim()
+    return v && isAbsolute(v) && existsSync(v) ? v : null
+  } catch {
+    return null
+  }
 }
 
 /**

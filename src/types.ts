@@ -37,7 +37,17 @@ export interface HookPayload {
   tool_name?: string
   tool_input?: unknown
   tool_use_id?: string
+  /**
+   * The failing tool's output. Claude Code names this `error`, confirmed against the
+   * hooks reference. `error_message` was the name assumed while this plugin was written
+   * and it does not exist, so it is kept only as a fallback in case the field is ever
+   * renamed back. For Bash the string starts with a line reading `Exit code N`.
+   */
+  error?: string
   error_message?: string
+  /** True when the failure reached Claude Code as an abort rather than a real tool error. */
+  is_interrupt?: boolean
   denial_reason?: string
+  reason?: string
   agent_id?: string
 }

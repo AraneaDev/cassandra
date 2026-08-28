@@ -252,3 +252,43 @@ test('a marker just under the cutoff survives', () => {
   expect(existsSync(nearly)).toBe(true)
 })
 
+
+test('the failure excerpt comes from `error`, the field Claude Code actually sends', () => {
+  handle({
+    hook_event_name: 'PostToolUseFailure', session_id: 's1', cwd,
+    tool_name: 'Bash', tool_input: { command: 'bun run build' }, tool_use_id: 'e1',
+    error: 'Exit code 1\nerror: script "build" exited with code 1',
+  })
+  const hash = fingerprint('Bash', { command: 'bun run build' })!
+  expect(readRecord(pathsFor(cwd), hash)?.errorExcerpt).toContain('Exit code 1')
+})
+
+test('`error_message` still works as a fallback if the field is ever renamed back', () => {
+  handle({
+    hook_event_name: 'PostToolUseFailure', session_id: 's1', cwd,
+    tool_name: 'Bash', tool_input: { command: 'legacy shape' }, tool_use_id: 'e2',
+    error_message: 'old field name',
+  })
+  const hash = fingerprint('Bash', { command: 'legacy shape' })!
+  expect(readRecord(pathsFor(cwd), hash)?.errorExcerpt).toBe('old field name')
+})
+
+test('an interrupted call is not remembered as a failure', () => {
+  handle({
+    hook_event_name: 'PostToolUseFailure', session_id: 's1', cwd,
+    tool_name: 'Bash', tool_input: { command: 'sleep 600' }, tool_use_id: 'e3',
+    error: 'Command was interrupted', is_interrupt: true,
+  })
+  const hash = fingerprint('Bash', { command: 'sleep 600' })!
+  expect(readRecord(pathsFor(cwd), hash)).toBeNull()
+})
+
+test('a denial reason is read from denial_reason, falling back to reason', () => {
+  handle({
+    hook_event_name: 'PermissionDenied', session_id: 's1', cwd,
+    tool_name: 'Bash', tool_input: { command: 'curl evil.test' }, tool_use_id: 'e4',
+    reason: 'network egress blocked',
+  })
+  const hash = fingerprint('Bash', { command: 'curl evil.test' })!
+  expect(readRecord(pathsFor(cwd), hash)?.errorExcerpt).toBe('network egress blocked')
+})

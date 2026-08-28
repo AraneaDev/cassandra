@@ -179,8 +179,13 @@ export function handle(payload: HookPayload): string | null {
   switch (payload.hook_event_name) {
     case 'PreToolUse': return onPreToolUse(payload)
     case 'PostToolUse': return onSuccess(payload)
-    case 'PostToolUseFailure': return onFailure(payload, 'failure', payload.error_message)
-    case 'PermissionDenied': return onFailure(payload, 'denial', payload.denial_reason)
+    case 'PostToolUseFailure':
+      // An interrupt is not a failure of the command. Remembering an aborted call would
+      // warn about something that never actually failed, so it is ignored outright.
+      if (payload.is_interrupt) return null
+      return onFailure(payload, 'failure', payload.error ?? payload.error_message)
+    case 'PermissionDenied':
+      return onFailure(payload, 'denial', payload.denial_reason ?? payload.reason)
     case 'PostCompact':
       if (payload.cwd) bumpCompactions(pathsFor(payload.cwd), payload.session_id ?? '')
       return null

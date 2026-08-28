@@ -1,18 +1,23 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { bumpCompactions, compactionCount } from '../src/session'
 import { dataRoot, findRepoRoot, isFingerprint, pathsFor, pendingPath, projectSlug, recordPath, safeSegment } from '../src/paths'
 
 let tmp: string
+let originalHome: string | undefined
 
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), 'cass-paths-'))
+  originalHome = process.env.HOME
   process.env.CASSANDRA_HOME = join(tmp, 'home')
 })
 
 afterEach(() => {
+  if (originalHome === undefined) delete process.env.HOME
+  else process.env.HOME = originalHome
+  delete process.env.CLAUDE_PLUGIN_DATA
   delete process.env.CASSANDRA_HOME
   rmSync(tmp, { recursive: true, force: true })
 })
@@ -141,4 +146,35 @@ test('isFingerprint accepts exactly 16 lowercase hex characters', () => {
   expect(isFingerprint('abcdef01234567890')).toBe(false)
   expect(isFingerprint('')).toBe(false)
   expect(isFingerprint('../../victim')).toBe(false)
+})
+
+test('a hook writing under CLAUDE_PLUGIN_DATA leaves a pointer the CLI can follow', () => {
+  const pluginData = join(tmp, 'plugin-data')
+  mkdirSync(pluginData, { recursive: true })
+  const home = join(tmp, 'fakehome')
+  mkdirSync(join(home, '.cassandra'), { recursive: true })
+
+  // The hook's environment: CLAUDE_PLUGIN_DATA set, CASSANDRA_HOME absent.
+  delete process.env.CASSANDRA_HOME
+  process.env.CLAUDE_PLUGIN_DATA = pluginData
+  process.env.HOME = home
+  expect(dataRoot()).toBe(pluginData)
+
+  // A plain shell: no plugin environment at all. It must still find the same directory.
+  delete process.env.CLAUDE_PLUGIN_DATA
+  expect(dataRoot()).toBe(pluginData)
+})
+
+test('a stale or non-absolute pointer is ignored rather than followed', () => {
+  const home = join(tmp, 'fakehome2')
+  mkdirSync(join(home, '.cassandra'), { recursive: true })
+  process.env.HOME = home
+  delete process.env.CASSANDRA_HOME
+  delete process.env.CLAUDE_PLUGIN_DATA
+
+  writeFileSync(join(home, '.cassandra', 'data-root'), '/nonexistent/gone')
+  expect(dataRoot()).toBe(join(home, '.cassandra'))
+
+  writeFileSync(join(home, '.cassandra', 'data-root'), 'not-absolute')
+  expect(dataRoot()).toBe(join(home, '.cassandra'))
 })
