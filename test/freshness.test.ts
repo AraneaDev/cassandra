@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { isMissingSubtree, stateStamp, unchanged } from '../src/freshness'
@@ -189,3 +189,65 @@ test('git: the first commit in a zero-commit repo moves the stamp again', () => 
   git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'init')
   expect(stateStamp(repo).value).not.toBe(before.value)
 })
+
+/**
+ * Build a directory tree whose deepest level cannot be named in a single syscall.
+ *
+ * `root` sits just under PATH_MAX so it reads fine; five 200-character levels below it
+ * push the last one past 4096 bytes, and `readdirSync` on that path fails with
+ * ENAMETOOLONG. The levels are created through a shell `cd` chain so `mkdir` only ever
+ * receives a relative name, which is the one way to create a path longer than any
+ * pathname argument is allowed to be. Returns the readable root.
+ */
+function buildOverlongTree(base: string): string {
+  const seg = 'd'.repeat(200)
+  let root = base
+  while (root.length + 201 < 3400) root = join(root, seg)
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, 'a.txt'), 'one')
+  const built = Bun.spawnSync([
+    'sh', '-c', 'cd "$1" && for i in 1 2 3 4; do mkdir "$2" && cd "$2"; done && mkdir "$2"',
+    'sh', root, seg,
+  ])
+  expect(built.exitCode).toBe(0)
+  return root
+}
+
+/**
+ * `isMissingSubtree` is unit-tested directly, but nothing proved the walk acts on its
+ * verdict: deleting `poisoned = true` from `src/freshness.ts` left the whole suite green.
+ *
+ * This drives a real non-ENOENT failure through the walk. Root runs with
+ * CAP_DAC_OVERRIDE here, so an unreadable directory cannot be simulated with chmod; a
+ * structural failure can. The subtree exists and is not empty, the walk cannot see into
+ * it, and the only correct answer is `none`, which never warns.
+ */
+test('a non-ENOENT failure inside the walk poisons the whole stamp', () => {
+  const base = join(tmp, 'deep')
+  mkdirSync(base, { recursive: true })
+  try {
+    const root = buildOverlongTree(base)
+
+    // The premise: root is readable, the deepest level is not, and the reason is
+    // ENAMETOOLONG rather than the ENOENT/ENOTDIR the walk is allowed to skip.
+    expect(() => readdirSync(root)).not.toThrow()
+    let deepest = root
+    for (let i = 0; i < 5; i += 1) deepest = join(deepest, 'd'.repeat(200))
+    let code: string | undefined
+    try {
+      readdirSync(deepest)
+    } catch (err) {
+      code = (err as NodeJS.ErrnoException).code
+    }
+    expect(code).toBe('ENAMETOOLONG')
+    expect(isMissingSubtree({ code })).toBe(false)
+
+    // The verdict the walk must reach: not a partial stamp over what it could read.
+    expect(stateStamp(root).kind).toBe('none')
+    expect(unchanged('anything', 'mtime', stateStamp(root))).toBe(false)
+  } finally {
+    // rmSync cannot remove a tree it cannot name; rm(1) walks it with fchdir.
+    Bun.spawnSync(['rm', '-rf', base])
+  }
+})
+
