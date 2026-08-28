@@ -24,13 +24,25 @@ function payloads(): HookPayload[] {
   return JSON.parse(readFileSync(join(import.meta.dir, 'fixtures', 'payloads.json'), 'utf8'))
 }
 
+/**
+ * The harvest only finds payloads on a machine that has actually run Claude Code.
+ * `make-fixtures` says so itself and falls back to a small synthetic set elsewhere, so on
+ * a clean checkout, CI included, there is no captured payload to assert anything about.
+ *
+ * The two tests below therefore skip rather than fail there. Lowering their floors to
+ * whatever the synthetic set happens to contain would make them green everywhere while no
+ * longer catching what they exist for: a payload set that quietly stops producing
+ * warnings. They keep their full strength on a machine that has the transcripts.
+ */
+const hasHarvest = payloads().filter((p) => p.session_id === 'harvested').length > 4
+
 test('every real payload is handled without throwing', () => {
   for (const p of payloads()) {
     expect(() => handle({ ...p, cwd })).not.toThrow()
   }
 })
 
-test('replayed payloads emit warnings with the documented shape', () => {
+test.skipIf(!hasHarvest)('replayed payloads emit warnings with the documented shape', () => {
   const all = payloads()
   const harvested = all.filter((p) => p.session_id === 'harvested')
   const toReplay = harvested.slice(0, Math.min(100, harvested.length))
@@ -75,7 +87,7 @@ test('replayed payloads emit warnings with the documented shape', () => {
   expect(warningsEmitted / replayed).toBeGreaterThanOrEqual(0.9)
 })
 
-test('harvested payloads include Bash calls beyond the synthetic set', () => {
+test.skipIf(!hasHarvest)('harvested payloads include Bash calls beyond the synthetic set', () => {
   const all = payloads()
   const harvested = all.filter((p) => p.session_id === 'harvested')
   const harvestedBash = harvested.filter((p) => p.tool_name === 'Bash')

@@ -60,7 +60,12 @@ test('git: a commit changes the stamp', () => {
 test('git: a sed -i style rewrite changes the stamp', () => {
   const repo = join(tmp, 'r'); initRepo(repo)
   const before = stateStamp(repo)
-  Bun.spawnSync(['sed', '-i', 's/one/three/', join(repo, 'a.txt')], { cwd: repo })
+  // Written the portable way rather than as `sed -i`. BSD sed on macOS reads the next
+  // argument as the backup suffix, so `sed -i 's/…/…/' file` consumes the script as the
+  // suffix and fails; GNU sed does not. Redirect-and-move is what `-i` does underneath
+  // and behaves the same on both, so the test exercises a real in-place rewrite by a
+  // real subprocess on every platform instead of quietly doing nothing on one.
+  Bun.spawnSync(['sh', '-c', 'sed "s/one/three/" a.txt > a.new && mv a.new a.txt'], { cwd: repo })
   expect(stateStamp(repo).value).not.toBe(before.value)
 })
 
@@ -194,15 +199,20 @@ test('git: the first commit in a zero-commit repo moves the stamp again', () => 
  * Build a directory tree whose deepest level cannot be named in a single syscall.
  *
  * `root` sits just under PATH_MAX so it reads fine; five 200-character levels below it
- * push the last one past 4096 bytes, and `readdirSync` on that path fails with
+ * push the last one past the limit, and `readdirSync` on that path fails with
  * ENAMETOOLONG. The levels are created through a shell `cd` chain so `mkdir` only ever
  * receives a relative name, which is the one way to create a path longer than any
  * pathname argument is allowed to be. Returns the readable root.
+ *
+ * The target depends on the platform: PATH_MAX is 4096 on Linux and 1024 on macOS. A
+ * fixed 3400 exceeds the macOS limit while building `root` itself, so construction threw
+ * there and the test failed for a reason that had nothing to do with the walk.
  */
 function buildOverlongTree(base: string): string {
   const seg = 'd'.repeat(200)
+  const target = process.platform === 'darwin' ? 800 : 3400
   let root = base
-  while (root.length + 201 < 3400) root = join(root, seg)
+  while (root.length + 201 < target) root = join(root, seg)
   mkdirSync(root, { recursive: true })
   writeFileSync(join(root, 'a.txt'), 'one')
   const built = Bun.spawnSync([
