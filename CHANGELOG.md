@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.4](https://github.com/AraneaDev/cassandra/compare/v0.0.3...v0.0.4) (2026-08-28)
+
+
+### Continuous integration
+
+* move off the actions still running on Node 20 ([#6](https://github.com/AraneaDev/cassandra/issues/6)) ([b12fbac](https://github.com/AraneaDev/cassandra/commit/b12fbac102b67c99d4bffe60ccf9ed0853f9af22))
+
 ## [0.0.3](https://github.com/AraneaDev/cassandra/compare/v0.0.2...v0.0.3) (2026-08-28)
 
 
