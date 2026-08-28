@@ -26,7 +26,9 @@ export function stableStringify(value: unknown): string {
  *
  * Normalization is deliberately stingy. A miss costs silence, which is the status
  * quo; a false match costs a confidently wrong warning, which is what teaches you
- * to ignore the tool. So only whitespace is touched.
+ * to ignore the tool. So only whitespace is touched. Newlines are preserved because
+ * collapsing them would merge genuinely different multi-line scripts (e.g., two
+ * heredocs with different content but identical single-line representation).
  */
 function significant(toolName: string, toolInput: unknown): string | null {
   const kind = classify(toolName)
@@ -36,7 +38,7 @@ function significant(toolName: string, toolInput: unknown): string | null {
   if (kind === 'bash') {
     const command = (toolInput as { command?: unknown }).command
     if (typeof command !== 'string') return null
-    const normalized = command.trim().replace(/\s+/g, ' ')
+    const normalized = command.trim().replace(/[^\S\n]+/g, ' ').replace(/ +\n/g, '\n')
     return normalized.length > 0 ? normalized : null
   }
 

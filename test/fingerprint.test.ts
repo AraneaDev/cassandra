@@ -29,11 +29,23 @@ test('normalization does not merge commands that differ only by redirect or flag
 })
 
 test('commands containing quotes, backslashes and newlines survive intact', () => {
-  const gnarly = 'git commit -m "fix \\"quoted\\" thing"'
-  expect(fingerprint('Bash', { command: gnarly }))
-    .toBe(fingerprint('Bash', { command: gnarly }))
-  const heredoc = "cat <<'EOF' > f\nline one\nline two\nEOF"
-  expect(fingerprint('Bash', { command: heredoc })).toBeString()
+  // Escaped quotes create a different fingerprint from unescaped
+  const withEscapedQuotes = 'git commit -m "fix \\"quoted\\" thing"'
+  const withoutEscapedQuotes = 'git commit -m "fix quoted thing"'
+  expect(fingerprint('Bash', { command: withEscapedQuotes }))
+    .not.toBe(fingerprint('Bash', { command: withoutEscapedQuotes }))
+
+  // Different multi-line scripts have different fingerprints
+  const heredoc1 = "cat <<EOF > f\nline one\nline two\nEOF"
+  const heredoc2 = "cat <<EOF > f\nline one line two\nEOF"
+  expect(fingerprint('Bash', { command: heredoc1 }))
+    .not.toBe(fingerprint('Bash', { command: heredoc2 }))
+
+  // Trailing spaces on lines collapse but newlines are preserved
+  const withoutTrailingSpaces = "cat <<EOF > f\nline one\nline two\nEOF"
+  const withTrailingSpaces = "cat <<EOF > f\nline one   \nline two  \nEOF"
+  expect(fingerprint('Bash', { command: withoutTrailingSpaces }))
+    .toBe(fingerprint('Bash', { command: withTrailingSpaces }))
 })
 
 test('MCP fingerprints ignore key order', () => {
