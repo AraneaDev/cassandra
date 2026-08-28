@@ -7,4 +7,5 @@ test/fixtures/
 *.log
 .momus/
 /.superpowers/
+/docs/superpowers/
 CLAUDE.md
