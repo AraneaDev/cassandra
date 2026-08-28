@@ -80,6 +80,7 @@ one line of context and nothing else.
 | `PermissionDenied` | `Bash`, `mcp__*` | write: record denial | on denial |
 | `PostToolUse` | `Bash`, `mcp__*` | clear a record that just succeeded | every call |
 | `SessionStart` | (none) | ensure binary exists, else build or report | once |
+| `PostCompact` | (none) | bump session compaction counter | on compaction |
 
 ### Read path
 
