@@ -341,6 +341,23 @@ by itself argue for lowering `MAX_ENTRIES`. It is reported here, unadjusted,
 because the brief asks for the number rather than a judgment call about
 whether it is acceptable.
 
+### Re-measurement of the 375ms outlier
+
+A baseline is what a future maintainer anchors on, and 375ms with no explanation
+reads as a performance problem. It is not one, so here is what it was.
+
+I went back to `/root/e-commerce-api` afterwards and probed it again. It returns
+in 17ms, 7ms and 5ms across three consecutive runs. Bare `git status --porcelain`
+on the same repository, across its 1,016 tracked files, runs in 12ms, 5ms and
+13ms. Re-running the widened sweep on a quiet machine, zero of the 71 probes
+exceeded 200ms.
+
+The 375ms was a cold git index on first touch, while the machine was running
+several agents at once. It is not a `MAX_ENTRIES`-scale problem, and lowering
+that bound would not have affected it: that repository was stamped by `gitStamp`,
+so the mtime walk never ran to produce its number. The measurement above stands
+as recorded; this note is what it means, so nobody optimizes against it.
+
 ## What this measurement establishes, and what it does not
 
 The synthetic harness (`bun run fp`) proves the probe **reacts**: given a

@@ -7,7 +7,7 @@
 
 [![Release](https://img.shields.io/github/v/release/AraneaDev/cassandra?label=release&include_prereleases)](https://github.com/AraneaDev/cassandra/releases)
 [![Project page](https://img.shields.io/badge/project%20page-aranea--development.nl-0b7285)](https://aranea-development.nl/en/projects/cassandra)
-[![Tests](https://img.shields.io/badge/tests-115%20passing-2b8a3e)](test/)
+[![Tests](https://img.shields.io/badge/tests-135%20passing-2b8a3e)](test/)
 [![License](https://img.shields.io/github/license/AraneaDev/cassandra?label=license&color=yellow)](./LICENSE)
 [![Language](https://img.shields.io/github/languages/top/AraneaDev/cassandra)](https://github.com/AraneaDev/cassandra)
 [![Last commit](https://img.shields.io/github/last-commit/AraneaDev/cassandra?label=last%20commit)](https://github.com/AraneaDev/cassandra/commits/main)
@@ -62,12 +62,21 @@ Only `Bash` and `mcp__*` calls. `Edit` and `Write` payloads never repeat byte fo
 even when the edit is functionally the same fix twice, so they are deliberately left out
 of the index rather than indexed and never matching.
 
-Cassandra reads no prose. It fingerprints `tool_name` plus `tool_input`, both structured
-JSON, so the match is deterministic and says nothing about which language you or the
-agent are working in. A `Bash` command is trimmed and has runs of whitespace collapsed
-before hashing, nothing else: no path canonicalization, no flag reordering, no stripping
-of trailing pipes or redirects, since each of those can quietly merge two different
-commands into one. An `mcp__*` call is hashed on the raw `tool_input` as delivered.
+Cassandra never reads your prompts or the model's prose. It fingerprints `tool_name` plus
+`tool_input`, both structured JSON, so the match is deterministic and says nothing about
+which language you or the agent are working in. A `Bash` command is trimmed and has runs
+of whitespace collapsed before hashing, nothing else: no path canonicalization, no flag
+reordering, no stripping of trailing pipes or redirects, since each of those can quietly
+merge two different commands into one. An `mcp__*` call is hashed on the raw `tool_input`
+as delivered.
+
+There is one piece of free text it does read, and it is worth knowing about. When a call
+fails or is denied, Cassandra keeps a 240-character excerpt of that tool's own
+`error_message` or `denial_reason`, writes it to the record on disk, and quotes it back in
+the warning so you can see why the call died last time. That excerpt is output from a
+command, not from you and not from the model, and it is treated as untrusted: control
+characters are stripped before it is stored, and the warning fences it and labels it as
+tool output rather than as an instruction.
 
 ## Install
 
@@ -126,9 +135,21 @@ was a `node_modules` directory. The full numbers are in
 
 ## Overhead
 
-Roughly 12ms per tool call on an idle machine, 17ms under load, against a 20ms design
-budget. That cost is paid on every `Bash` and `mcp__*` call, whether or not Cassandra ever
-has anything to say.
+Roughly 12ms per hook invocation on an idle machine, 17ms under load, against a 20ms
+design budget. That cost is paid on every `Bash` and `mcp__*` call, whether or not
+Cassandra ever has anything to say.
+
+A tool call is not one invocation. `PreToolUse` and `PostToolUse` are wired to the same
+matcher, so a call that succeeds spawns the binary twice: about 12.9ms before the call and
+12.2ms after it, roughly 25ms in total. Measured against a per-invocation budget of 20ms
+each invocation fits; measured per successful call, it does not.
+
+That second invocation is deliberate and worth being plain about. `PostToolUse` is what
+resolves the pending marker, and the marker is the only way Cassandra can tell that a call
+it warned about then went on to succeed. Remove the hook and the false-positive rate in
+`cassandra stats` stops existing, which is the number that tells you whether the freshness
+probe is working at all. You pay about 12ms on every successful call to keep the tool
+measurable, and that is the trade being made.
 
 ## Commands
 
@@ -149,8 +170,11 @@ directory. A `/cassandra` slash command runs `list` inside a session, and switch
 
 - It never blocks, denies, or rewrites a call. The only thing it can add is one line of
   `additionalContext`.
-- It never reads your prompts or the model's prose. It fingerprints structured
-  `tool_name` and `tool_input` JSON, nothing else.
+- It never reads your prompts or the model's prose. The match is on structured
+  `tool_name` and `tool_input` JSON.
+- It does keep one piece of free text: a 240-character excerpt of the failing tool's own
+  error output or denial reason, stored with the record and quoted back, fenced, in the
+  warning. That is the whole of what it reads beyond the call itself.
 - It never leaves the machine. There is no network request, no telemetry, no API key.
 - It stores nothing outside its own data directory.
 
