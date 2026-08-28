@@ -1,0 +1,171 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # Linux and macOS both run the suite. Cassandra shells out to git for the
+    # freshness stamp and walks the filesystem for the fallback, so what bites
+    # here is platform behaviour rather than Bun: git's porcelain output, mtime
+    # resolution, and path handling. Windows is deliberately absent. The
+    # SessionStart hook is POSIX shell, nothing has been tested there, and the
+    # README does not claim it.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Report the platform
+        # Recorded on every run because the probe reads `git status --porcelain`
+        # and file mtimes. When a test fails on one platform only, the git
+        # version and the filesystem are the first things to read.
+        run: |
+          echo "uname:  $(uname -s)"
+          echo "git:    $(git --version)"
+          echo "bun:    $(bun --version)"
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        # `bun run test` rather than `bun test`: the script generates the
+        # captured payload fixtures first, and they are gitignored.
+        run: bun run test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: eslint
+        run: bun run lint
+
+      - name: markdownlint
+        run: bun run lint:docs
+
+      - name: knip
+        # Catches the dead export a refactor leaves behind. Cassandra's modules
+        # are small and mostly single-purpose, which is exactly where an unused
+        # export survives unnoticed.
+        run: bun run knip
+
+      - name: Ensure shellcheck is available
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            echo "using preinstalled $(shellcheck --version | grep version:)"
+            exit 0
+          fi
+          version=v0.10.0
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${version}/shellcheck-${version}.linux.x86_64.tar.xz" \
+            | tar -xJf - --strip-components=1 -C /usr/local/bin "shellcheck-${version}/shellcheck"
+          shellcheck --version | grep version:
+
+      - name: Syntax check
+        run: |
+          for f in hooks/scripts/*.sh; do
+            sh -n "$f" && echo "ok  $f"
+          done
+
+      - name: shellcheck
+        # The session hook targets POSIX sh rather than bash, so the shell is
+        # declared here rather than relying on a shebang guess. -S style is the
+        # same bar the other repositories in this marketplace hold.
+        run: shellcheck -s sh -S style hooks/scripts/*.sh
+
+  probe:
+    # The freshness probe decides whether Cassandra speaks at all, and a
+    # regression in it is silent either way: it starts warning after the
+    # workspace moved, or it goes quiet forever and nobody notices a plugin
+    # saying nothing. The harness mutates a repository nine ways across both
+    # the git and mtime paths, repeats the sweep against a zero-commit
+    # repository, and exits non-zero if any mutation goes unseen.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: False-positive harness
+        run: bun run fp
+
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Validate JSON
+        run: |
+          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json package.json; do
+            jq -e . "$f" > /dev/null && echo "$f ok"
+          done
+
+      - name: Build the hook binary
+        # `bin/` is gitignored: the compiled hook is around 90MB and is built on
+        # first use. Building it here is what makes the existence check below
+        # meaningful, and it fails the run if the entrypoint stops compiling.
+        run: bun run build:hook
+
+      - name: Hook commands point at files that exist
+        # Guards the failure mode a rename introduces: hooks.json still parses
+        # but names a script that is no longer there, and the plugin silently
+        # does nothing. A sibling plugin logged 198 silent exit-127 hook runs
+        # before anyone noticed.
+        run: |
+          status=0
+          while read -r script; do
+            path="${script#\$CLAUDE_PLUGIN_ROOT/}"
+            if [ -f "$path" ]; then
+              echo "ok   $path"
+            else
+              echo "MISSING $path"
+              status=1
+            fi
+          done < <(jq -r '.hooks[][].hooks[].command | scan("\\$CLAUDE_PLUGIN_ROOT/[^\"]+")' hooks/hooks.json)
+          exit $status
+
+      - name: Versions agree across the manifests
+        run: |
+          plugin=$(jq -r .version .claude-plugin/plugin.json)
+          pkg=$(jq -r .version package.json)
+          echo "plugin.json: $plugin / package.json: $pkg"
+          [ "$plugin" = "$pkg" ]
+
+      - name: Plugin name matches the marketplace entry
+        run: |
+          plugin=$(jq -r .name .claude-plugin/plugin.json)
+          listed=$(jq -r '.plugins[0].name' .claude-plugin/marketplace.json)
+          echo "plugin.json: $plugin / marketplace.json: $listed"
+          [ "$plugin" = "$listed" ]
