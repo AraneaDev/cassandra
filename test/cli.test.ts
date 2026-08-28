@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { run } from '../src/cli'
 import { pathsFor } from '../src/paths'
-import { upsertRecord } from '../src/record'
+import { listRecords, upsertRecord } from '../src/record'
 import { appendStat } from '../src/stats'
 
 let tmp: string
@@ -71,21 +71,43 @@ test('why on an unknown hash exits 1', () => {
 // argv reaches the record path, and a record path lookup can end in a delete. Both
 // commands refuse anything that is not a real fingerprint rather than passing it on.
 
-test('why refuses a hash that is not a fingerprint and exits 1', () => {
-  for (const bad of ['nope', '../../victim', '', 'ABCDEF0123456789', 'abcdef012345678']) {
+test('why refuses anything that could reach a path builder, and exits 1', () => {
+  // The security property: argv that is not pure hex never becomes a path segment.
+  for (const bad of ['nope', '../../victim', '', '..', '/etc/passwd', 'a/b']) {
     out.length = 0
     expect(run(['why', bad, '--cwd', cwd])).toBe(1)
-    expect(out.join('\n')).toContain('Not a fingerprint')
+    expect(out.join('\n')).toContain('Not a hash')
   }
+  // Hex that matches no record is refused too, with a different reason.
+  out.length = 0
+  expect(run(['why', 'deadbeef', '--cwd', cwd])).toBe(1)
+  expect(out.join('\n')).toContain('No record matching')
 })
 
-test('forget refuses a hash that is not a fingerprint and exits 1', () => {
+test('why accepts the 8-character prefix that `list` actually prints', () => {
   upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
-  for (const bad of ['nope', '../../victim', 'ABCDEF0123456789']) {
+  out.length = 0
+  expect(run(['why', 'aa11bb22', '--cwd', cwd])).toBe(0)
+  expect(out.join('\n')).toContain('bun test')
+})
+
+test('an ambiguous prefix is refused and names the candidates', () => {
+  upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
+  upsertRecord(pathsFor(cwd), 'aa11ffffcc33dd44', seed)
+  out.length = 0
+  expect(run(['why', 'aa11', '--cwd', cwd])).toBe(1)
+  expect(out.join('\n')).toContain('matches 2 records')
+})
+
+test('forget refuses anything that could reach a path builder, and deletes nothing', () => {
+  upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
+  for (const bad of ['nope', '../../victim', '..', 'a/b']) {
     out.length = 0
     expect(run(['forget', bad, '--cwd', cwd])).toBe(1)
-    expect(out.join('\n')).toContain('Not a fingerprint')
+    expect(out.join('\n')).toContain('Not a hash')
   }
+  // The record it was given alongside those must still be there.
+  expect(listRecords(pathsFor(cwd))).toHaveLength(1)
   out.length = 0
   expect(run(['list', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('bun test')

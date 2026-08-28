@@ -1,5 +1,6 @@
 import { deleteRecord, listRecords } from '../record'
-import { isFingerprint, type Paths } from '../paths'
+import { type Paths } from '../paths'
+import { explainResolution, resolveHash } from './resolve'
 
 /** Drop one record, or the whole project index. */
 export function forget(paths: Paths, target: string | null, all: boolean): number {
@@ -13,12 +14,14 @@ export function forget(paths: Paths, target: string | null, all: boolean): numbe
     console.log('Pass a hash, or --all to clear the project index.')
     return 1
   }
-  // argv is untrusted, and this call deletes a file. Nothing but a real fingerprint runs.
-  if (!isFingerprint(target)) {
-    console.log(`Not a fingerprint: ${target}. Use the full 16-character hash from \`cassandra list\`.`)
+  // argv is untrusted, and this call deletes a file. A prefix is resolved against the
+  // index first, so nothing but a real fingerprint reaches the path builder.
+  const r = resolveHash(paths, target)
+  if (!r.ok) {
+    console.log(explainResolution(target, r))
     return 1
   }
-  deleteRecord(paths, target)
-  console.log(`Forgot ${target}.`)
+  deleteRecord(paths, r.hash)
+  console.log(`Forgot ${r.hash}.`)
   return 0
 }
