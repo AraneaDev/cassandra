@@ -120,7 +120,7 @@ test('a permission denial is recorded and warns on repeat', () => {
   expect(JSON.parse(out!).hookSpecificOutput.additionalContext).toContain('network egress')
 })
 
-test('a subagent repeat is attributed to the subagent boundary', () => {
+test('a main-agent failure retried inside a subagent crosses the subagent boundary', () => {
   handle(fail('bun test'))
   handle(pre('bun test', { agent_id: 'a1', tool_use_id: 't5' }))
   expect(readStats(pathsFor(cwd)).some((e) => e.kind === 'warned' && e.boundary === 'subagent')).toBe(true)
