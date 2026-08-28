@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/cli.ts", "src/hook.ts", "scripts/*.ts", "test/**/*.test.ts"],
-  "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"]
+  "entry": ["src/hook.ts", "scripts/*.ts", "test/**/*.test.ts"],
+  "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
+  "ignoreExportsUsedInFile": true
 }
