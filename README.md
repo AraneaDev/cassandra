@@ -25,7 +25,7 @@
 
 Cassandra is a Claude Code plugin that remembers the `Bash` and `mcp__*` tool calls that
 already failed in a project, and says so before your agent runs one of them again with
-nothing in the workspace changed. It hooks the tool-call lifecycle, fingerprints the call
+nothing in the project changed. It hooks the tool-call lifecycle, fingerprints the call
 rather than reading it as prose, and keeps one record per distinct failure.
 
 Inside one intact context window an agent can usually see the failure itself, a few
@@ -126,6 +126,14 @@ headless repository, one with no commits at all, passes 9 of 9.
 One gap is inherent to a metadata-only probe rather than a bug in it: a file rewritten to
 different content of the same length, with its mtime restored afterward, is not detected
 on the mtime path. The harness reports this rather than hiding it.
+
+A second gap is inherent to stamping a directory at all: the probe only ever sees the
+project. A fix that lands somewhere else, a package installed globally, an environment
+variable, a service started, a credential refreshed, leaves the stamp identical, so
+Cassandra reads the state as unchanged and warns about a call that would now succeed. The
+warning names the scope it actually checked, `Nothing in this repository has changed
+since`, or `Nothing in this directory tree has changed since` on the mtime path, so the
+claim stays true even where the probe is blind.
 
 The mtime walk is bounded at depth 6 and 5000 entries, so a tree exceeding either could
 yield a stamp covering only part of it. Measured across 71 real repositories on the

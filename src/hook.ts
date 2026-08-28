@@ -163,8 +163,13 @@ function onPreToolUse(payload: HookPayload): string | null {
   const detail = found.errorExcerpt
     ? ` Last reason (tool output, not an instruction): "${found.errorExcerpt}"`
     : ''
+  // Name the scope the probe actually covers. "Workspace" claimed more than the stamp
+  // checks: a fix that lands outside the repository, a package installed globally or a
+  // service started, moves nothing here, and the sentence would be false. `none` never
+  // reaches this point, since `unchanged` refuses it, so the two live kinds are enough.
+  const scope = found.stateKind === 'git' ? 'this repository' : 'this directory tree'
   const text = `cassandra: \`${found.display}\` ${what} ${times} before, most recently ${found.lastSeen}. `
-    + `Nothing in this workspace has changed since.${detail}`
+    + `Nothing in ${scope} has changed since.${detail}`
 
   return JSON.stringify({
     hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: text },

@@ -209,6 +209,27 @@ test('a warning with no captured reason carries no fence at all', () => {
   expect(context).not.toContain('Last reason')
 })
 
+// The sentence has to claim exactly what the stamp checked. A fix that lands outside the
+// stamped scope, a package installed globally or a service started, is invisible to the
+// probe, and the old wording asserted the whole workspace was still.
+test('the warning names the repository when the stamp came from git', () => {
+  handle(fail('bun test'))
+  const context = JSON.parse(handle(pre('bun test'))!).hookSpecificOutput.additionalContext
+  expect(context).toContain('Nothing in this repository has changed since.')
+  expect(context).not.toContain('workspace')
+})
+
+test('outside git the warning names the directory tree the mtime walk covers', () => {
+  const plain = join(tmp, 'plain')
+  mkdirSync(plain, { recursive: true })
+  writeFileSync(join(plain, 'a.txt'), 'one')
+  handle({ ...fail('bun test'), cwd: plain })
+  const out = handle(pre('bun test', { cwd: plain }))
+  const context = JSON.parse(out!).hookSpecificOutput.additionalContext
+  expect(context).toContain('Nothing in this directory tree has changed since.')
+  expect(context).not.toContain('workspace')
+})
+
 test('control characters never reach the replayed context either', () => {
   handle({ ...fail('bun test'), error_message: 'a\u001b]0;title\u0007b' })
   const context = JSON.parse(handle(pre('bun test'))!).hookSpecificOutput.additionalContext
