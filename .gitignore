@@ -6,4 +6,5 @@ test/fixtures/
 .env
 *.log
 .momus/
+/.superpowers/
 CLAUDE.md
