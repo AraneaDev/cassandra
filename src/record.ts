@@ -6,7 +6,7 @@ import type { FailureRecord } from './types'
 /** Fields a caller supplies; count and timestamps are managed here. */
 type RecordSeed = Omit<FailureRecord, 'count' | 'firstSeen' | 'lastSeen'>
 
-const REQUIRED = ['tool', 'display', 'kind', 'count', 'stateStamp', 'stateKind', 'firstSeen', 'lastSeen'] as const
+const REQUIRED = ['tool', 'display', 'kind', 'count', 'stateStamp', 'stateKind', 'sessionId', 'compactions', 'firstSeen', 'lastSeen', 'errorExcerpt'] as const
 
 function looksValid(value: unknown): value is FailureRecord {
   if (value === null || typeof value !== 'object') return false
@@ -67,18 +67,28 @@ export function deleteRecord(paths: Paths, hash: string): void {
 export function listRecords(paths: Paths): Array<{ hash: string; record: FailureRecord }> {
   const out: Array<{ hash: string; record: FailureRecord }> = []
   if (!existsSync(paths.records)) return out
+  let shards: string[]
   try {
-    for (const shard of readdirSync(paths.records)) {
-      const dir = join(paths.records, shard)
-      for (const file of readdirSync(dir)) {
-        if (!file.endsWith('.json')) continue
-        const hash = file.slice(0, -5)
-        const record = readRecord(paths, hash)
-        if (record) out.push({ hash, record })
-      }
-    }
+    shards = readdirSync(paths.records)
   } catch {
-    // A partially readable index still returns what it could read.
+    // Cannot read shards directory; return empty.
+    return out
+  }
+  for (const shard of shards) {
+    const dir = join(paths.records, shard)
+    let files: string[]
+    try {
+      files = readdirSync(dir)
+    } catch {
+      // Shard is not readable or not a directory; skip it.
+      continue
+    }
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue
+      const hash = file.slice(0, -5)
+      const record = readRecord(paths, hash)
+      if (record) out.push({ hash, record })
+    }
   }
   return out
 }

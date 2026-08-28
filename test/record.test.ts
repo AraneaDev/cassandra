@@ -90,3 +90,34 @@ test('listRecords returns every stored record across shards', () => {
 test('listRecords on an empty index returns an empty array', () => {
   expect(listRecords(paths)).toEqual([])
 })
+
+test('a record missing newly-required fields (sessionId, compactions, errorExcerpt) is treated as corrupt', () => {
+  const p = recordPath(paths, '3344556677889900')
+  mkdirSync(join(paths.records, '33'), { recursive: true })
+  writeFileSync(p, JSON.stringify({
+    tool: 'Bash',
+    display: 'bun test',
+    kind: 'failure',
+    count: 1,
+    stateStamp: 'a3f1c8',
+    stateKind: 'git',
+    firstSeen: new Date().toISOString(),
+    lastSeen: new Date().toISOString(),
+  }))
+  expect(readRecord(paths, '3344556677889900')).toBeNull()
+  expect(existsSync(p)).toBe(false)
+})
+
+test('listRecords returns all records even with stray non-directory files present', () => {
+  // Create a stray file early in directory order so it's encountered first
+  mkdirSync(join(paths.records, '00'), { recursive: true })
+  writeFileSync(join(paths.records, '.DS_Store'), 'stray file')
+
+  // Create records in different shards
+  upsertRecord(paths, 'aa11bb22cc33dd44', seed)
+  upsertRecord(paths, 'bb22cc33dd44ee55', { ...seed, display: 'bun run build' })
+
+  const all = listRecords(paths)
+  expect(all).toHaveLength(2)
+  expect(all.map((e) => e.record.display).sort()).toEqual(['bun run build', 'bun test'])
+})
