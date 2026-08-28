@@ -80,8 +80,8 @@ tool output rather than as an instruction.
 ## Install
 
 ```bash
-claude plugin marketplace add AraneaDev/cassandra
-claude plugin install cassandra@cassandra
+claude plugin marketplace add https://aranea-development.nl/plugins/marketplace.json
+claude plugin install cassandra@aranea
 ```
 
 Hooks bind when a session starts, so the first session after install finds no hook binary
