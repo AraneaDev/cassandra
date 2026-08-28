@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "sh \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/session-start.sh\"", "timeout": 5 } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Bash|mcp__.*", "hooks": [ { "type": "command", "command": "\"$CLAUDE_PLUGIN_ROOT/bin/cassandra-hook\"", "timeout": 2 } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Bash|mcp__.*", "hooks": [ { "type": "command", "command": "\"$CLAUDE_PLUGIN_ROOT/bin/cassandra-hook\"", "timeout": 2 } ] }
+    ],
+    "PostToolUseFailure": [
+      { "matcher": "Bash|mcp__.*", "hooks": [ { "type": "command", "command": "\"$CLAUDE_PLUGIN_ROOT/bin/cassandra-hook\"", "timeout": 2 } ] }
+    ],
+    "PermissionDenied": [
+      { "matcher": "Bash|mcp__.*", "hooks": [ { "type": "command", "command": "\"$CLAUDE_PLUGIN_ROOT/bin/cassandra-hook\"", "timeout": 2 } ] }
+    ],
+    "PostCompact": [
+      { "hooks": [ { "type": "command", "command": "\"$CLAUDE_PLUGIN_ROOT/bin/cassandra-hook\"", "timeout": 2 } ] }
+    ]
+  }
+}
