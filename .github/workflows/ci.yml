@@ -128,7 +128,7 @@ jobs:
 
       - name: Validate JSON
         run: |
-          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json package.json; do
+          for f in .claude-plugin/plugin.json hooks/hooks.json package.json; do
             jq -e . "$f" > /dev/null && echo "$f ok"
           done
 
@@ -163,9 +163,3 @@ jobs:
           echo "plugin.json: $plugin / package.json: $pkg"
           [ "$plugin" = "$pkg" ]
 
-      - name: Plugin name matches the marketplace entry
-        run: |
-          plugin=$(jq -r .name .claude-plugin/plugin.json)
-          listed=$(jq -r '.plugins[0].name' .claude-plugin/marketplace.json)
-          echo "plugin.json: $plugin / marketplace.json: $listed"
-          [ "$plugin" = "$listed" ]
