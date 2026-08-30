@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.5](https://github.com/AraneaDev/cassandra/compare/v0.0.4...v0.0.5) (2026-08-30)
+
+
+### Documentation
+
+* name the SSH clone failure in the install section ([#8](https://github.com/AraneaDev/cassandra/issues/8)) ([983259f](https://github.com/AraneaDev/cassandra/commit/983259f91601d2a978c4869239c0b9ba8b70a074))
+
 ## [0.0.4](https://github.com/AraneaDev/cassandra/compare/v0.0.3...v0.0.4) (2026-08-28)
 
 
