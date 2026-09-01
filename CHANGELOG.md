@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.7](https://github.com/AraneaDev/cassandra/compare/v0.0.6...v0.0.7) (2026-09-01)
+
+
+### Fixes
+
+* ask for the list in a fenced block ([#13](https://github.com/AraneaDev/cassandra/issues/13)) ([0294622](https://github.com/AraneaDev/cassandra/commit/0294622a3cb067a7ac84a0aebabe7dcdd0930901))
+
 ## [0.0.6](https://github.com/AraneaDev/cassandra/compare/v0.0.5...v0.0.6) (2026-09-01)
 
 
