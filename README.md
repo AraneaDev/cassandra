@@ -238,3 +238,7 @@ bun run fp:real    # freshness probe against real repositories on this machine
 ## License
 
 MIT.
+
+---
+
+Built by [Aranea Development](https://aranea-development.nl).
