@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.6](https://github.com/AraneaDev/cassandra/compare/v0.0.5...v0.0.6) (2026-09-01)
+
+
+### Documentation
+
+* link the project site from the readme ([#12](https://github.com/AraneaDev/cassandra/issues/12)) ([ea7cd90](https://github.com/AraneaDev/cassandra/commit/ea7cd907e49ed9589b54862a2c110cc83b2258bd))
+* point the badge at the renamed /tools section ([#10](https://github.com/AraneaDev/cassandra/issues/10)) ([d15147c](https://github.com/AraneaDev/cassandra/commit/d15147cd3e83768598ef1083e6e016038d2bc7e6))
+
 ## [0.0.5](https://github.com/AraneaDev/cassandra/compare/v0.0.4...v0.0.5) (2026-08-30)
 
 

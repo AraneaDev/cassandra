@@ -1,6 +1,6 @@
 {
   "name": "cassandra",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Remembers the tool calls that already failed, so your agent stops retrying them blind",
   "license": "MIT",
   "type": "module",
