@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.9](https://github.com/AraneaDev/cassandra/compare/v0.0.8...v0.0.9) (2026-09-08)
+
+
+### Continuous integration
+
+* scope the concurrency group to the pull request, not the base branch ([#17](https://github.com/AraneaDev/cassandra/issues/17)) ([eb9f3ec](https://github.com/AraneaDev/cassandra/commit/eb9f3ecd55cfd9b8113e34047dee05e0431464b7))
+
 ## [0.0.8](https://github.com/AraneaDev/cassandra/compare/v0.0.7...v0.0.8) (2026-09-08)
 
 
