@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.8](https://github.com/AraneaDev/cassandra/compare/v0.0.7...v0.0.8) (2026-09-08)
+
+
+### Continuous integration
+
+* cancel superseded runs and give every job a timeout ([#15](https://github.com/AraneaDev/cassandra/issues/15)) ([e6b6118](https://github.com/AraneaDev/cassandra/commit/e6b61187f537dfc246bf8455cc6d6ed9826a0ec7))
+
 ## [0.0.7](https://github.com/AraneaDev/cassandra/compare/v0.0.6...v0.0.7) (2026-09-01)
 
 
