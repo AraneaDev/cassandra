@@ -6,6 +6,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One run per branch. A second push cancels the first, because whoever pushed
+# again has already answered the question the running job was asked. The runs
+# long enough to be overtaken are the expensive ones, so this is worth more
+# than the share of runs it cancels suggests.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     # Linux and macOS both run the suite. Cassandra shells out to git for the
@@ -19,6 +27,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
 
@@ -48,6 +57,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
 
@@ -101,6 +111,7 @@ jobs:
     # the git and mtime paths, repeats the sweep against a zero-commit
     # repository, and exits non-zero if any mutation goes unseen.
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
 
@@ -116,6 +127,7 @@ jobs:
 
   manifests:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
 
