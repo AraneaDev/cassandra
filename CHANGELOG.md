@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.11](https://github.com/AraneaDev/cassandra/compare/v0.0.10...v0.0.11) (2026-09-15)
+
+
+### Continuous integration
+
+* **pr-title:** refuse a pull request title that is not a Conventional Commit ([#21](https://github.com/AraneaDev/cassandra/issues/21)) ([d51a130](https://github.com/AraneaDev/cassandra/commit/d51a1307689b7ad8ddb9f6d36d94441b28c3cd80))
+
 ## [0.0.10](https://github.com/AraneaDev/cassandra/compare/v0.0.9...v0.0.10) (2026-09-15)
 
 
