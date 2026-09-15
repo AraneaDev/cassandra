@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.10](https://github.com/AraneaDev/cassandra/compare/v0.0.9...v0.0.10) (2026-09-15)
+
+
+### Documentation
+
+* **readme:** credit the author and link the write-up ([#19](https://github.com/AraneaDev/cassandra/issues/19)) ([f018166](https://github.com/AraneaDev/cassandra/commit/f018166521ff088f9c37025733fcd2a1fb2eef4d))
+
 ## [0.0.9](https://github.com/AraneaDev/cassandra/compare/v0.0.8...v0.0.9) (2026-09-08)
 
 
