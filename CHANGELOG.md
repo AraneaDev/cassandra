@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.12](https://github.com/AraneaDev/cassandra/compare/v0.0.11...v0.0.12) (2026-09-16)
+
+
+### Continuous integration
+
+* **pr-title:** share one commit-style rule between CI and the hook ([#23](https://github.com/AraneaDev/cassandra/issues/23)) ([0ece126](https://github.com/AraneaDev/cassandra/commit/0ece126ac94ef7f9668ccafdf0e5bf5d2cbbe48d))
+
 ## [0.0.11](https://github.com/AraneaDev/cassandra/compare/v0.0.10...v0.0.11) (2026-09-15)
 
 
