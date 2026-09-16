@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.13](https://github.com/AraneaDev/cassandra/compare/v0.0.12...v0.0.13) (2026-09-16)
+
+
+### Continuous integration
+
+* **pr-title:** check out the base branch, not the pull request's pinned base commit ([#25](https://github.com/AraneaDev/cassandra/issues/25)) ([9397e50](https://github.com/AraneaDev/cassandra/commit/9397e5032d5c80cc61f285861644e0d2262ecf09))
+
 ## [0.0.12](https://github.com/AraneaDev/cassandra/compare/v0.0.11...v0.0.12) (2026-09-16)
 
 
