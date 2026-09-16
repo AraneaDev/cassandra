@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.15](https://github.com/AraneaDev/cassandra/compare/v0.0.14...v0.0.15) (2026-09-16)
+
+
+### Fixes
+
+* ignore release configuration changes ([#31](https://github.com/AraneaDev/cassandra/issues/31)) ([661e3a0](https://github.com/AraneaDev/cassandra/commit/661e3a0ac1f0bc7bb1eee62e9b787afba9825255))
+* keep non-repository paths local ([#29](https://github.com/AraneaDev/cassandra/issues/29)) ([7ee8e99](https://github.com/AraneaDev/cassandra/commit/7ee8e999601c3bd442abbd17f6307031d29a3fef))
+
 ## [0.0.14](https://github.com/AraneaDev/cassandra/compare/v0.0.13...v0.0.14) (2026-09-16)
 
 
