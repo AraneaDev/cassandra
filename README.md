@@ -23,10 +23,9 @@
 > smaller, duller version. It does not prophesy anything, it only remembers what already
 > happened, and it only ever advises. It cannot block a call, deny one, or rewrite one.
 
-Cassandra is a Claude Code plugin that remembers the `Bash` and `mcp__*` tool calls that
-already failed in a project, and says so before your agent runs one of them again with
-nothing in the project changed. It hooks the tool-call lifecycle, fingerprints the call
-rather than reading it as prose, and keeps one record per distinct failure.
+**TL;DR:** Cassandra remembers failed `Bash` and `mcp__*` calls and warns before an agent
+repeats one without a project change. It hooks the tool-call lifecycle, fingerprints structured
+call data, and keeps one record per distinct failure.
 
 Inside one intact context window an agent can usually see the failure itself, a few
 thousand tokens back in its own transcript, and correct course without help. Cassandra

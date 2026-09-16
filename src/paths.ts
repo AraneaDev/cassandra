@@ -69,11 +69,12 @@ function readRememberedDataRoot(): string | null {
  * subprocess there would cost more than the lookup it serves.
  */
 export function findRepoRoot(cwd: string): string {
-  let dir = resolve(cwd)
+  const start = resolve(cwd)
+  let dir = start
   for (;;) {
     if (existsSync(join(dir, '.git'))) return dir
     const parent = dirname(dir)
-    if (parent === dir) return resolve(cwd)
+    if (parent === dir) return start
     dir = parent
   }
 }
