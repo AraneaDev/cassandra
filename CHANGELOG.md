@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.14](https://github.com/AraneaDev/cassandra/compare/v0.0.13...v0.0.14) (2026-09-16)
+
+
+### Continuous integration
+
+* **release:** allow Release Please to be run by hand ([#27](https://github.com/AraneaDev/cassandra/issues/27)) ([81c4564](https://github.com/AraneaDev/cassandra/commit/81c4564919aa5c1a113d1144d4ebcb9c972b3163))
+
 ## [0.0.13](https://github.com/AraneaDev/cassandra/compare/v0.0.12...v0.0.13) (2026-09-16)
 
 
