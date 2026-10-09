@@ -21,8 +21,9 @@ const EXCERPT_MAX = 240
  * sequences and can hide or rewrite what is displayed, become spaces before anything else
  * happens, and the result is collapsed and capped. The warning template then quotes it,
  * and labels it as tool output rather than instruction.
+ * Also used for an agent's stated reason when it resolves a failure.
  */
-function excerpt(text: string | undefined): string {
+export function sanitiseExcerpt(text: string | undefined): string {
   const t = (text ?? '')
     .replace(/[\u0000-\u001F\u007F]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -125,7 +126,7 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
     stateKind: stamp.kind,
     sessionId: call.sessionId,
     compactions: await compactionCount(io, paths, call.sessionId),
-    errorExcerpt: excerpt(reason),
+    errorExcerpt: sanitiseExcerpt(reason),
     agentId: call.agentId,
   })
 }

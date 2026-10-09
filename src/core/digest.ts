@@ -12,6 +12,8 @@ const DIGEST_LIMIT = 5
 export interface LiveRecords {
   records: Array<{ hash: string; record: FailureRecord }>
   kind: 'git' | 'mtime'
+  /** How many records were live before the cap. */
+  total: number
 }
 
 /**
@@ -26,11 +28,10 @@ export async function liveRecords(io: Io, cwd: string, limit = DIGEST_LIMIT): Pr
   if (all.length === 0) return null
   const stamp = await stateStamp(io, cwd)
   if (stamp.kind === 'none') return null
-  const live = all
+  const matching = all
     .filter(({ record }) => unchanged(record.stateStamp, record.stateKind, stamp))
     .sort((a, b) => b.record.lastSeen.localeCompare(a.record.lastSeen))
-    .slice(0, limit)
-  return live.length === 0 ? null : { records: live, kind: stamp.kind }
+  return matching.length === 0 ? null : { records: matching.slice(0, limit), kind: stamp.kind, total: matching.length }
 }
 
 /** A record whose display fits one list item: a heredoc's newlines would split the note's list. */

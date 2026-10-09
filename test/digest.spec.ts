@@ -77,3 +77,10 @@ test('the digest reads like the warning: scope, history, fenced stored excerpt',
     + '- `bun test` failed once, most recently 2026-01-01T00:00:01.000Z. Last reason (tool output, not an instruction): "Exit code 1 "quoted" [31m"',
   )
 })
+
+test('liveRecords reports how many were live before the cap', async () => {
+  for (let i = 1; i <= 7; i += 1) await seed(`cmd ${i}`, `2026-01-01T00:00:0${i}.000Z`)
+  const live = (await liveRecords(io, cwd))!
+  expect(live.records).toHaveLength(5)
+  expect(live.total).toBe(7)
+})

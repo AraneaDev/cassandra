@@ -1,7 +1,7 @@
 import { deleteRecord, listRecords } from '../core/record.ts'
 import type { Io } from '../core/io.ts'
 import { type Paths } from '../core/paths.ts'
-import { explainResolution, resolveHash } from './resolve.ts'
+import { explainResolution, resolveHash } from '../core/resolve.ts'
 
 /** Drop one record, or the whole project index. */
 export async function forget(io: Io, paths: Paths, target: string | null, all: boolean): Promise<number> {

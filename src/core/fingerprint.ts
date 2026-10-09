@@ -8,6 +8,9 @@ import type { ToolKind } from './types.ts'
 export function classify(toolName: string): ToolKind {
   if (typeof toolName !== 'string') return 'ignored'
   if (toolName === 'Bash') return 'bash'
+  // Cassandra's own tools answer questions about failures; tracking them would make
+  // Cassandra remember its own answers.
+  if (toolName.startsWith('mcp__cassandra__')) return 'ignored'
   if (toolName.startsWith('mcp__')) return 'mcp'
   return 'ignored'
 }

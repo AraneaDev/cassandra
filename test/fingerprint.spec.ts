@@ -79,3 +79,10 @@ test('displayFor truncates long commands for human output', async () => {
   const long = 'x'.repeat(300)
   expect(displayFor('Bash', { command: long }).length).toBeLessThanOrEqual(120)
 })
+
+test("Cassandra's own tools are never tracked", () => {
+  expect(classify('mcp__cassandra__query')).toBe('ignored')
+  expect(classify('mcp__cassandra__resolve')).toBe('ignored')
+  expect(classify('mcp__cassandra_other__x')).toBe('mcp')
+  expect(classify('mcp__srv__cassandra__query')).toBe('mcp')
+})
