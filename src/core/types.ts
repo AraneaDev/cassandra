@@ -61,3 +61,15 @@ export interface HookPayload {
   /** SubagentStart: the subagent's type; a fork inherits the transcript. */
   agent_type?: string
 }
+
+/** What changed between a failure and the success that followed, by file name. */
+export interface FixNote {
+  /** Changed paths, at most 10, sorted. */
+  files: string[]
+  /** How many further changed paths were not kept. */
+  more: number
+  /** When the note was computed, ISO. */
+  at: string
+  /** Changed files named, no visible change in the repository, or the failure HEAD is gone. */
+  kind: 'changed' | 'elsewhere' | 'rewritten'
+}
