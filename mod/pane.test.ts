@@ -100,17 +100,26 @@ test('the pane opens, draws the remembered failure, and asks before forgetting e
     expect(keys.slice(1)).toEqual(['forget', 'forget-all'])
 
     await ui.press({ key: 'forget-all' })
-    expect(await ui.find({ key: 'forget-all-confirm' })).toBeDefined()
+    expect((await ui.find({ key: 'forget-all-confirm' }))?.key).toBe('forget-all-confirm')
     await ui.press({ key: 'forget-all-cancel' })
-    expect(await ui.find({ key: 'forget-all' })).toBeDefined()
+    expect((await ui.find({ key: 'forget-all' }))?.key).toBe('forget-all')
     await ui.unmount()
   }
 
+  // Forget acts on the selected record, and the pane redraws without it.
+  const one = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  await one.press({ key: 'forget' })
+  expect(await one.findAll({ type: 'Button' })).toEqual([])
+  await one.unmount()
+
   // The confirm is the person's own gesture: it forgets everything, and the pane redraws empty.
+  await $.tool.call({ tool: 'Bash', command: 'false # cassandra pane, once more' })
+  await $.tool.call({ tool: 'Bash', command: 'false # cassandra pane, and again' })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  expect((await ui.findAll({ type: 'Button' })).filter((b) => String(b.key).startsWith('row:'))).toHaveLength(2)
   await ui.press({ key: 'forget-all' })
   await ui.press({ key: 'forget-all-confirm' })
   expect(await ui.findAll({ type: 'Button' })).toEqual([])
-  expect(await ui.find({ type: 'Text', text: /Nothing remembered in this project\./ })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /Nothing remembered/ }))?.text).toBe('Nothing remembered in this project.')
   await ui.unmount()
 })
