@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -788,11 +788,12 @@ const focus = async (element: string | undefined) => {
 const state = (key: string) => opts.state?.get(key)
 const remembered = async () => (await import('../src/core/record.ts')).listRecords(io(), await pathsFor(io(), cwd))
 
-test('/cassandra pane opens the pane focused, answers, and resets the confirmation (Review Focus 2)', async () => {
-  opts.state = new Map<string, unknown>([['confirmAll', true]])
+test('/cassandra pane opens the pane focused, answers, and resets the confirmation and the notice (Review Focus 2)', async () => {
+  opts.state = new Map<string, unknown>([['confirmAll', true], ['notice', 'Could not forget the selected record.']])
   expect(await command('pane')).toEqual({ text: 'Opened the Cassandra pane.', exitCode: 0 })
   expect(opts.opened).toEqual([{ id: 'cassandra', title: 'Cassandra', focus: true, closeOnEscape: true }])
   expect(state('confirmAll')).toBe(false)
+  expect(state('notice')).toBeNull()
 })
 
 test('/cassandra pane with no surface answers that it needs an interactive session and opens nothing', async () => {
@@ -885,17 +886,21 @@ test('two quick presses of forget forget two different records (Review Focus 5)'
   expect(state('notice')).toBeNull()
 })
 
-test('forget-all asks first, and cancel backs out', async () => {
+test('forget-all asks first, and cancel backs out; each clears an old notice', async () => {
   await seedFailure()
+  opts.state = new Map<string, unknown>([['notice', 'old failure']])
   await press('forget-all')
+  expect(state('notice')).toBeNull()
   expect(state('confirmAll')).toBe(true)
   expect((await render()).some((n) => n.props?.key === 'forget-all-confirm')).toBe(true)
+  opts.state.set('notice', 'old failure')
   await press('forget-all-cancel')
+  expect(state('notice')).toBeNull()
   expect(state('confirmAll')).toBe(false)
   expect(await remembered()).toHaveLength(1)
 })
 
-test('forget-all-confirm forgets every record and the fix notes, even with a plugin-like origin guard in place', async () => {
+test('forget-all-confirm forgets every record and the fix notes', async () => {
   await seedFailure('bun test')
   await seedFailure('npm test')
   const paths = await pathsFor(io(), cwd)
@@ -952,4 +957,43 @@ test('every status refresh bumps rev, so an open pane redraws by itself', async 
   expect(Number(state('rev'))).toBe(after + 1)
   await start()
   expect(Number(state('rev'))).toBe(after + 2)
+})
+
+test('a single forget whose command answers a non-zero code sets the notice to its text', async () => {
+  // A stored hash always forgets, so the shared command is made to refuse here.
+  const real = (await import('../src/commands/forget.ts')).forget
+  let refuse = true
+  mock.module('../src/commands/forget.ts', () => ({
+    forget: (...a: Parameters<typeof real>) => (refuse && !a[3] ? Promise.resolve({ code: 1, text: 'No record matching x.' }) : real(...a)),
+  }))
+  try {
+    await seedFailure()
+    await press('forget')
+    expect(state('notice')).toBe('No record matching x.')
+    expect(await remembered()).toHaveLength(1)
+  } finally {
+    refuse = false
+  }
+  await press('forget')
+  expect(state('notice')).toBeNull()
+  expect(await remembered()).toHaveLength(0)
+})
+
+test('a drawing that throws falls back to what lies beneath, and the hook does not reject', async () => {
+  await seedFailure()
+  const beneath = { type: 'engine', ref: 'pane' }
+  host = { ...host, ui: { ...host.ui, resolve: () => { throw new Error('no table') } } }
+  const r = await paneHook('ui.render')(host, { ...PANE, surface: 'terminal', props: { bodyColumns: 80 } }, async () => beneath)
+  expect(r).toBe(beneath)
+})
+
+test('a press or a focus move that fails beneath never rejects', async () => {
+  await seedFailure()
+  const boom = async () => { throw new Error('beneath') }
+  const pressed = await paneHook('ui.press')(host, { ...PANE, plugin: 'cassandra', element: 'forget-all', surface: 'terminal' }, boom)
+  expect(pressed).toEqual({ element: 'forget-all' })
+  expect(state('confirmAll')).toBe(true)
+  const keys = await rowKeys()
+  const moved = await paneHook('ui.focus')(host, { ...PANE, element: keys[0], origin: { kind: 'person' } }, boom)
+  expect(moved).toEqual({ deny: 'cassandra: the focus could not move.' })
 })

@@ -321,19 +321,27 @@ async function openPane($: ModEngine): Promise<{ text: string; exitCode: number 
   return { text: PANE_OPENED, exitCode: 0 }
 }
 
-/** Draw the pane from the store and the view. Never throws: a failure draws the error line. */
-async function renderPane($: ModEngine, e: PaneRenderEvent, wrapIo: (io: Io) => Io): Promise<unknown> {
-  const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
-  const rows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24
-  let model: PaneModel
+/**
+ * Draw the pane from the store and the view. A store or view that cannot be read draws
+ * the error line; a drawing that fails falls back to what lies beneath. Never throws
+ * of its own.
+ */
+async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRenderEvent, unknown>, wrapIo: (io: Io) => Io): Promise<unknown> {
   try {
-    // Read so that a bump of the revision draws the pane again.
-    await $.state.get(REV)
-    model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), Math.max(1, rows - PANE_CHROME_ROWS))
+    const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
+    const rows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24
+    let model: PaneModel
+    try {
+      // Read so that a bump of the revision draws the pane again.
+      await $.state.get(REV)
+      model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), Math.max(1, rows - PANE_CHROME_ROWS))
+    } catch {
+      model = unreadableModel()
+    }
+    return drawPane($.ui.resolve(e), model, columns)
   } catch {
-    model = unreadableModel()
+    return next(e)
   }
-  return drawPane($.ui.resolve(e), model, columns)
 }
 
 /** Select the row a key names, when it is a row still remembered. Never throws. */
@@ -378,10 +386,13 @@ async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io):
           return target === null ? null : forget(io, await pathsFor(io, cwd), target, false)
         }, 'Could not forget the selected record.')
         return
+      // An old failure line must not sit beside the confirm row, nor outlive the cancel.
       case KEY_FORGET_ALL:
+        await $.state.set(NOTICE, null)
         await $.state.set(CONFIRM_ALL, true)
         return
       case KEY_CANCEL:
+        await $.state.set(NOTICE, null)
         await $.state.set(CONFIRM_ALL, false)
         return
       case KEY_CONFIRM:
@@ -390,7 +401,7 @@ async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io):
         await paneForget($, io, async () => forget(io, await pathsFor(io, cwd), null, true), 'Could not forget every record.')
         return
       default:
-        await selectRow($, wrapIo, e.element)
+        await selectRow($, wrapIo, e.element).catch(() => undefined)
     }
   } catch {
     // The press changes nothing.
@@ -603,7 +614,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     return answerCommand($, io, e.args, e.origin)
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => renderPane($, e, wrapIo))
+  on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => renderPane($, e, next, wrapIo))
 
   // Presses run one at a time, so a second Forget reads the selection the first one left.
   let pressing: Promise<void> = Promise.resolve()
@@ -611,12 +622,14 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     const done = pressing.then(() => onPanePress($, e, wrapIo))
     pressing = done
     await done
-    return next(e)
+    // A press that fails beneath still counts as taken here: the action already ran.
+    return next(e).catch(() => ({ element: e.element }))
   })
 
   on('ui.focus', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
-    await selectRow($, wrapIo, e.element)
-    return next(e)
+    await selectRow($, wrapIo, e.element).catch(() => undefined)
+    // A move that fails beneath leaves the ring where it was.
+    return next(e).catch(() => ({ deny: 'cassandra: the focus could not move.' }))
   })
 
   on('tool.call', { tool: new RegExp(`^${TOOL_PREFIX}(?:${QUERY_TOOL.name}|${RESOLVE_TOOL.name})$`) }, async ($, e) => answerTool($, wrapIo, e))
