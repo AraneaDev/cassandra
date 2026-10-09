@@ -243,3 +243,320 @@ test('when the session claim cannot be written the mod stands aside, so the bina
   const hash = (await fingerprint(io(), 'Bash', { command: 'bun test' }))!
   expect(await readRecord(io(), await pathsFor(io(), cwd), hash)).toBeNull()
 })
+
+type Spawn = ($: ModEngine, e: { subagentType: string }, n: () => Promise<Record<string, unknown>>) => Promise<unknown>
+type Compact = ($: ModEngine, e: { agentId?: string; trigger?: string }, n: () => Promise<unknown>) => Promise<unknown>
+type Row = { door: string; origin: Record<string, unknown>; agentId?: string; message: unknown; uuid: string }
+type Append = ($: ModEngine, e: Row, n: () => Promise<unknown>) => Promise<unknown>
+
+async function seedFailure(command = 'bun test'): Promise<void> {
+  await call(command, failed())
+}
+
+const spawn = (type: string, answer: Record<string, unknown>) =>
+  (hooks.get('agent.spawn') as unknown as Spawn)(host, { subagentType: type }, async () => answer)
+const compact = (e: { agentId?: string; trigger?: string }, answer: unknown) =>
+  (hooks.get('session.compact') as unknown as Compact)(host, e, async () => answer)
+
+/** One row of a loop reaching the transcript, as the engine stores it. */
+async function row(agentId?: string, door = 'response', origin: Record<string, unknown> = { kind: 'model', model: 'm' }) {
+  const stored = { uuid: 'u1' }
+  const r = await (hooks.get('session.append') as unknown as Append)(
+    host, { door, origin, agentId, message: { type: 'assistant', content: [] }, uuid: 'u1' }, async () => stored,
+  )
+  expect(r).toBe(stored)
+}
+
+const briefed = async () => (await readStats(io(), await pathsFor(io(), cwd))).filter((s) => s.kind === 'briefed')
+
+test("a new subagent's first tool result brings the live failures into its own conversation; the spawn is untouched", async () => {
+  await seedFailure()
+  const result = { model: 'm', agentId: 'sub-1' }
+  expect(await spawn('general-purpose', result)).toBe(result)
+  expect(opts.appended ?? []).toEqual([])
+  await row('sub-1', 'tool-result')
+  expect(opts.appended).toEqual([{ agentId: 'sub-1', text: expect.stringContaining('`bun test` failed once') }])
+  expect((await briefed()).at(-1)).toMatchObject({ kind: 'briefed', boundary: 'subagent' })
+  await row('sub-1', 'tool-result')
+  expect(opts.appended).toHaveLength(1)
+})
+
+test("a main-loop row does not deliver a subagent's note", async () => {
+  await seedFailure()
+  await spawn('general-purpose', { agentId: 'sub-1' })
+  await row(undefined, 'tool-result')
+  await row('sub-2', 'tool-result')
+  expect(opts.appended ?? []).toEqual([])
+})
+
+test('a fork, a refused spawn and a spawn with no id owe nothing', async () => {
+  await seedFailure()
+  await spawn('fork', { agentId: 'f-1' })
+  await spawn('general-purpose', { deny: 'no', agentId: 'd-1' })
+  await spawn('general-purpose', { model: 'm' })
+  await row('f-1', 'tool-result')
+  await row('d-1', 'tool-result')
+  await row(undefined, 'tool-result')
+  expect(opts.appended ?? []).toEqual([])
+})
+
+test('no live failures means no note and no stat', async () => {
+  await spawn('general-purpose', { agentId: 'sub-1' })
+  await row('sub-1', 'tool-result')
+  await seedFailure()
+  writeFileSync(join(cwd, 'b.txt'), 'changed')
+  await spawn('general-purpose', { agentId: 'sub-2' })
+  await row('sub-2', 'tool-result')
+  expect(opts.appended ?? []).toEqual([])
+  expect(await briefed()).toEqual([])
+})
+
+test('a refused append leaves no stat and is retried on the next row of that loop', async () => {
+  await seedFailure()
+  await spawn('general-purpose', { agentId: 'sub-1' })
+  opts.appendRejects = true
+  await row('sub-1', 'tool-result')
+  expect(await briefed()).toEqual([])
+  opts.appendRejects = false
+  await row('sub-1', 'tool-result')
+  expect(opts.appended).toEqual([{ agentId: 'sub-1', text: expect.stringContaining('cassandra:') }])
+  expect(await briefed()).toHaveLength(1)
+})
+
+test('after five refused appends the note is dropped', async () => {
+  await seedFailure()
+  await spawn('general-purpose', { agentId: 'sub-1' })
+  opts.appendRejects = true
+  for (let i = 0; i < 5; i++) await row('sub-1', 'tool-result')
+  opts.appendRejects = false
+  await row('sub-1', 'tool-result')
+  expect(opts.appended ?? []).toEqual([])
+  expect(await briefed()).toEqual([])
+})
+
+test('a compaction is briefed at the first row after its boundary rows; a skipped one owes nothing', async () => {
+  await seedFailure()
+  await compact({}, { skip: 'vetoed' })
+  await row()
+  expect(opts.appended ?? []).toEqual([])
+  await compact({}, { messages: [] })
+  await row(undefined, 'compaction', { kind: 'engine' })
+  expect(opts.appended ?? []).toEqual([])
+  await row(undefined, 'notice', { kind: 'engine' })
+  expect(opts.appended).toEqual([{ agentId: undefined, text: expect.stringContaining('`bun test` failed once') }])
+  expect((await briefed()).at(-1)).toMatchObject({ kind: 'briefed', boundary: 'compaction' })
+})
+
+test("a subagent's compaction is briefed in that subagent's conversation, and the main count is not bumped", async () => {
+  await seedFailure()
+  await compact({ agentId: 'sub-9' }, { messages: [] })
+  await row()
+  expect(opts.appended ?? []).toEqual([])
+  await row('sub-9')
+  expect(opts.appended).toEqual([{ agentId: 'sub-9', text: expect.stringContaining('cassandra:') }])
+  const { compactionCount } = await import('../src/core/session.ts')
+  expect(await compactionCount(io(), await pathsFor(io(), cwd), 's1')).toBe(0)
+})
+
+test("cassandra's own note row does not deliver", async () => {
+  await seedFailure()
+  await compact({}, { messages: [] })
+  await row(undefined, 'note', { kind: 'plugin', name: 'cassandra' })
+  expect(opts.appended ?? []).toEqual([])
+  await row(undefined, 'note', { kind: 'plugin', name: 'other' })
+  expect(opts.appended).toHaveLength(1)
+})
+
+test('session.end clears the owed notes', async () => {
+  await seedFailure()
+  await spawn('general-purpose', { agentId: 'sub-1' })
+  await compact({}, { messages: [] })
+  const end = hooks.get('session.end') as unknown as ($: ModEngine, e: { sessionId: string }, n: () => Promise<unknown>) => Promise<unknown>
+  await end(host, { sessionId: 's1' }, async () => ({}))
+  await row('sub-1', 'tool-result')
+  await row()
+  expect(opts.appended ?? []).toEqual([])
+})
+
+test('a core error during the hand-over is swallowed and the row passes through', async () => {
+  await seedFailure()
+  await spawn('general-purpose', { agentId: 'sub-1' })
+  wrap = () => { throw new Error('boom') }
+  await row('sub-1', 'tool-result')
+  expect(opts.appended ?? []).toEqual([])
+})
+
+test("a subagent's opening rows and its responses neither deliver its note nor cost an attempt; its first tool result does", async () => {
+  await seedFailure()
+  await spawn('general-purpose', { agentId: 'sub-1' })
+  opts.appendRejects = true
+  for (let i = 0; i < 6; i++) {
+    await row('sub-1', 'prompt', { kind: 'sdk' })
+    await row('sub-1', 'attachment', { kind: 'engine' })
+  }
+  opts.appendRejects = false
+  await row('sub-1', 'prompt', { kind: 'sdk' })
+  await row('sub-1', 'attachment', { kind: 'engine' })
+  await row('sub-1', 'response')
+  await row('sub-1', 'response')
+  expect(opts.appended ?? []).toEqual([])
+  expect(await briefed()).toEqual([])
+  await row('sub-1', 'tool-result', { kind: 'tool' })
+  expect(opts.appended).toEqual([{ agentId: 'sub-1', text: expect.stringContaining('cassandra:') }])
+})
+
+test('a one-turn subagent that never uses a tool gets no note and leaves no stat', async () => {
+  await seedFailure()
+  await spawn('general-purpose', { agentId: 'sub-1' })
+  await row('sub-1', 'prompt', { kind: 'sdk' })
+  await row('sub-1', 'response')
+  expect(opts.appended ?? []).toEqual([])
+  expect(await briefed()).toEqual([])
+})
+
+const compactionCountNow = async () => {
+  const { compactionCount } = await import('../src/core/session.ts')
+  return compactionCount(io(), await pathsFor(io(), cwd), 's1')
+}
+
+const endSession = (sessionId: string) =>
+  (hooks.get('session.end') as unknown as ($: ModEngine, e: { sessionId: string }, n: () => Promise<unknown>) => Promise<unknown>)(host, { sessionId }, async () => ({}))
+
+test('a precompute compaction owes nothing and is not counted; its result passes through unchanged', async () => {
+  await seedFailure()
+  const answer = { messages: [] }
+  expect(await compact({ trigger: 'precompute' }, answer)).toBe(answer)
+  await row(undefined, 'notice', { kind: 'engine' })
+  await row()
+  expect(opts.appended ?? []).toEqual([])
+  expect(await compactionCountNow()).toBe(0)
+  expect(await briefed()).toEqual([])
+})
+
+test('after /clear a spawn claims the new session before the classic SubagentStart runs beneath it', async () => {
+  await seedFailure()
+  await endSession('s1')
+  opts.sessionId = 's2'
+  const { handle } = await import('../src/hook.ts')
+  const marker = join(tmp, 'home', 'sessions', 's2.mod')
+  const subagentStart = { hook_event_name: 'SubagentStart', session_id: 's2', cwd, agent_id: 'sub-1', agent_type: 'general-purpose' }
+  process.env.CASSANDRA_HOME = join(tmp, 'home')
+  try {
+    let markerSeen = false
+    let binarySaid: string | null = 'not called'
+    let nextCalls = 0
+    const result = { agentId: 'sub-1' }
+    const r = await (hooks.get('agent.spawn') as unknown as Spawn)(host, { subagentType: 'general-purpose' }, async () => {
+      nextCalls += 1
+      markerSeen = existsSync(marker)
+      binarySaid = await handle(subagentStart)
+      return result
+    })
+    expect(r).toBe(result)
+    expect(nextCalls).toBe(1)
+    expect(markerSeen).toBe(true)
+    expect(binarySaid).toBeNull()
+  } finally {
+    delete process.env.CASSANDRA_HOME
+  }
+  await row('sub-1', 'tool-result')
+  expect(opts.appended).toEqual([{ agentId: 'sub-1', text: expect.stringContaining('cassandra:') }])
+  expect(await briefed()).toHaveLength(1)
+})
+
+test('after /clear a compaction claims the new session before it runs', async () => {
+  await seedFailure()
+  await endSession('s1')
+  opts.sessionId = 's2'
+  let markerSeen = false
+  await (hooks.get('session.compact') as unknown as Compact)(host, {}, async () => {
+    markerSeen = existsSync(join(tmp, 'home', 'sessions', 's2.mod'))
+    return { messages: [] }
+  })
+  expect(markerSeen).toBe(true)
+})
+
+test('when the claim cannot be written a spawn and a compaction owe nothing, count nothing, and still run once', async () => {
+  await seedFailure()
+  await endSession('s1')
+  wrap = (i) => ({ ...i, writeText: (p, t) => (p.endsWith('.mod') ? Promise.reject(new Error('read-only')) : i.writeText(p, t)) })
+  let nextCalls = 0
+  const spawned = { agentId: 'sub-1' }
+  expect(await (hooks.get('agent.spawn') as unknown as Spawn)(host, { subagentType: 'general-purpose' }, async () => { nextCalls += 1; return spawned })).toBe(spawned)
+  const compacted = { messages: [] }
+  expect(await (hooks.get('session.compact') as unknown as Compact)(host, {}, async () => { nextCalls += 1; return compacted })).toBe(compacted)
+  expect(nextCalls).toBe(2)
+  wrap = (i) => i
+  await row('sub-1', 'tool-result')
+  await row(undefined, 'notice', { kind: 'engine' })
+  expect(opts.appended ?? []).toEqual([])
+  expect(await compactionCountNow()).toBe(0)
+})
+
+test('a claim that throws still runs the spawn and the compaction exactly once', async () => {
+  wrap = () => { throw new Error('boom') }
+  let nextCalls = 0
+  const spawned = { agentId: 'sub-1' }
+  expect(await (hooks.get('agent.spawn') as unknown as Spawn)(host, { subagentType: 'general-purpose' }, async () => { nextCalls += 1; return spawned })).toBe(spawned)
+  const compacted = { messages: [] }
+  expect(await (hooks.get('session.compact') as unknown as Compact)(host, {}, async () => { nextCalls += 1; return compacted })).toBe(compacted)
+  expect(nextCalls).toBe(2)
+})
+
+test('an append a plugin above refuses is dropped: no stat and no retry', async () => {
+  await seedFailure()
+  await spawn('general-purpose', { agentId: 'sub-1' })
+  opts.appendDenies = 'policy'
+  await row('sub-1', 'tool-result')
+  expect(opts.appended ?? []).toEqual([])
+  expect(await briefed()).toEqual([])
+  opts.appendDenies = undefined
+  await row('sub-1', 'tool-result')
+  expect(opts.appended ?? []).toEqual([])
+  expect(await briefed()).toEqual([])
+})
+
+test("a subagent's compaction note is delivered on that subagent's next non-response row", async () => {
+  await seedFailure()
+  await compact({ agentId: 'sub-9' }, { messages: [] })
+  await row('sub-9', 'compaction', { kind: 'engine' })
+  expect(opts.appended ?? []).toEqual([])
+  await row('sub-9', 'attachment', { kind: 'engine' })
+  expect(opts.appended).toEqual([{ agentId: 'sub-9', text: expect.stringContaining('cassandra:') }])
+  expect((await briefed()).at(-1)).toMatchObject({ kind: 'briefed', boundary: 'compaction' })
+})
+
+test('a refused compaction append is re-owed and delivered at the next row', async () => {
+  await seedFailure()
+  await compact({}, { messages: [] })
+  opts.appendRejects = true
+  await row(undefined, 'notice', { kind: 'engine' })
+  expect(await briefed()).toEqual([])
+  opts.appendRejects = false
+  await row(undefined, 'notice', { kind: 'engine' })
+  expect(opts.appended).toEqual([{ agentId: undefined, text: expect.stringContaining('cassandra:') }])
+  expect((await briefed()).at(-1)).toMatchObject({ kind: 'briefed', boundary: 'compaction' })
+})
+
+test('a refused append does not overwrite a newer note owed to the same loop meanwhile', async () => {
+  await seedFailure()
+  await spawn('general-purpose', { agentId: 'sub-1' })
+  const plain = host
+  host = {
+    ...plain,
+    session: {
+      ...plain.session,
+      append: async () => {
+        // The same loop compacts while the append is in flight, then the append is refused.
+        await (hooks.get('session.compact') as unknown as Compact)(plain, { agentId: 'sub-1' }, async () => ({ messages: [] }))
+        throw new Error('no running loop')
+      },
+    },
+  }
+  await row('sub-1', 'tool-result')
+  host = plain
+  // The newer compaction entry stands, so a row that is not a tool result delivers it.
+  await row('sub-1', 'attachment', { kind: 'engine' })
+  expect(opts.appended).toEqual([{ agentId: 'sub-1', text: expect.stringContaining('cassandra:') }])
+  expect((await briefed()).at(-1)).toMatchObject({ kind: 'briefed', boundary: 'compaction' })
+})

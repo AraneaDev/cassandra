@@ -24,8 +24,9 @@
 > happened, and it only ever advises. It cannot block a call, deny one, or rewrite one.
 
 **TL;DR:** Cassandra remembers failed `Bash` and `mcp__*` calls and warns before an agent
-repeats one without a project change. It hooks the tool-call lifecycle, fingerprints structured
-call data, and keeps one record per distinct failure.
+repeats one without a project change. When a subagent starts or a conversation compacts, it
+also hands over one note listing the project's live dead ends. It hooks the tool-call
+lifecycle, fingerprints structured call data, and keeps one record per distinct failure.
 
 Inside one intact context window an agent can usually see the failure itself, a few
 thousand tokens back in its own transcript, and correct course without help. Cassandra
@@ -53,6 +54,12 @@ Three boundaries, and they are the whole reason this exists:
 Anything Cassandra says inside an intact context window is close to redundant, since the
 model can usually already see the failure a few messages back. It is built to stay quiet
 there, not to narrate what you can already see.
+
+At two of those boundaries, a subagent starting and a conversation being compacted,
+Cassandra also hands over one note listing the project's live dead ends: at most five,
+only those whose workspace stamp still matches, worded like the per-call warning. A fork
+subagent gets no note, since it inherits the transcript. Nothing is said at a plain new
+session or after a `/clear`.
 
 ## Scope: what it watches
 
@@ -95,7 +102,7 @@ first use instead.
 
 ## Is it working? `cassandra stats`
 
-Two numbers matter. The false-positive rate is the share of resolved warnings where the
+Two numbers matter, plus a third block for briefings. The false-positive rate is the share of resolved warnings where the
 warned call went on to succeed anyway, meaning the freshness probe missed a real change.
 The `same_context` share is the share of warnings where nothing crossed a boundary at
 all, so the model could plausibly have already seen the failure in its own transcript.
@@ -103,6 +110,11 @@ all, so the model could plausibly have already seen the failure in its own trans
 A high false-positive rate means the freshness probe needs work. A high `same_context`
 share is not a tuning problem. It means Cassandra is mostly telling the model things it
 could already see, and the signal to act on is to uninstall it, not to adjust it.
+
+The briefed block counts the briefings handed over, by boundary (subagent or compaction),
+and the "repeated after briefing" share: briefed hashes that were then retried across a
+boundary anyway. A high share means notes are handed over but not heeded. Like a high
+`same_context` share, that is a reason to doubt the feature, not to tune it.
 
 ## How it decides whether to warn
 
@@ -113,6 +125,9 @@ On `PreToolUse`:
 2. On a hit, run the freshness probe. If the workspace has moved since the failure, the
    retry is legitimate and Cassandra stays silent.
 3. If the workspace is unchanged, it emits one line of `additionalContext` and exits.
+
+A briefing uses the same rule: a record goes into the note only if the workspace is
+provably unchanged since it failed.
 
 ## The freshness probe
 
@@ -176,10 +191,14 @@ measurable, and that is the trade being made.
 
 ## Two front ends
 
-- The mod (`mod/`) runs inside Claude Code as one `tool.call` hook. It sees the call and
-  its outcome together and attaches the warning as the tool result's `context`.
+- The mod (`mod/`) runs inside Claude Code and hooks `tool.call`, `agent.spawn`,
+  `session.compact` and `session.append`. Its `tool.call` hook sees the call and its
+  outcome together and attaches the warning as the tool result's `context`. A spawn or a
+  compaction owes the loop a note, which the `session.append` hook hands over at that
+  loop's next qualifying row.
 - The binary (`src/hook.ts`) is the classic `PreToolUse`, `PostToolUse*`,
-  `PermissionDenied` and `PostCompact` path, unchanged in behaviour.
+  `PermissionDenied` and `PostCompact` path, plus `SubagentStart` and
+  `SessionStart` (`source: compact`) for the briefings.
 - Both share `src/core/` and one data directory. Where the mod loads, it writes
   `sessions/<id>.mod` under the data directory and the binary stands down for that
   session. The session-start script leaves a pointer to the data directory in
@@ -189,6 +208,18 @@ measurable, and that is the trade being made.
 
 Known gaps and differences:
 
+- Mod timing: the mod hands a new subagent its note after the subagent's first tool
+  result, when its loop is running and is sure to make another request. A subagent that
+  never uses a tool gets no note. If that subagent's very first action repeats a dead end,
+  the existing per-call warning still catches it.
+- Mod compaction: the mod's compaction note is added just after the compaction, on the
+  conversation's next row, never before the compaction boundary, where it would be
+  summarised away.
+- Binary briefings: the binary uses the classic `SubagentStart` and `SessionStart`
+  (`source: compact`) context channels. Both were verified to reach the model, but the
+  binary cannot confirm delivery, so it records the `briefed` stat line when it prints the
+  note.
+- Fork subagents get no note on either front end.
 - On a denied repeat, the mod records the warning but cannot show it to the model, since a
   denied result carries no context. The binary shows it.
 - A call refused by a permission rule, or one whose approval was not granted, is not
@@ -228,7 +259,8 @@ directory. A `/cassandra` slash command runs `list` inside a session, and switch
 ## What Cassandra does not do
 
 - It never blocks, denies, or rewrites a call. The only thing it can add is one line of
-  `additionalContext`.
+  `additionalContext`. A briefing is a note added to a conversation, not a change to the
+  call or compaction that triggered it.
 - It never reads your prompts or the model's prose. The match is on structured
   `tool_name` and `tool_input` JSON.
 - It does keep one piece of free text: a 240-character excerpt of the failing tool's own

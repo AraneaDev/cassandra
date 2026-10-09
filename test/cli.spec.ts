@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { run } from '../src/cli'
 import { pathsFor } from '../src/core/paths.ts'
@@ -195,4 +195,38 @@ test('export without --cwd emits parseable JSON, not usage', async () => {
   const text = out.join('\n')
   expect(text).not.toContain('Usage')
   expect(() => JSON.parse(text)).not.toThrow()
+})
+
+test('stats reports briefings and how many briefed calls were repeated anyway', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  mkdirSync(dirname(paths.stats), { recursive: true })
+  const line = (t: string, e: object) => appendFileSync(paths.stats, `${JSON.stringify({ ...e, t })}\n`)
+  line('2026-01-01T00:00:01Z', { kind: 'warned', hash: 'aa11bb22cc33dd44', boundary: 'same_context' })
+  line('2026-01-01T00:00:02Z', { kind: 'briefed', boundary: 'subagent', hashes: ['aa11bb22cc33dd44', 'bb11bb22cc33dd44'] })
+  line('2026-01-01T00:00:03Z', { kind: 'warned', hash: 'aa11bb22cc33dd44', boundary: 'subagent' })
+  line('2026-01-01T00:00:04Z', { kind: 'briefed', boundary: 'compaction', hashes: ['cc11bb22cc33dd44'] })
+  expect(await run(['stats', '--cwd', cwd])).toBe(0)
+  const text = out.join('\n')
+  expect(text).toContain('2 briefings sent')
+  expect(text).toMatch(/subagent\s+1/)
+  expect(text).toMatch(/compaction\s+1/)
+  expect(text).toContain('repeated after briefing  1 of 3')
+})
+
+test('stats with only briefings still reports them', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  await appendStat(nodeIo, paths, { kind: 'briefed', boundary: 'subagent', hashes: ['aa11bb22cc33dd44'] })
+  expect(await run(['stats', '--cwd', cwd])).toBe(0)
+  expect(out.join('\n')).toContain('1 briefing sent')
+  expect(out.join('\n')).toStartWith('1 briefing sent')
+})
+
+test('a call warned before its briefing and never after is not counted as repeated', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  mkdirSync(dirname(paths.stats), { recursive: true })
+  const line = (t: string, e: object) => appendFileSync(paths.stats, `${JSON.stringify({ ...e, t })}\n`)
+  line('2026-01-01T00:00:01Z', { kind: 'warned', hash: 'aa11bb22cc33dd44', boundary: 'subagent' })
+  line('2026-01-01T00:00:02Z', { kind: 'briefed', boundary: 'subagent', hashes: ['aa11bb22cc33dd44'] })
+  expect(await run(['stats', '--cwd', cwd])).toBe(0)
+  expect(out.join('\n')).toContain('repeated after briefing  0 of 1')
 })

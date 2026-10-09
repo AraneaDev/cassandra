@@ -50,4 +50,8 @@ export interface HookPayload {
   denial_reason?: string
   reason?: string
   agent_id?: string
+  /** SessionStart: why the session (re)started; `compact` after a compaction. */
+  source?: string
+  /** SubagentStart: the subagent's type; a fork inherits the transcript. */
+  agent_type?: string
 }

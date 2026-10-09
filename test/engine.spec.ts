@@ -90,3 +90,16 @@ test('control characters in the excerpt are neutralised and the excerpt is cappe
   expect(quoted.length).toBe(240)
   expect(quoted.endsWith('...')).toBe(true)
 })
+
+test('a briefing lists the live failures and writes nothing until it is recorded', async () => {
+  const { buildBriefing, recordBriefing } = await import('../src/core/engine.ts')
+  expect(await buildBriefing(io, cwd)).toBeNull()
+  await settle(io, call('bun test'), { kind: 'failure', reason: 'x' }, null)
+  const b = (await buildBriefing(io, cwd))!
+  expect(b.text).toStartWith('cassandra: these calls failed earlier in this project')
+  expect(b.hashes).toHaveLength(1)
+  expect(await readStats(io, await pathsFor(io, cwd))).toEqual([])
+  await recordBriefing(io, cwd, 'subagent', b)
+  const stats = await readStats(io, await pathsFor(io, cwd))
+  expect(stats).toEqual([{ kind: 'briefed', boundary: 'subagent', hashes: b.hashes, t: io.clock.now }])
+})

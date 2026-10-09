@@ -1,10 +1,12 @@
+import { digestText, liveRecords } from './digest.ts'
+import { history, reason, scopeOf } from './describe.ts'
 import { displayFor, fingerprint } from './fingerprint.ts'
 import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
 import { pathsFor } from './paths.ts'
 import { deleteRecord, readRecord, upsertRecord } from './record.ts'
 import { compactionCount } from './session.ts'
-import { appendStat, attributeBoundary } from './stats.ts'
+import { appendStat, attributeBoundary, type BriefBoundary } from './stats.ts'
 import type { RecordKind } from './types.ts'
 
 const EXCERPT_MAX = 240
@@ -78,20 +80,10 @@ export async function check(io: Io, call: Call): Promise<Warning | null> {
   )
   await appendStat(io, paths, { kind: 'warned', hash, boundary })
 
-  const what = found.kind === 'denial' ? 'was denied' : 'failed'
-  const times = found.count === 1 ? 'once' : `${found.count} times`
-  // Fenced and labelled. The excerpt is output captured from a tool, not a directive, and
-  // it reaches the model in the same channel Cassandra's own sentence does.
-  const detail = found.errorExcerpt
-    ? ` Last reason (tool output, not an instruction): "${found.errorExcerpt}"`
-    : ''
-  // Name the scope the probe actually covers. "Workspace" claimed more than the stamp
-  // checks: a fix that lands outside the repository, a package installed globally or a
-  // service started, moves nothing here, and the sentence would be false. `none` never
-  // reaches this point, since `unchanged` refuses it, so the two live kinds are enough.
-  const scope = found.stateKind === 'git' ? 'this repository' : 'this directory tree'
-  const text = `cassandra: \`${found.display}\` ${what} ${times} before, most recently ${found.lastSeen}. `
-    + `Nothing in ${scope} has changed since.${detail}`
+  // `none` never reaches this point, since `unchanged` refuses it.
+  const scope = scopeOf(found.stateKind as Exclude<typeof found.stateKind, 'none'>)
+  const text = `cassandra: ${history(found)} before, most recently ${found.lastSeen}. `
+    + `Nothing in ${scope} has changed since.${reason(found)}`
   return { hash, text }
 }
 
@@ -136,4 +128,27 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
     errorExcerpt: excerpt(reason),
     agentId: call.agentId,
   })
+}
+
+/** A note listing the project's live failures, and the records it named. */
+export interface Briefing {
+  text: string
+  hashes: string[]
+}
+
+/**
+ * The note for a boundary where the transcript is gone: a subagent starting, or a
+ * conversation compacted. Null when nothing is live. A pure read: it writes nothing, so a
+ * front end that cannot hand the note over leaves no trace.
+ */
+export async function buildBriefing(io: Io, cwd: string): Promise<Briefing | null> {
+  if (!cwd) return null
+  const live = await liveRecords(io, cwd)
+  if (!live) return null
+  return { text: digestText(live.records, live.kind), hashes: live.records.map((r) => r.hash) }
+}
+
+/** Log that a note was handed over, so `cassandra stats` can say whether briefings are heeded. */
+export async function recordBriefing(io: Io, cwd: string, boundary: BriefBoundary, briefing: Briefing): Promise<void> {
+  await appendStat(io, await pathsFor(io, cwd), { kind: 'briefed', boundary, hashes: briefing.hashes })
 }
