@@ -1,9 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreExportsUsedInFile": true,
   "entry": [
     "src/hook.ts",
     "scripts/*.ts",
-    "test/**/*.test.ts"
+    "test/**/*.test.ts",
+    "test/support/**/*.ts"
   ],
   "project": [
     "src/**/*.ts",
