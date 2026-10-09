@@ -148,6 +148,20 @@ was a `node_modules` directory. The full numbers are in
 
 ## Overhead
 
+As a mod, Cassandra's own work costs p50 0.15ms on a miss and 22.77ms on a hit (p95
+0.28ms and 24.77ms), measured with `bun run bench:mod` over a node-backed stand-in for
+the engine's `$`, 500 calls each. The engine's own `$` dispatch is extra and is not
+included in these numbers, so treat them as a floor. There is no process spawn per call
+for Cassandra itself. A hit is expensive because the freshness probe runs `git` to see
+whether the tree changed; the stand-in spawns it the way the engine would. For comparison,
+timed on the same machine with `hyperfine` (50 runs, warm, `-N`) against a temporary data
+directory and an unchanged repo, the binary's hit path is p50 48.20ms (p95 54.41ms) and
+its miss path p50 31.47ms (p95 33.75ms). Those are higher than the 12ms and 17ms figures
+below, which were taken on a different day and machine state; the mod's hit path is the
+faster of the two here, but the two sets of figures should not be mixed with the older ones.
+
+The figures below are for the binary.
+
 Roughly 12ms per hook invocation on an idle machine, 17ms under load, against a 20ms
 design budget. That cost is paid on every `Bash` and `mcp__*` call, whether or not
 Cassandra ever has anything to say.
