@@ -16,6 +16,7 @@ type Step =
   | { compact: true }
   | { spawn: string }
   | { touch: string }
+  | { remove: string }
 
 const SCRIPT: Step[] = [
   { call: 'bun test', ends: 'fail' },
@@ -33,6 +34,12 @@ const SCRIPT: Step[] = [
   { spawn: 'general-purpose' },
   { spawn: 'fork' },
   { compact: true },
+  { call: 'lint check', ends: 'fail' },
+  { touch: 'fix.txt' },
+  { call: 'lint check', ends: 'ok' },
+  { remove: 'fix.txt' },
+  { call: 'lint check', ends: 'fail' },
+  { call: 'lint check', ends: 'fail' },
 ]
 
 const scrub = (s: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.replace(/"stateStamp":"[0-9a-f]{16}"/g, '"stateStamp":"S"')]))
@@ -97,6 +104,7 @@ async function runBinary(cwd: string): Promise<string[]> {
   let n = 0
   for (const step of SCRIPT) {
     if ('touch' in step) { writeFileSync(join(cwd, step.touch), 'x'); continue }
+    if ('remove' in step) { rmSync(join(cwd, step.remove), { force: true }); continue }
     if ('compact' in step) {
       await handle({ hook_event_name: 'PostCompact', session_id: 's1', cwd }, io)
       const note = await handle({ hook_event_name: 'SessionStart', session_id: 's1', cwd, source: 'compact' }, io)
@@ -128,6 +136,7 @@ async function runMod(cwd: string): Promise<string[]> {
   let n = 0
   for (const step of SCRIPT) {
     if ('touch' in step) { writeFileSync(join(cwd, step.touch), 'x'); continue }
+    if ('remove' in step) { rmSync(join(cwd, step.remove), { force: true }); continue }
     if ('compact' in step || 'spawn' in step) {
       const before = opts.appended?.length ?? 0
       const flush = (row: Record<string, unknown>) => hooks.get('session.append')!(host, { ...row, uuid: `u-${(n += 1)}` }, async () => ({}))
@@ -162,6 +171,8 @@ test('the binary and the mod say the same things and leave the same store (mtime
   expect(scrub(snapshot(join(tmp, 'home-mod')))).toEqual(scrub(snapshot(join(tmp, 'home-binary'))))
   expectNonTrivial(saidBinary, snapshot(join(tmp, 'home-binary')))
   expectNonTrivial(saidMod, snapshot(join(tmp, 'home-mod')))
+  for (const said of [saidBinary, saidMod]) expect(said.some((l) => l.includes('Last time this started working'))).toBe(false)
+  for (const home of ['home-binary', 'home-mod']) expect(Object.keys(snapshot(join(tmp, home))).some((k) => k.startsWith('P/fixes/'))).toBe(false)
 })
 
 test('the same holds on the git path', async () => {
@@ -178,6 +189,9 @@ test('the same holds on the git path', async () => {
   const saidMod = await runMod(init(repo('g2')))
   expect(saidMod).toEqual(saidBinary)
   expect(scrub(snapshot(join(tmp, 'home-mod')))).toEqual(scrub(snapshot(join(tmp, 'home-binary'))))
-  expectNonTrivial(saidBinary, snapshot(join(tmp, 'home-binary')))
-  expectNonTrivial(saidMod, snapshot(join(tmp, 'home-mod')))
+  for (const [said, home] of [[saidBinary, 'home-binary'], [saidMod, 'home-mod']] as const) {
+    expectNonTrivial(said, snapshot(join(tmp, home)))
+    expect(said.some((l) => l.includes('Last time this started working after'))).toBe(true)
+    expect(Object.keys(snapshot(join(tmp, home))).some((k) => k.startsWith('P/fixes/'))).toBe(true)
+  }
 })
