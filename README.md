@@ -24,8 +24,9 @@
 > happened, and it only ever advises. It cannot block a call, deny one, or rewrite one.
 
 **TL;DR:** Cassandra remembers failed `Bash` and `mcp__*` calls and warns before an agent
-repeats one without a project change. It hooks the tool-call lifecycle, fingerprints structured
-call data, and keeps one record per distinct failure.
+repeats one without a project change. When a subagent starts or a conversation compacts, it
+also hands over one note listing the project's live dead ends. It hooks the tool-call
+lifecycle, fingerprints structured call data, and keeps one record per distinct failure.
 
 Inside one intact context window an agent can usually see the failure itself, a few
 thousand tokens back in its own transcript, and correct course without help. Cassandra
@@ -190,10 +191,14 @@ measurable, and that is the trade being made.
 
 ## Two front ends
 
-- The mod (`mod/`) runs inside Claude Code as one `tool.call` hook. It sees the call and
-  its outcome together and attaches the warning as the tool result's `context`.
+- The mod (`mod/`) runs inside Claude Code and hooks `tool.call`, `agent.spawn`,
+  `session.compact` and `session.append`. Its `tool.call` hook sees the call and its
+  outcome together and attaches the warning as the tool result's `context`. A spawn or a
+  compaction owes the loop a note, which the `session.append` hook hands over at that
+  loop's next qualifying row.
 - The binary (`src/hook.ts`) is the classic `PreToolUse`, `PostToolUse*`,
-  `PermissionDenied` and `PostCompact` path, unchanged in behaviour.
+  `PermissionDenied` and `PostCompact` path, plus `SubagentStart` and
+  `SessionStart` (`source: compact`) for the briefings.
 - Both share `src/core/` and one data directory. Where the mod loads, it writes
   `sessions/<id>.mod` under the data directory and the binary stands down for that
   session. The session-start script leaves a pointer to the data directory in
@@ -203,10 +208,10 @@ measurable, and that is the trade being made.
 
 Known gaps and differences:
 
-- Mod timing: the mod hands a new subagent its note once the subagent's loop is running,
-  that is, after its first model response. A subagent that finishes in a single model turn
-  never reads it. If that subagent's very first action repeats a dead end, the existing
-  per-call warning still catches it.
+- Mod timing: the mod hands a new subagent its note after the subagent's first tool
+  result, when its loop is running and is sure to make another request. A subagent that
+  never uses a tool gets no note. If that subagent's very first action repeats a dead end,
+  the existing per-call warning still catches it.
 - Mod compaction: the mod's compaction note is added just after the compaction, on the
   conversation's next row, never before the compaction boundary, where it would be
   summarised away.
@@ -215,7 +220,6 @@ Known gaps and differences:
   binary cannot confirm delivery, so it records the `briefed` stat line when it prints the
   note.
 - Fork subagents get no note on either front end.
-
 - On a denied repeat, the mod records the warning but cannot show it to the model, since a
   denied result carries no context. The binary shows it.
 - A call refused by a permission rule, or one whose approval was not granted, is not
