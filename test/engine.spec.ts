@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { check, settle, type Call } from '../src/core/engine.ts'
-import { readFix } from '../src/core/fixes.ts'
+import { fixSentence, readFix, writeFix } from '../src/core/fixes.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
 import { pathsFor } from '../src/core/paths.ts'
@@ -229,4 +229,25 @@ describe('settle success writes fix notes', () => {
     expect(await readFix(nodeIo, paths, hash)).toBeNull()
     expect(await readStats(nodeIo, paths)).toEqual([])
   })
+})
+
+test('a warning for a call with a fix note ends with the fix sentence and the stat says so', async () => {
+  await settle(io, call('bun test'), { kind: 'failure', reason: 'Exit code 1 boom' }, null)
+  const paths = await pathsFor(io, cwd)
+  const hash = (await fingerprint(io, 'Bash', { command: 'bun test' }))!
+  const note = { kind: 'changed' as const, files: ['fix.txt'], more: 0, at: '2026-10-09T10:00:00.000Z' }
+  await writeFix(io, paths, hash, note)
+  const w = await check(io, call('bun test'))
+  expect(w?.text).toEndWith(' Last time this started working after `fix.txt` changed (2026-10-09).')
+  expect(w?.text).toEndWith(` ${fixSentence(note)}`)
+  const stats = await readStats(io, paths)
+  expect(stats).toHaveLength(1)
+  expect(stats[0]).toMatchObject({ kind: 'warned', hash, fixNote: true })
+})
+
+test('a warning without a fix note has no fixNote on its stat', async () => {
+  await settle(io, call('bun test'), { kind: 'failure', reason: 'x' }, null)
+  await check(io, call('bun test'))
+  const stats = await readStats(io, await pathsFor(io, cwd))
+  expect('fixNote' in stats[0]!).toBe(false)
 })

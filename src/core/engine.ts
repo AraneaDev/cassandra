@@ -1,6 +1,6 @@
 import { digestText, liveRecords } from './digest.ts'
 import { history, reason, scopeOf } from './describe.ts'
-import { computeFix, writeFix } from './fixes.ts'
+import { computeFix, fixSentence, readFix, writeFix } from './fixes.ts'
 import { displayFor, fingerprint } from './fingerprint.ts'
 import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
@@ -82,19 +82,23 @@ export async function check(io: Io, call: Call): Promise<Warning | null> {
     { sessionId: found.sessionId, compactions: found.compactions, agentId: found.agentId },
     { sessionId: call.sessionId, compactions: await compactionCount(io, paths, call.sessionId), agentId: call.agentId },
   )
-  await appendStat(io, paths, { kind: 'warned', hash, boundary })
-
   // `none` never reaches this point, since `unchanged` refuses it.
   const scope = scopeOf(found.stateKind as Exclude<typeof found.stateKind, 'none'>)
-  const text = `cassandra: ${history(found)} before, most recently ${found.lastSeen}. `
+  let text = `cassandra: ${history(found)} before, most recently ${found.lastSeen}. `
     + `Nothing in ${scope} has changed since.${reason(found)}`
+  // What made this call work last time, when a past success left a note.
+  const note = await readFix(io, paths, hash)
+  if (note) text += ` ${fixSentence(note)}`
+  await appendStat(io, paths, note ? { kind: 'warned', hash, boundary, fixNote: true } : { kind: 'warned', hash, boundary })
   return { hash, text }
 }
 
 /**
  * The write path, once a call's outcome is known. `warnedHash` is the record `check`
- * warned about for this very call, if it did: a failure then confirms the warning, and
- * a success proves the freshness probe missed a real change.
+ * warned about for this very call, if it did: a failure then confirms the warning.
+ * Any success of a recorded call forgets the record and, in a git repository, keeps a
+ * fix note of what changed since it failed. A success after a warning additionally
+ * proves the freshness probe missed a change.
  */
 export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: string | null): Promise<void> {
   // An interrupt is not a failure of the command, and a call that never ran did not fail
