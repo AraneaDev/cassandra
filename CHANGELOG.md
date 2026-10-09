@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.26](https://github.com/AraneaDev/cassandra/compare/v0.0.25...v0.0.26) (2026-10-09)
+
+
+### Fixes
+
+* pane Forget all deletes exactly the records it counted; short panes show one line ([#67](https://github.com/AraneaDev/cassandra/issues/67)) ([fef9e99](https://github.com/AraneaDev/cassandra/commit/fef9e99929a561d0dc58bf60d44b10734b3987dd))
+
 ## [0.0.25](https://github.com/AraneaDev/cassandra/compare/v0.0.24...v0.0.25) (2026-10-09)
 
 
