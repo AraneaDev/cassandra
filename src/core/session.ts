@@ -96,7 +96,9 @@ export async function pruneModMarkers(io: Io): Promise<void> {
     if (!listing.ok) return
     const cutoff = Date.parse(io.now()) - MARKER_TTL_MS
     for (const entry of listing.entries) {
-      if (entry.kind !== 'file' || !entry.name.endsWith('.mod') || entry.mtimeMs >= cutoff) continue
+      // `.tmp` files are staging leftovers from a write that died before its rename.
+      const ours = entry.name.endsWith('.mod') || entry.name.endsWith('.tmp')
+      if (entry.kind !== 'file' || !ours || entry.mtimeMs >= cutoff) continue
       try {
         await io.remove(join(dir, entry.name))
       } catch {

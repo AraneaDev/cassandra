@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, utimesSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathsFor, type Paths } from '../src/core/paths.ts'
@@ -64,4 +64,19 @@ test('markers older than a day are pruned, newer ones kept', async () => {
   await pruneModMarkers(nodeIo)
   expect(await isModSession(nodeIo, 'old')).toBe(false)
   expect(await isModSession(nodeIo, 'new')).toBe(true)
+})
+
+test('stale staging files in sessions/ are pruned, fresh ones kept', async () => {
+  const { markModSession, pruneModMarkers } = await import('../src/core/session.ts')
+  await markModSession(nodeIo, 'x')
+  const dir = join(process.env.CASSANDRA_HOME!, 'sessions')
+  const stale = join(dir, 'x.mod.1.abc.tmp')
+  const fresh = join(dir, 'y.mod.2.def.tmp')
+  writeFileSync(stale, '')
+  writeFileSync(fresh, '')
+  const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+  utimesSync(stale, twoDaysAgo, twoDaysAgo)
+  await pruneModMarkers(nodeIo)
+  expect(existsSync(stale)).toBe(false)
+  expect(existsSync(fresh)).toBe(true)
 })
