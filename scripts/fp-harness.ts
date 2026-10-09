@@ -11,7 +11,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { stateStamp } from '../src/freshness'
+import { stateStamp } from '../src/core/freshness.ts'
+import { nodeIo } from '../src/io/node.ts'
 
 interface Mutation {
   name: string
@@ -58,7 +59,7 @@ function seed(dir: string, asRepo: boolean, opts: { headless?: boolean } = {}): 
   run('commit', '-qm', 'init')
 }
 
-function runSynthetic(): number {
+async function runSynthetic(): Promise<number> {
   const root = mkdtempSync(join(tmpdir(), 'cass-fp-'))
   let failures = 0
   let total = 0
@@ -68,9 +69,9 @@ function runSynthetic(): number {
     for (const m of MUTATIONS) {
       const dir = join(root, `${asRepo ? 'g' : 'm'}-${m.name.replace(/\W+/g, '-')}`)
       seed(dir, asRepo)
-      const before = stateStamp(dir)
+      const before = await stateStamp(nodeIo, dir)
       m.apply(dir)
-      const after = stateStamp(dir)
+      const after = await stateStamp(nodeIo, dir)
       total += 1
       const moved = before.value !== after.value && after.kind !== 'none'
       if (!moved) {
@@ -94,7 +95,7 @@ function runSynthetic(): number {
     seed(dir, false)
     const p = join(dir, 'a.txt')
     const original = statSync(p)
-    const before = stateStamp(dir)
+    const before = await stateStamp(nodeIo, dir)
     writeFileSync(p, 'ONE')
     // utimesSync accepts Date objects or numeric seconds-since-epoch. A Date only
     // carries whole-millisecond precision, but this filesystem stores mtimes with
@@ -103,7 +104,7 @@ function runSynthetic(): number {
     // original mtime and this case would falsely appear detected. Passing the
     // fraction through as seconds restores the exact original mtimeMs.
     utimesSync(p, original.mtimeMs / 1000, original.mtimeMs / 1000)
-    const after = stateStamp(dir)
+    const after = await stateStamp(nodeIo, dir)
     const detected = before.value !== after.value && after.kind !== 'none'
     console.error(
       `known blind spot [mtime] same size, same mtime, different content: ${detected ? 'DETECTED (unexpected)' : 'NOT DETECTED (expected)'}`,
@@ -120,9 +121,9 @@ function runSynthetic(): number {
   for (const m of MUTATIONS) {
     const dir = join(root, `headless-${m.name.replace(/\W+/g, '-')}`)
     seed(dir, true, { headless: true })
-    const before = stateStamp(dir)
+    const before = await stateStamp(nodeIo, dir)
     m.apply(dir)
-    const after = stateStamp(dir)
+    const after = await stateStamp(nodeIo, dir)
     headlessTotal += 1
     const moved = before.value !== after.value && after.kind !== 'none'
     if (!moved) {
@@ -209,7 +210,7 @@ function probeMtimeBounds(root: string): BoundsReport {
  * Cassandra going silent when it should speak, and that the probe returns in a time
  * the hot path can afford.
  */
-function runReal(): number {
+async function runReal(): Promise<number> {
   const roots = (process.env.CASSANDRA_FP_ROOTS ?? '/root/talanton,/root/kanon,/root/claude-timestamp,/root/aranea')
     .split(',').map((s) => s.trim()).filter((s) => s.length > 0 && existsSync(s))
 
@@ -225,9 +226,9 @@ function runReal(): number {
 
   for (const root of roots) {
     const t0 = performance.now()
-    const a = stateStamp(root)
+    const a = await stateStamp(nodeIo, root)
     const elapsed = performance.now() - t0
-    const b = stateStamp(root)
+    const b = await stateStamp(nodeIo, root)
 
     const stable = a.value === b.value && a.kind !== 'none'
     if (!stable) unstable += 1
@@ -254,4 +255,4 @@ function runReal(): number {
   return unstable === 0 && slow === 0 ? 0 : 1
 }
 
-process.exit(process.argv.includes('--real') ? runReal() : runSynthetic())
+process.exit(process.argv.includes('--real') ? await runReal() : await runSynthetic())

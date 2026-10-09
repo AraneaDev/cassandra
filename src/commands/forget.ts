@@ -1,12 +1,13 @@
-import { deleteRecord, listRecords } from '../record'
+import { deleteRecord, listRecords } from '../core/record.ts'
+import type { Io } from '../core/io.ts'
 import { type Paths } from '../core/paths.ts'
-import { explainResolution, resolveHash } from './resolve'
+import { explainResolution, resolveHash } from './resolve.ts'
 
 /** Drop one record, or the whole project index. */
-export function forget(paths: Paths, target: string | null, all: boolean): number {
+export async function forget(io: Io, paths: Paths, target: string | null, all: boolean): Promise<number> {
   if (all) {
-    const records = listRecords(paths)
-    for (const { hash } of records) deleteRecord(paths, hash)
+    const records = await listRecords(io, paths)
+    for (const { hash } of records) await deleteRecord(io, paths, hash)
     console.log(`Forgot ${records.length} record${records.length === 1 ? '' : 's'}.`)
     return 0
   }
@@ -16,12 +17,12 @@ export function forget(paths: Paths, target: string | null, all: boolean): numbe
   }
   // argv is untrusted, and this call deletes a file. A prefix is resolved against the
   // index first, so nothing but a real fingerprint reaches the path builder.
-  const r = resolveHash(paths, target)
+  const r = await resolveHash(io, paths, target)
   if (!r.ok) {
     console.log(explainResolution(target, r))
     return 1
   }
-  deleteRecord(paths, r.hash)
+  await deleteRecord(io, paths, r.hash)
   console.log(`Forgot ${r.hash}.`)
   return 0
 }

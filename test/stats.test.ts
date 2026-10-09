@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathsFor, type Paths } from '../src/core/paths.ts'
 import { nodeIo } from '../src/io/node.ts'
-import { appendStat, attributeBoundary, readStats } from '../src/stats'
+import { appendStat, attributeBoundary, readStats } from '../src/core/stats.ts'
 
 let tmp: string
 let paths: Paths
@@ -21,13 +21,13 @@ afterEach(async () => {
 })
 
 test('reading an absent log yields an empty array', async () => {
-  expect(readStats(paths)).toEqual([])
+  expect(await readStats(nodeIo, paths)).toEqual([])
 })
 
 test('appended events round-trip in order', async () => {
-  appendStat(paths, { kind: 'warned', hash: 'aaaa', boundary: 'compaction' })
-  appendStat(paths, { kind: 'confirmed', hash: 'aaaa' })
-  const events = readStats(paths)
+  await appendStat(nodeIo, paths, { kind: 'warned', hash: 'aaaa', boundary: 'compaction' })
+  await appendStat(nodeIo, paths, { kind: 'confirmed', hash: 'aaaa' })
+  const events = await readStats(nodeIo, paths)
   expect(events).toHaveLength(2)
   expect(events[0]!.kind).toBe('warned')
   expect(events[0]!.boundary).toBe('compaction')
@@ -36,10 +36,10 @@ test('appended events round-trip in order', async () => {
 })
 
 test('a corrupt line is skipped rather than failing the read', async () => {
-  appendStat(paths, { kind: 'warned', hash: 'aaaa' })
+  await appendStat(nodeIo, paths, { kind: 'warned', hash: 'aaaa' })
   appendFileSync(paths.stats, 'not json at all\n')
-  appendStat(paths, { kind: 'confirmed', hash: 'aaaa' })
-  expect(readStats(paths)).toHaveLength(2)
+  await appendStat(nodeIo, paths, { kind: 'confirmed', hash: 'aaaa' })
+  expect(await readStats(nodeIo, paths)).toHaveLength(2)
 })
 
 test('a subagent warning is attributed to the subagent boundary', async () => {
@@ -107,9 +107,9 @@ test('a subagent in a later session is subagent (most specific boundary wins)', 
 
 test('appended timestamp cannot be overridden by event payload', async () => {
   const beforeTime = Date.now()
-  appendStat(paths, { kind: 'warned', hash: 'xxxx', t: 'old-time' } as any)
+  await appendStat(nodeIo, paths, { kind: 'warned', hash: 'xxxx', t: 'old-time' } as any)
   const afterTime = Date.now()
-  const events = readStats(paths)
+  const events = await readStats(nodeIo, paths)
   expect(events).toHaveLength(1)
   const eventTime = new Date(events[0]!.t).getTime()
   expect(eventTime).toBeGreaterThanOrEqual(beforeTime - 100)
@@ -118,14 +118,14 @@ test('appended timestamp cannot be overridden by event payload', async () => {
 })
 
 test('invalid json shapes are skipped without breaking the read', async () => {
-  appendStat(paths, { kind: 'warned', hash: 'aaaa' })
+  await appendStat(nodeIo, paths, { kind: 'warned', hash: 'aaaa' })
   appendFileSync(paths.stats, '42\n')
   appendFileSync(paths.stats, '"string"\n')
   appendFileSync(paths.stats, '[1,2,3]\n')
   appendFileSync(paths.stats, '{}\n')
   appendFileSync(paths.stats, 'null\n')
-  appendStat(paths, { kind: 'confirmed', hash: 'bbbb' })
-  const events = readStats(paths)
+  await appendStat(nodeIo, paths, { kind: 'confirmed', hash: 'bbbb' })
+  const events = await readStats(nodeIo, paths)
   expect(events).toHaveLength(2)
   expect(events[0]!.hash).toBe('aaaa')
   expect(events[1]!.hash).toBe('bbbb')

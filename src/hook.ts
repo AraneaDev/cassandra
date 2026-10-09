@@ -1,10 +1,10 @@
 import { displayFor, fingerprint } from './core/fingerprint.ts'
-import { stateStamp, unchanged } from './freshness'
+import { stateStamp, unchanged } from './core/freshness.ts'
 import { pathsFor } from './core/paths.ts'
 import { markPending, takePending } from './core/pending.ts'
-import { deleteRecord, readRecord, upsertRecord } from './record'
+import { deleteRecord, readRecord, upsertRecord } from './core/record.ts'
 import { bumpCompactions, compactionCount } from './core/session.ts'
-import { appendStat, attributeBoundary } from './stats'
+import { appendStat, attributeBoundary } from './core/stats.ts'
 import type { HookPayload, RecordKind } from './core/types.ts'
 import { nodeIo } from './io/node.ts'
 
@@ -36,12 +36,12 @@ async function record(payload: HookPayload, kind: RecordKind, reason: string | u
   if (!hash) return null
 
   const paths = await pathsFor(nodeIo, cwd)
-  const stamp = stateStamp(cwd)
+  const stamp = await stateStamp(nodeIo, cwd)
 
   // A state we cannot read is a record we could never safely act on, so do not store it.
   if (stamp.kind === 'none') return null
 
-  upsertRecord(paths, hash, {
+  await upsertRecord(nodeIo, paths, hash, {
     tool,
     display: displayFor(tool, input),
     kind,
@@ -62,7 +62,7 @@ async function onFailure(payload: HookPayload, kind: RecordKind, reason: string 
     const paths = await pathsFor(nodeIo, cwd)
     const warned = await takePending(nodeIo, paths, toolUseId)
     // It failed again after we warned, so the warning was right and was disregarded.
-    if (warned) appendStat(paths, { kind: 'confirmed', hash: warned })
+    if (warned) await appendStat(nodeIo, paths, { kind: 'confirmed', hash: warned })
   }
   return await record(payload, kind, reason)
 }
@@ -74,8 +74,8 @@ async function onSuccess(payload: HookPayload): Promise<null> {
   const paths = await pathsFor(nodeIo, cwd)
   const warned = await takePending(nodeIo, paths, toolUseId)
   if (!warned) return null
-  appendStat(paths, { kind: 'false_positive', hash: warned })
-  deleteRecord(paths, warned)
+  await appendStat(nodeIo, paths, { kind: 'false_positive', hash: warned })
+  await deleteRecord(nodeIo, paths, warned)
   return null
 }
 
@@ -90,17 +90,17 @@ async function onPreToolUse(payload: HookPayload): Promise<string | null> {
   if (!hash) return null
 
   const paths = await pathsFor(nodeIo, cwd)
-  const found = readRecord(paths, hash)
+  const found = await readRecord(nodeIo, paths, hash)
   if (!found) return null
 
   // Only now, on a hit, does the expensive probe run.
-  if (!unchanged(found.stateStamp, found.stateKind, stateStamp(cwd))) return null
+  if (!unchanged(found.stateStamp, found.stateKind, await stateStamp(nodeIo, cwd))) return null
 
   const boundary = attributeBoundary(
     { sessionId: found.sessionId, compactions: found.compactions, agentId: found.agentId },
     { sessionId: sessionId ?? '', compactions: await compactionCount(nodeIo, paths, sessionId ?? ''), agentId },
   )
-  appendStat(paths, { kind: 'warned', hash, boundary })
+  await appendStat(nodeIo, paths, { kind: 'warned', hash, boundary })
   if (toolUseId) await markPending(nodeIo, paths, toolUseId, hash)
 
   const what = found.kind === 'denial' ? 'was denied' : 'failed'

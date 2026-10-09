@@ -49,5 +49,6 @@ test('a failed writeText rejects and leaves no staging file behind', async () =>
 test('env, homeDir and now answer from the process', async () => {
   expect(await nodeIo.env('HOME')).toBe(process.env.HOME)
   expect(await nodeIo.homeDir()).not.toBe('')
-  expect(new Date(nodeIo.now()).toISOString()).toBe(nodeIo.now())
+  const now = nodeIo.now()
+  expect(new Date(now).toISOString()).toBe(now)
 })

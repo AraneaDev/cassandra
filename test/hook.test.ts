@@ -6,8 +6,8 @@ import { handle } from '../src/hook'
 import { pathsFor, pendingPath } from '../src/core/paths.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
-import { readRecord } from '../src/record'
-import { readStats } from '../src/stats'
+import { readRecord } from '../src/core/record.ts'
+import { readStats } from '../src/core/stats.ts'
 
 let tmp: string
 let cwd: string
@@ -53,7 +53,7 @@ test('an unknown command is silent', async () => {
 test('a failure is recorded', async () => {
   await handle(fail('bun test'))
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
-  expect(readRecord(await pathsFor(nodeIo, cwd), hash)?.count).toBe(1)
+  expect((await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash))?.count).toBe(1)
 })
 
 test('a repeat with nothing changed warns', async () => {
@@ -86,8 +86,8 @@ test('a success on a warned call clears the record and logs a false positive', a
     tool_name: 'Bash', tool_input: { command: 'bun test' }, tool_use_id: 't2',
   })
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
-  expect(readRecord(await pathsFor(nodeIo, cwd), hash)).toBeNull()
-  expect(readStats(await pathsFor(nodeIo, cwd)).some((e) => e.kind === 'false_positive')).toBe(true)
+  expect(await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash)).toBeNull()
+  expect((await readStats(nodeIo, await pathsFor(nodeIo, cwd))).some((e) => e.kind === 'false_positive')).toBe(true)
 })
 
 test('a repeat failure on a warned call logs confirmed and does not clear', async () => {
@@ -95,8 +95,8 @@ test('a repeat failure on a warned call logs confirmed and does not clear', asyn
   await handle(pre('bun test'))
   await handle({ ...fail('bun test'), tool_use_id: 't2' })
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
-  expect(readRecord(await pathsFor(nodeIo, cwd), hash)?.count).toBe(2)
-  expect(readStats(await pathsFor(nodeIo, cwd)).some((e) => e.kind === 'confirmed')).toBe(true)
+  expect((await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash))?.count).toBe(2)
+  expect((await readStats(nodeIo, await pathsFor(nodeIo, cwd))).some((e) => e.kind === 'confirmed')).toBe(true)
 })
 
 test('a success on a call that was never warned about clears nothing', async () => {
@@ -107,7 +107,7 @@ test('a success on a call that was never warned about clears nothing', async () 
   })
   expect(out).toBeNull()
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
-  expect(readRecord(await pathsFor(nodeIo, cwd), hash)).not.toBeNull()
+  expect(await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash)).not.toBeNull()
 })
 
 test('a permission denial is recorded and warns on repeat', async () => {
@@ -124,14 +124,14 @@ test('a permission denial is recorded and warns on repeat', async () => {
 test('a main-agent failure retried inside a subagent crosses the subagent boundary', async () => {
   await handle(fail('bun test'))
   await handle(pre('bun test', { agent_id: 'a1', tool_use_id: 't5' }))
-  expect(readStats(await pathsFor(nodeIo, cwd)).some((e) => e.kind === 'warned' && e.boundary === 'subagent')).toBe(true)
+  expect((await readStats(nodeIo, await pathsFor(nodeIo, cwd))).some((e) => e.kind === 'warned' && e.boundary === 'subagent')).toBe(true)
 })
 
 test('a repeat after a compaction is attributed to compaction', async () => {
   await handle(fail('bun test'))
   await handle({ hook_event_name: 'PostCompact', session_id: 's1', cwd })
   await handle(pre('bun test', { tool_use_id: 't6' }))
-  expect(readStats(await pathsFor(nodeIo, cwd)).some((e) => e.kind === 'warned' && e.boundary === 'compaction')).toBe(true)
+  expect((await readStats(nodeIo, await pathsFor(nodeIo, cwd))).some((e) => e.kind === 'warned' && e.boundary === 'compaction')).toBe(true)
 })
 
 test('Edit and Write calls are ignored entirely', async () => {
@@ -155,25 +155,25 @@ test('an unknown event, empty payload or missing cwd is silent', async () => {
 test('the same subagent retrying its own failure is same_context, not subagent', async () => {
   await handle({ ...fail('bun test'), agent_id: 'a1' })
   await handle(pre('bun test', { agent_id: 'a1', tool_use_id: 't5' }))
-  expect(readStats(await pathsFor(nodeIo, cwd)).some((e) => e.kind === 'warned' && e.boundary === 'same_context')).toBe(true)
+  expect((await readStats(nodeIo, await pathsFor(nodeIo, cwd))).some((e) => e.kind === 'warned' && e.boundary === 'same_context')).toBe(true)
 })
 
 test('a different subagent retrying is attributed to the subagent boundary', async () => {
   await handle({ ...fail('bun test'), agent_id: 'a1' })
   await handle(pre('bun test', { agent_id: 'a2', tool_use_id: 't5' }))
-  expect(readStats(await pathsFor(nodeIo, cwd)).some((e) => e.kind === 'warned' && e.boundary === 'subagent')).toBe(true)
+  expect((await readStats(nodeIo, await pathsFor(nodeIo, cwd))).some((e) => e.kind === 'warned' && e.boundary === 'subagent')).toBe(true)
 })
 
 test('the main agent retrying a subagent failure is attributed to the subagent boundary', async () => {
   await handle({ ...fail('bun test'), agent_id: 'a1' })
   await handle(pre('bun test', { tool_use_id: 't5' }))
-  expect(readStats(await pathsFor(nodeIo, cwd)).some((e) => e.kind === 'warned' && e.boundary === 'subagent')).toBe(true)
+  expect((await readStats(nodeIo, await pathsFor(nodeIo, cwd))).some((e) => e.kind === 'warned' && e.boundary === 'subagent')).toBe(true)
 })
 
 test('a failure record stores the agent id it was written under', async () => {
   await handle({ ...fail('bun test'), agent_id: 'a1' })
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
-  expect(readRecord(await pathsFor(nodeIo, cwd), hash)?.agentId).toBe('a1')
+  expect((await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash))?.agentId).toBe('a1')
 })
 
 // The excerpt is the only free text Cassandra stores, and it is the output of a command
@@ -184,7 +184,7 @@ test('control characters are stripped from a stored excerpt', async () => {
   const hostile = 'boom\u001b[31m red \u0000 nul \u0007 bell \u007f del'
   await handle({ ...fail('bun test'), error_message: hostile })
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
-  const stored = readRecord(await pathsFor(nodeIo, cwd), hash)!.errorExcerpt
+  const stored = (await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash))!.errorExcerpt
   expect(stored).not.toContain('\u001b')
   expect(stored).not.toContain('\u0000')
   expect(stored).not.toContain('\u0007')
@@ -282,7 +282,7 @@ test('the failure excerpt comes from `error`, the field Claude Code actually sen
     error: 'Exit code 1\nerror: script "build" exited with code 1',
   })
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun run build' }))!
-  expect(readRecord(await pathsFor(nodeIo, cwd), hash)?.errorExcerpt).toContain('Exit code 1')
+  expect((await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash))?.errorExcerpt).toContain('Exit code 1')
 })
 
 test('`error_message` still works as a fallback if the field is ever renamed back', async () => {
@@ -292,7 +292,7 @@ test('`error_message` still works as a fallback if the field is ever renamed bac
     error_message: 'old field name',
   })
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'legacy shape' }))!
-  expect(readRecord(await pathsFor(nodeIo, cwd), hash)?.errorExcerpt).toBe('old field name')
+  expect((await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash))?.errorExcerpt).toBe('old field name')
 })
 
 test('an interrupted call is not remembered as a failure', async () => {
@@ -302,7 +302,7 @@ test('an interrupted call is not remembered as a failure', async () => {
     error: 'Command was interrupted', is_interrupt: true,
   })
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'sleep 600' }))!
-  expect(readRecord(await pathsFor(nodeIo, cwd), hash)).toBeNull()
+  expect(await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash)).toBeNull()
 })
 
 test('a denial reason is read from denial_reason, falling back to reason', async () => {
@@ -312,5 +312,5 @@ test('a denial reason is read from denial_reason, falling back to reason', async
     reason: 'network egress blocked',
   })
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'curl evil.test' }))!
-  expect(readRecord(await pathsFor(nodeIo, cwd), hash)?.errorExcerpt).toBe('network egress blocked')
+  expect((await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash))?.errorExcerpt).toBe('network egress blocked')
 })

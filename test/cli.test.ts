@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { run } from '../src/cli'
 import { pathsFor } from '../src/core/paths.ts'
 import { nodeIo } from '../src/io/node.ts'
-import { listRecords, upsertRecord } from '../src/record'
-import { appendStat } from '../src/stats'
+import { listRecords, upsertRecord } from '../src/core/record.ts'
+import { appendStat } from '../src/core/stats.ts'
 
 let tmp: string
 let cwd: string
@@ -41,7 +41,7 @@ test('list on an empty index says so and exits 0', async () => {
 })
 
 test('list shows a stored record', async () => {
-  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
   expect(await run(['list', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('bun test')
   expect(out.join('\n')).toContain('aa11bb22')
@@ -49,8 +49,8 @@ test('list shows a stored record', async () => {
 
 test('list with multiple records sorts and shows every one', async () => {
   const p = await pathsFor(nodeIo, cwd)
-  upsertRecord(p, 'aa11bb22cc33dd44', seed)
-  upsertRecord(p, 'bb11bb22cc33dd44', { ...seed, display: 'bun typecheck' })
+  await upsertRecord(nodeIo, p, 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, p, 'bb11bb22cc33dd44', { ...seed, display: 'bun typecheck' })
   expect(await run(['list', '--cwd', cwd])).toBe(0)
   const text = out.join('\n')
   expect(text).toContain('2 remembered failures')
@@ -59,7 +59,7 @@ test('list with multiple records sorts and shows every one', async () => {
 })
 
 test('why prints the full record', async () => {
-  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
   expect(await run(['why', 'aa11bb22cc33dd44', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('3 tests failing')
 })
@@ -86,36 +86,36 @@ test('why refuses anything that could reach a path builder, and exits 1', async 
 })
 
 test('why accepts the 8-character prefix that `list` actually prints', async () => {
-  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
   out.length = 0
   expect(await run(['why', 'aa11bb22', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('bun test')
 })
 
 test('an ambiguous prefix is refused and names the candidates', async () => {
-  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
-  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11ffffcc33dd44', seed)
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), 'aa11ffffcc33dd44', seed)
   out.length = 0
   expect(await run(['why', 'aa11', '--cwd', cwd])).toBe(1)
   expect(out.join('\n')).toContain('matches 2 records')
 })
 
 test('forget refuses anything that could reach a path builder, and deletes nothing', async () => {
-  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
   for (const bad of ['nope', '../../victim', '..', 'a/b']) {
     out.length = 0
     expect(await run(['forget', bad, '--cwd', cwd])).toBe(1)
     expect(out.join('\n')).toContain('Not a hash')
   }
   // The record it was given alongside those must still be there.
-  expect(listRecords(await pathsFor(nodeIo, cwd))).toHaveLength(1)
+  expect(await listRecords(nodeIo, await pathsFor(nodeIo, cwd))).toHaveLength(1)
   out.length = 0
   expect(await run(['list', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('bun test')
 })
 
 test('forget removes one record', async () => {
-  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
   expect(await run(['forget', 'aa11bb22cc33dd44', '--cwd', cwd])).toBe(0)
   out.length = 0
   expect(await run(['list', '--cwd', cwd])).toBe(0)
@@ -128,18 +128,18 @@ test('forget with no hash and no --all exits 1', async () => {
 })
 
 test('forget --all empties the index', async () => {
-  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
-  upsertRecord(await pathsFor(nodeIo, cwd), 'bb11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), 'bb11bb22cc33dd44', seed)
   expect(await run(['forget', '--all', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('Forgot 2')
 })
 
 test('stats reports the false-positive rate and boundary shares', async () => {
   const p = await pathsFor(nodeIo, cwd)
-  appendStat(p, { kind: 'warned', hash: 'a', boundary: 'compaction' })
-  appendStat(p, { kind: 'warned', hash: 'b', boundary: 'same_context' })
-  appendStat(p, { kind: 'confirmed', hash: 'a' })
-  appendStat(p, { kind: 'false_positive', hash: 'b' })
+  await appendStat(nodeIo, p, { kind: 'warned', hash: 'a', boundary: 'compaction' })
+  await appendStat(nodeIo, p, { kind: 'warned', hash: 'b', boundary: 'same_context' })
+  await appendStat(nodeIo, p, { kind: 'confirmed', hash: 'a' })
+  await appendStat(nodeIo, p, { kind: 'false_positive', hash: 'b' })
   expect(await run(['stats', '--cwd', cwd])).toBe(0)
   const text = out.join('\n')
   expect(text).toContain('2 warnings')
@@ -157,7 +157,7 @@ test('stats on an empty log exits 0 and says nothing has been measured', async (
 })
 
 test('export emits parseable JSON', async () => {
-  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
   expect(await run(['export', '--cwd', cwd])).toBe(0)
   const parsed = JSON.parse(out.join('\n'))
   expect(parsed.records).toHaveLength(1)

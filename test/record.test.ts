@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathsFor, recordPath, type Paths } from '../src/core/paths.ts'
 import { nodeIo } from '../src/io/node.ts'
-import { deleteRecord, listRecords, readRecord, upsertRecord } from '../src/record'
+import { deleteRecord, listRecords, readRecord, upsertRecord } from '../src/core/record.ts'
 
 let tmp: string
 let paths: Paths
@@ -32,22 +32,22 @@ afterEach(async () => {
 })
 
 test('a missing record reads as null', async () => {
-  expect(readRecord(paths, 'deadbeefdeadbeef')).toBeNull()
+  expect(await readRecord(nodeIo, paths, 'deadbeefdeadbeef')).toBeNull()
 })
 
 test('upsert creates a record with count 1', async () => {
-  upsertRecord(paths, 'aa11bb22cc33dd44', seed)
-  const r = readRecord(paths, 'aa11bb22cc33dd44')
+  await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', seed)
+  const r = await readRecord(nodeIo, paths, 'aa11bb22cc33dd44')
   expect(r?.count).toBe(1)
   expect(r?.display).toBe('bun test')
   expect(r?.firstSeen).toBe(r?.lastSeen)
 })
 
 test('upsert on an existing record increments and refreshes state, keeping firstSeen', async () => {
-  upsertRecord(paths, 'aa11bb22cc33dd44', seed)
-  const first = readRecord(paths, 'aa11bb22cc33dd44')!
-  upsertRecord(paths, 'aa11bb22cc33dd44', { ...seed, stateStamp: '9c0201', sessionId: 's2' })
-  const second = readRecord(paths, 'aa11bb22cc33dd44')!
+  await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', seed)
+  const first = (await readRecord(nodeIo, paths, 'aa11bb22cc33dd44'))!
+  await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', { ...seed, stateStamp: '9c0201', sessionId: 's2' })
+  const second = (await readRecord(nodeIo, paths, 'aa11bb22cc33dd44'))!
   expect(second.count).toBe(2)
   expect(second.stateStamp).toBe('9c0201')
   expect(second.sessionId).toBe('s2')
@@ -58,7 +58,7 @@ test('a corrupt record is deleted and reads as null', async () => {
   const p = recordPath(paths, 'ffeeddccbbaa9988')
   mkdirSync(join(paths.records, 'ff'), { recursive: true })
   writeFileSync(p, 'not json at all')
-  expect(readRecord(paths, 'ffeeddccbbaa9988')).toBeNull()
+  expect(await readRecord(nodeIo, paths, 'ffeeddccbbaa9988')).toBeNull()
   expect(existsSync(p)).toBe(false)
 })
 
@@ -66,30 +66,30 @@ test('a record missing required fields is treated as corrupt', async () => {
   const p = recordPath(paths, '1122334455667788')
   mkdirSync(join(paths.records, '11'), { recursive: true })
   writeFileSync(p, JSON.stringify({ tool: 'Bash' }))
-  expect(readRecord(paths, '1122334455667788')).toBeNull()
+  expect(await readRecord(nodeIo, paths, '1122334455667788')).toBeNull()
   expect(existsSync(p)).toBe(false)
 })
 
 test('delete removes a record', async () => {
-  upsertRecord(paths, 'aa11bb22cc33dd44', seed)
-  deleteRecord(paths, 'aa11bb22cc33dd44')
-  expect(readRecord(paths, 'aa11bb22cc33dd44')).toBeNull()
+  await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', seed)
+  await deleteRecord(nodeIo, paths, 'aa11bb22cc33dd44')
+  expect(await readRecord(nodeIo, paths, 'aa11bb22cc33dd44')).toBeNull()
 })
 
 test('delete on a missing record does not throw', async () => {
-  expect(() => deleteRecord(paths, 'nosuchnosuch1234')).not.toThrow()
+  await expect(deleteRecord(nodeIo, paths, 'nosuchnosuch1234')).resolves.toBeUndefined()
 })
 
 test('listRecords returns every stored record across shards', async () => {
-  upsertRecord(paths, 'aa11bb22cc33dd44', seed)
-  upsertRecord(paths, 'bb11bb22cc33dd44', { ...seed, display: 'bun run build' })
-  const all = listRecords(paths)
+  await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, paths, 'bb11bb22cc33dd44', { ...seed, display: 'bun run build' })
+  const all = await listRecords(nodeIo, paths)
   expect(all).toHaveLength(2)
   expect(all.map((e) => e.record.display).sort()).toEqual(['bun run build', 'bun test'])
 })
 
 test('listRecords on an empty index returns an empty array', async () => {
-  expect(listRecords(paths)).toEqual([])
+  expect(await listRecords(nodeIo, paths)).toEqual([])
 })
 
 test('a record missing newly-required fields (sessionId, compactions, errorExcerpt) is treated as corrupt', async () => {
@@ -105,7 +105,7 @@ test('a record missing newly-required fields (sessionId, compactions, errorExcer
     firstSeen: new Date().toISOString(),
     lastSeen: new Date().toISOString(),
   }))
-  expect(readRecord(paths, '3344556677889900')).toBeNull()
+  expect(await readRecord(nodeIo, paths, '3344556677889900')).toBeNull()
   expect(existsSync(p)).toBe(false)
 })
 
@@ -115,10 +115,10 @@ test('listRecords returns all records even with stray non-directory files presen
   writeFileSync(join(paths.records, '.DS_Store'), 'stray file')
 
   // Create records in different shards
-  upsertRecord(paths, 'aa11bb22cc33dd44', seed)
-  upsertRecord(paths, 'bb22cc33dd44ee55', { ...seed, display: 'bun run build' })
+  await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, paths, 'bb22cc33dd44ee55', { ...seed, display: 'bun run build' })
 
-  const all = listRecords(paths)
+  const all = await listRecords(nodeIo, paths)
   expect(all).toHaveLength(2)
   expect(all.map((e) => e.record.display).sort()).toEqual(['bun run build', 'bun test'])
 })
@@ -142,7 +142,7 @@ test('readRecord with a traversal hash deletes nothing outside the index', async
     '..',
     '.',
   ]) {
-    expect(readRecord(paths, hostile)).toBeNull()
+    expect(await readRecord(nodeIo, paths, hostile)).toBeNull()
   }
 
   expect(existsSync(victim)).toBe(true)
@@ -156,9 +156,9 @@ test('deleteRecord with a traversal hash deletes nothing outside the index', asy
   const victim = join(victimDir, 'victim.json')
   writeFileSync(victim, 'keep me')
 
-  deleteRecord(paths, '../../outside2/victim')
-  deleteRecord(paths, `${victimDir}/victim`)
-  deleteRecord(paths, '..')
+  await deleteRecord(nodeIo, paths, '../../outside2/victim')
+  await deleteRecord(nodeIo, paths, `${victimDir}/victim`)
+  await deleteRecord(nodeIo, paths, '..')
 
   expect(existsSync(victim)).toBe(true)
 })
@@ -166,9 +166,9 @@ test('deleteRecord with a traversal hash deletes nothing outside the index', asy
 test('a record stored under a non-fingerprint hash still round-trips inside the index', async () => {
   // Everything that is not a fingerprint collapses to one fixed name, so writing and
   // reading stay consistent rather than the write landing somewhere the read cannot see.
-  upsertRecord(paths, 'not-a-hash', seed)
+  await upsertRecord(nodeIo, paths, 'not-a-hash', seed)
   expect(existsSync(join(paths.records, 'in', 'invalid.json'))).toBe(true)
-  expect(readRecord(paths, 'also-not-a-hash')?.display).toBe('bun test')
+  expect((await readRecord(nodeIo, paths, 'also-not-a-hash'))?.display).toBe('bun test')
 })
 
 // writeFileSync is not atomic, and Claude Code runs Bash calls in parallel. A reader
@@ -177,26 +177,26 @@ test('a record stored under a non-fingerprint hash still round-trips inside the 
 // and renames.
 
 test('upsert leaves no staging file behind and listRecords ignores stray ones', async () => {
-  upsertRecord(paths, 'aa11bb22cc33dd44', seed)
+  await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', seed)
   const shard = join(paths.records, 'aa')
   expect(readdirSync(shard)).toEqual(['aa11bb22cc33dd44.json'])
 
   writeFileSync(join(shard, 'aa11bb22cc33dd44.json.999.abc.tmp'), '{"half":')
-  expect(listRecords(paths)).toHaveLength(1)
-  expect(readRecord(paths, 'aa11bb22cc33dd44')?.count).toBe(1)
+  expect(await listRecords(nodeIo, paths)).toHaveLength(1)
+  expect((await readRecord(nodeIo, paths, 'aa11bb22cc33dd44'))?.count).toBe(1)
 })
 
 test('concurrent writers never lose the record', async () => {
   const script = join(tmp, 'writer.ts')
   writeFileSync(script, `
-    import { upsertRecord, readRecord } from ${JSON.stringify(join(import.meta.dir, '..', 'src', 'record.ts'))}
+    import { upsertRecord, readRecord } from ${JSON.stringify(join(import.meta.dir, '..', 'src', 'core', 'record.ts'))}
     import { pathsFor } from ${JSON.stringify(join(import.meta.dir, '..', 'src', 'core', 'paths.ts'))}
     import { nodeIo } from ${JSON.stringify(join(import.meta.dir, '..', 'src', 'io', 'node.ts'))}
     const paths = await pathsFor(nodeIo, process.argv[2])
     const seed = ${JSON.stringify(seed)}
     for (let i = 0; i < 40; i += 1) {
-      upsertRecord(paths, 'aa11bb22cc33dd44', seed)
-      readRecord(paths, 'aa11bb22cc33dd44')
+      await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', seed)
+      await readRecord(nodeIo, paths, 'aa11bb22cc33dd44')
     }
   `)
 
@@ -208,7 +208,7 @@ test('concurrent writers never lose the record', async () => {
 
   // The count may drift under a lost update, which is acceptable. The record itself
   // being gone is not: that is a remembered failure silently forgotten.
-  const final = readRecord(paths, 'aa11bb22cc33dd44')
+  const final = await readRecord(nodeIo, paths, 'aa11bb22cc33dd44')
   expect(final).not.toBeNull()
   expect(final!.count).toBeGreaterThan(0)
   expect(final!.display).toBe('bun test')
