@@ -79,7 +79,13 @@ export function modIo($: ModHost): Io {
     },
     async writeText(path, text) {
       const staging = `${path}.${Math.random().toString(36).slice(2)}.tmp`
-      await $.fs.write(staging, text)
+      try {
+        await $.fs.write(staging, text)
+      } catch (err) {
+        // The host write is not atomic: a rejection can still leave part of the file.
+        await run(['rm', '-f', '--', staging], '/')
+        throw err
+      }
       const moved = await run(['mv', '-f', '--', staging, path], '/')
       if (!moved || moved.exitCode !== 0) {
         await run(['rm', '-f', '--', staging], '/')

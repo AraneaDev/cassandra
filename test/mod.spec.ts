@@ -233,3 +233,13 @@ test('with no resolvable data root the call still runs and nothing throws', asyn
   expect(nextCalls).toBe(1)
   expect(r).toBeDefined()
 })
+
+test('when the session claim cannot be written the mod stands aside, so the binary is the only recorder', async () => {
+  wrap = (i) => ({ ...i, writeText: (p, t) => (p.endsWith('.mod') ? Promise.reject(new Error('read-only')) : i.writeText(p, t)) })
+  const answer = failed()
+  const { r, nextCalls } = await call('bun test', answer)
+  expect(r).toBe(answer)
+  expect(nextCalls).toBe(1)
+  const hash = (await fingerprint(io(), 'Bash', { command: 'bun test' }))!
+  expect(await readRecord(io(), await pathsFor(io(), cwd), hash)).toBeNull()
+})

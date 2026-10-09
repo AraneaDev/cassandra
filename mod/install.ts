@@ -116,14 +116,17 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
 
   // Claim the session before the call, because the classic PreToolUse hook runs beneath
   // this one and must already see the claim. Lazily, on every call, because a /clear
-  // changes the session id without a session.start.
-  const claim = async (io: Io, id: string): Promise<void> => {
+  // changes the session id without a session.start. True only while the claim stands:
+  // without it the binary still records, so the mod must not record as well.
+  const claim = async (io: Io, id: string): Promise<boolean> => {
     // The data root can move after the first claim (the classic hooks may write the
     // pointer), so the claim is only reusable while the root it was made under holds.
     const root = await dataRoot(io).catch(() => null)
-    if (root === null) return
-    if (claimed && claimed.id === id && claimed.root === root && Date.now() - claimed.at < MARKER_REFRESH_MS) return
-    if (await markModSession(io, id)) claimed = { id, root, at: Date.now() }
+    if (root === null) return false
+    if (claimed && claimed.id === id && claimed.root === root && Date.now() - claimed.at < MARKER_REFRESH_MS) return true
+    if (!(await markModSession(io, id))) return false
+    claimed = { id, root, at: Date.now() }
+    return true
   }
 
   on('session.start', async ($, e, next) => {
@@ -167,7 +170,8 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     try {
       io = wrapIo(modIo(hostOf($)))
       const sessionId = await $.session.id()
-      await claim(io, sessionId)
+      // An unclaimed session is the binary's: stand aside through the same path as a core error.
+      if (!(await claim(io, sessionId))) throw new Error('cassandra: session not claimed')
       call = { tool: e.tool, input: toolInput(e), cwd: await $.session.cwd(), sessionId, agentId: e.agentId }
       warning = await check(io, call)
     } catch {

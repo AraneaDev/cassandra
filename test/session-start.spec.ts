@@ -62,3 +62,12 @@ test('an explicit CASSANDRA_HOME writes no pointer', () => {
   start('abc', { CASSANDRA_HOME: join(tmp, 'home'), CLAUDE_PLUGIN_DATA: join(tmp, 'data') })
   expect(existsSync(pointer())).toBe(false)
 })
+
+test('a pointer to a missing or relative directory is ignored, as dataRoot ignores it', () => {
+  mkdirSync(join(tmp, '.cassandra', 'sessions'), { recursive: true })
+  writeFileSync(join(tmp, '.cassandra', 'sessions', 'abc.mod'), 'x')
+  for (const stale of [join(tmp, 'gone'), 'relative/dir']) {
+    writeFileSync(pointer(), stale)
+    expect(start('abc', {})).toBe('')
+  }
+})

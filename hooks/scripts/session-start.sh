@@ -32,6 +32,11 @@ fi
 data=${CASSANDRA_HOME:-${CLAUDE_PLUGIN_DATA:-}}
 if [ -z "$data" ] && [ -f "${HOME:-/nonexistent}/.cassandra/data-root" ]; then
   data=$(cat "$HOME/.cassandra/data-root")
+  # dataRoot trusts a pointer only when it is absolute and still exists.
+  case "$data" in
+    /*) [ -e "$data" ] || data= ;;
+    *) data= ;;
+  esac
 fi
 [ -n "$data" ] || data="${HOME:-/nonexistent}/.cassandra"
 

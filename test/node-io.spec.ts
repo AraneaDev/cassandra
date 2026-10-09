@@ -52,3 +52,20 @@ test('env, homeDir and now answer from the process', async () => {
   const now = nodeIo.now()
   expect(new Date(now).toISOString()).toBe(now)
 })
+
+test('modIo removes its staging file when the host write rejects part-way', async () => {
+  const { modIo } = await import('../src/io/mod.ts')
+  const { nodeHost } = await import('./support/node-host.ts')
+  const dir = mkdtempSync(join(tmpdir(), 'cass-modio-'))
+  try {
+    const host = nodeHost()
+    host.fs.write = async (p: string, t: string) => {
+      writeFileSync(p, t.slice(0, 1))
+      throw new Error('disk full')
+    }
+    await expect(modIo(host).writeText(join(dir, 'r.json'), '{"a":1}')).rejects.toThrow('disk full')
+    expect(readdirSync(dir)).toEqual([])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
