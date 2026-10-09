@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { run } from '../src/cli'
@@ -7,7 +7,7 @@ import { pathsFor, recordPath, type Paths } from '../src/core/paths.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { listRecords, upsertRecord } from '../src/core/record.ts'
 import { appendStat } from '../src/core/stats.ts'
-import { fixSentence, readFix, writeFix } from '../src/core/fixes.ts'
+import { fixPath, fixSentence, readFix, writeFix } from '../src/core/fixes.ts'
 import type { FixNote } from '../src/core/types.ts'
 
 let tmp: string
@@ -286,6 +286,20 @@ test('forget --all also removes fix notes and says so', async () => {
   expect(await run(['forget', '--all', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toBe('Forgot 2 records and 2 fix notes.')
   expect(await readFix(nodeIo, paths, H1)).toBeNull()
+})
+
+test.skipIf(process.getuid?.() === 0)('forget --all reports fix notes it could not remove and exits 1', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  await upsertRecord(nodeIo, paths, H1, seed)
+  await writeFix(nodeIo, paths, H1, note)
+  const shard = dirname(fixPath(paths, H1))
+  chmodSync(shard, 0o000)
+  try {
+    expect(await run(['forget', '--all', '--cwd', cwd])).toBe(1)
+    expect(out.join('\n')).toBe('Forgot 1 record. Could not remove some fix notes; check the permissions under ' + join(paths.root, 'fixes') + '.')
+  } finally {
+    chmodSync(shard, 0o700)
+  }
 })
 
 test('forget --all keeps today\'s text when there are no fix notes', async () => {

@@ -84,26 +84,47 @@ export async function readFix(io: Io, paths: Paths, hash: string): Promise<FixNo
   }
 }
 
-/** Remove every fix note for the project; returns how many were removed. Never throws. */
-export async function removeAllFixes(io: Io, paths: Paths): Promise<number> {
-  let n = 0
+/** What clearing the fix notes came to: how many went, and how many could not be removed. */
+export interface FixCleanup {
+  removed: number
+  failed: number
+}
+
+/**
+ * Remove every fix note for the project. A missing `fixes/` is nothing to do; a directory
+ * that cannot be listed, or a note that cannot be removed, counts as a failure so the
+ * caller can say so rather than report a clean slate. Never throws.
+ */
+export async function removeAllFixes(io: Io, paths: Paths): Promise<FixCleanup> {
+  const result: FixCleanup = { removed: 0, failed: 0 }
   try {
     const root = join(paths.root, 'fixes')
     const shards = await io.list(root)
-    if (!shards.ok) return 0
+    if (!shards.ok) {
+      if (!shards.missing) result.failed += 1
+      return result
+    }
     for (const shard of shards.entries) {
       if (shard.kind !== 'dir') continue
       const files = await io.list(join(root, shard.name))
-      if (!files.ok) continue
+      if (!files.ok) {
+        if (!files.missing) result.failed += 1
+        continue
+      }
       for (const f of files.entries) {
         if (!f.name.endsWith('.json')) continue
-        try { await io.remove(join(root, shard.name, f.name)); n += 1 } catch { /* next */ }
+        try {
+          await io.remove(join(root, shard.name, f.name))
+          result.removed += 1
+        } catch {
+          result.failed += 1
+        }
       }
     }
   } catch {
-    // Best effort by design.
+    result.failed += 1
   }
-  return n
+  return result
 }
 
 function names(files: string[], more: number): string {

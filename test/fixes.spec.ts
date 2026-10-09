@@ -105,7 +105,7 @@ test('notes round-trip, a hostile hash stays inside fixes/, and removeAllFixes c
   await writeFix(nodeIo, paths, 'aa11bb22cc33dd44', note)
   expect(await readFix(nodeIo, paths, 'aa11bb22cc33dd44')).toEqual(note)
   expect(fixPath(paths, '../../evil')).toBe(join(paths.root, 'fixes', 'in', 'invalid.json'))
-  expect(await removeAllFixes(nodeIo, paths)).toBe(1)
+  expect(await removeAllFixes(nodeIo, paths)).toEqual({ removed: 1, failed: 0 })
   expect(await readFix(nodeIo, paths, 'aa11bb22cc33dd44')).toBeNull()
 })
 
@@ -160,5 +160,15 @@ test('a non-ASCII name dirty then committed is named once', async () => {
   expect(rec.dirty?.some((d) => d.includes('caf'))).toBe(true)
   git(dir, 'add', '-A'); git(dir, 'commit', '-qm', 'c')
   const note = await computeFix(nodeIo, dir, rec)
-  expect(note?.files.filter((f) => f.includes('caf'))).toHaveLength(1)
+  expect(note?.files.filter((f) => f.includes('caf'))).toEqual(['café.txt'])
+})
+
+test('removeAllFixes reports notes it could not remove instead of claiming success', async () => {
+  const paths = await pathsFor(nodeIo, repo())
+  const note: FixNote = { kind: 'changed', files: ['a'], more: 0, at: '2026-10-09T00:00:00.000Z' }
+  await writeFix(nodeIo, paths, 'aa11bb22cc33dd44', note)
+  await writeFix(nodeIo, paths, 'bb11bb22cc33dd44', note)
+  const io = { ...nodeIo, remove: async (p: string) => { if (p.includes('aa11')) throw new Error('EACCES'); return nodeIo.remove(p) } }
+  expect(await removeAllFixes(io, paths)).toEqual({ removed: 1, failed: 1 })
+  expect(await removeAllFixes(nodeIo, await pathsFor(nodeIo, repo()))).toEqual({ removed: 0, failed: 0 })
 })

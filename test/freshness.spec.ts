@@ -288,7 +288,7 @@ test('mtime: a sub-directory that cannot be read poisons the stamp, one that is 
 test('parsePorcelain reads plain, renamed and quoted paths', async () => {
   const { parsePorcelain } = await import('../src/core/freshness.ts')
   expect(parsePorcelain(' M a.txt\n?? new dir/b.txt\nR  old.txt -> new.txt\n?? "we\\"ird.txt"\n')).toEqual(
-    ['a.txt', 'new dir/b.txt', 'new.txt', 'we\\"ird.txt'],
+    ['a.txt', 'new dir/b.txt', 'new.txt', 'we"ird.txt'],
   )
   expect(parsePorcelain('')).toEqual([])
 })
@@ -310,4 +310,14 @@ test('parsePorcelain splits a rename after a quoted old path', async () => {
   expect(parsePorcelain('R  "a -> b" -> c\nR  "x y" -> "z w"\n?? "p -> q"\n')).toEqual(['c', 'z w', 'p -> q'])
   expect(unquote('"é"')).toBe('é')
   expect(unquote('"')).toBe('"')
+})
+
+test("unquote decodes git's C-quoted escapes, octal UTF-8 bytes included", async () => {
+  const { unquote, parsePorcelain } = await import('../src/core/freshness.ts')
+  expect(unquote('"caf\\303\\251.txt"')).toBe('café.txt')
+  expect(unquote('"a\\tb"')).toBe('a\tb')
+  expect(unquote('"q\\"x"')).toBe('q"x')
+  expect(unquote('"back\\\\slash"')).toBe('back\\slash')
+  expect(unquote('plain\\303')).toBe('plain\\303')
+  expect(parsePorcelain('?? "caf\\303\\251.txt"\n')).toEqual(['café.txt'])
 })

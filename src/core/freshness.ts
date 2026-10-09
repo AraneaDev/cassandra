@@ -29,7 +29,40 @@ async function gitStamp(io: Io, root: string): Promise<StateStamp | null> {
 
 /** Strip one pair of surrounding double quotes, as git adds to unusual names; escapes stay. */
 export function unquote(path: string): string {
-  return path.length >= 2 && path.startsWith('"') && path.endsWith('"') ? path.slice(1, -1) : path
+  if (!(path.length >= 2 && path.startsWith('"') && path.endsWith('"'))) return path
+  return decodeCQuoted(path.slice(1, -1))
+}
+
+/** The single-character escapes git uses in a C-quoted path. */
+const C_ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
+
+/**
+ * Decode the body of a git C-quoted path: `\\303\\251` octal bytes are UTF-8, so `caf\\303\\251`
+ * becomes `café`. An unknown escape is kept as written. Control characters it yields are
+ * the sanitiser's to strip, never this function's.
+ */
+function decodeCQuoted(body: string): string {
+  const bytes: number[] = []
+  const encoder = new TextEncoder()
+  for (let i = 0; i < body.length; i += 1) {
+    const c = body[i]!
+    if (c !== '\\' || i === body.length - 1) {
+      bytes.push(...encoder.encode(c))
+      continue
+    }
+    const next = body[i + 1]!
+    const octal = /^[0-7]{3}/.exec(body.slice(i + 1, i + 4))
+    if (octal) {
+      bytes.push(Number.parseInt(octal[0], 8) & 0xff)
+      i += 3
+    } else if (next in C_ESCAPES) {
+      bytes.push(C_ESCAPES[next]!)
+      i += 1
+    } else {
+      bytes.push(...encoder.encode(c))
+    }
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes))
 }
 
 /**
