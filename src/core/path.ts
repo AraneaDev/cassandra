@@ -3,7 +3,7 @@
  *
  * The core runs inside Claude Code's mod runtime, which has no `node:path`, so the five
  * operations it needs are written out here. They match `node:path/posix` on every input
- * the core produces, which `test/path.test.ts` checks against Node directly. Trailing
+ * the core produces, which `test/path.spec.ts` checks against Node directly. Trailing
  * slashes are dropped, which Node's `join` keeps; the core never produces one.
  */
 
