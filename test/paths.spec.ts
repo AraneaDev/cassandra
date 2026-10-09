@@ -31,8 +31,29 @@ test('findRepoRoot walks up to the directory containing .git', async () => {
   const repo = join(tmp, 'repo')
   const deep = join(repo, 'a', 'b')
   mkdirSync(join(repo, '.git'), { recursive: true })
+  writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n')
   mkdirSync(deep, { recursive: true })
   expect(await findRepoRoot(nodeIo, deep)).toBe(repo)
+})
+
+test('findRepoRoot ignores an empty .git directory in an ancestor', async () => {
+  const outer = join(tmp, 'outer')
+  const deep = join(outer, 'a')
+  mkdirSync(join(outer, '.git'), { recursive: true })
+  mkdirSync(deep, { recursive: true })
+  expect(await findRepoRoot(nodeIo, deep)).toBe(deep)
+})
+
+test('findRepoRoot accepts a .git directory with HEAD and a .git file', async () => {
+  const real = join(tmp, 'real')
+  mkdirSync(join(real, '.git'), { recursive: true })
+  writeFileSync(join(real, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+  mkdirSync(join(real, 'x'), { recursive: true })
+  expect(await findRepoRoot(nodeIo, join(real, 'x'))).toBe(real)
+  const wt = join(tmp, 'wt')
+  mkdirSync(join(wt, 'y'), { recursive: true })
+  writeFileSync(join(wt, '.git'), 'gitdir: /somewhere/.git/worktrees/wt\n')
+  expect(await findRepoRoot(nodeIo, join(wt, 'y'))).toBe(wt)
 })
 
 test('findRepoRoot returns cwd when there is no .git above it', async () => {
@@ -45,6 +66,7 @@ test('a subdirectory of a repo yields the same slug as its root', async () => {
   const repo = join(tmp, 'repo')
   const deep = join(repo, 'a', 'b')
   mkdirSync(join(repo, '.git'), { recursive: true })
+  writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n')
   mkdirSync(deep, { recursive: true })
   expect(await projectSlug(nodeIo, deep)).toBe(await projectSlug(nodeIo, repo))
 })
@@ -53,7 +75,9 @@ test('two checkouts with the same basename get different slugs', async () => {
   const one = join(tmp, 'x', 'proj')
   const two = join(tmp, 'y', 'proj')
   mkdirSync(join(one, '.git'), { recursive: true })
+  writeFileSync(join(one, '.git', 'HEAD'), 'ref: refs/heads/main\n')
   mkdirSync(join(two, '.git'), { recursive: true })
+  writeFileSync(join(two, '.git', 'HEAD'), 'ref: refs/heads/main\n')
   expect(await projectSlug(nodeIo, one)).not.toBe(await projectSlug(nodeIo, two))
   expect((await projectSlug(nodeIo, one)).startsWith('proj-')).toBe(true)
 })

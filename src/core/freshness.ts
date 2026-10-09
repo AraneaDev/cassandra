@@ -1,6 +1,6 @@
 import type { Io } from './io.ts'
 import { join } from './path.ts'
-import { findRepoRoot } from './paths.ts'
+import { findRepoRoot, isRepoMarker } from './paths.ts'
 import type { StateKind, StateStamp } from './types.ts'
 
 /** Directories the mtime walk never descends into: churn that says nothing about source. */
@@ -116,7 +116,7 @@ async function mtimeStamp(io: Io, root: string): Promise<StateStamp | null> {
 export async function stateStamp(io: Io, cwd: string): Promise<StateStamp> {
   if (!(await io.exists(cwd))) return { kind: 'none', value: '' }
   const root = await findRepoRoot(io, cwd)
-  if (await io.exists(join(root, '.git'))) {
+  if (await isRepoMarker(io, root)) {
     const stamp = await gitStamp(io, root)
     if (stamp) return stamp
   }

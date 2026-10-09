@@ -67,6 +67,20 @@ async function readRememberedDataRoot(io: Io, home: string): Promise<string | nu
   }
 }
 
+/** Whether `dir` holds a real git marker: a `.git` file (worktree, submodule) or a directory with `HEAD`. */
+export async function isRepoMarker(io: Io, dir: string): Promise<boolean> {
+  const git = join(dir, '.git')
+  if (!(await io.exists(git))) return false
+  if (await io.exists(join(git, 'HEAD'))) return true
+  // A worktree or submodule has a `.git` file pointing at the real git directory. An
+  // empty directory (a sandbox placeholder) is not a repository, and git agrees.
+  try {
+    return ((await io.readText(git)) ?? '').startsWith('gitdir:')
+  } catch {
+    return false
+  }
+}
+
 /**
  * Nearest ancestor containing `.git`, else the directory itself. Filesystem probes rather
  * than `git rev-parse`, because this runs on the hot path and a subprocess there would
@@ -77,7 +91,7 @@ export async function findRepoRoot(io: Io, cwd: string): Promise<string> {
   const start = normalize(cwd)
   let dir = start
   for (;;) {
-    if (await io.exists(join(dir, '.git'))) return dir
+    if (await isRepoMarker(io, dir)) return dir
     const parent = dirname(dir)
     if (parent === dir) return start
     dir = parent
