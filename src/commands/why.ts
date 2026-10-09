@@ -1,4 +1,5 @@
 import { readRecord } from '../core/record.ts'
+import { fixSentence, readFix } from '../core/fixes.ts'
 import type { Io } from '../core/io.ts'
 import { type Paths } from '../core/paths.ts'
 import { explainResolution, resolveHash } from '../core/resolve.ts'
@@ -30,5 +31,7 @@ export async function why(io: Io, paths: Paths, hash: string): Promise<number> {
   console.log(`  probe       ${record.stateKind} (${record.stateStamp})`)
   console.log(`  session     ${record.sessionId || 'unknown'}`)
   console.log(`  reason      ${record.errorExcerpt || '(none captured)'}`)
+  const fix = await readFix(io, paths, r.hash)
+  if (fix) console.log(`  fix         ${fixSentence(fix)}`)
   return 0
 }

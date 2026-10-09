@@ -1,5 +1,6 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { digestText, liveRecords } from '../src/core/digest.ts'
+import { writeFix } from '../src/core/fixes.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
 import { pathsFor } from '../src/core/paths.ts'
 import { upsertRecord } from '../src/core/record.ts'
@@ -83,4 +84,18 @@ test('liveRecords reports how many were live before the cap', async () => {
   const live = (await liveRecords(io, cwd))!
   expect(live.records).toHaveLength(5)
   expect(live.total).toBe(7)
+})
+
+test('a digest line for a record with a fix note ends with the sentence; one without is unchanged', async () => {
+  const withNote = await seed('bun test', '2026-02-01T00:00:00.000Z')
+  await seed('bun lint', '2026-01-01T00:00:00.000Z')
+  const note = { kind: 'changed' as const, files: ['fix.txt'], more: 0, at: '2026-10-09T10:00:00.000Z' }
+  await writeFix(io, await pathsFor(io, cwd), withNote, note)
+  const live = (await liveRecords(io, cwd))!
+  expect(live.records[0]!.fix).toEqual(note)
+  expect(live.records[1]!.fix).toBeUndefined()
+  const lines = digestText(live.records, live.kind).split('\n')
+  expect(lines[1]).toEndWith(' Last time this started working after `fix.txt` changed (2026-10-09).')
+  expect(lines[2]).not.toContain('Last time')
+  expect(lines[2]).toEndWith('.')
 })

@@ -1,6 +1,8 @@
 import { deleteRecord, listRecords } from '../core/record.ts'
+import { removeAllFixes } from '../core/fixes.ts'
 import type { Io } from '../core/io.ts'
 import { type Paths } from '../core/paths.ts'
+import { join } from '../core/path.ts'
 import { explainResolution, resolveHash } from '../core/resolve.ts'
 
 /** Drop one record, or the whole project index. */
@@ -8,7 +10,16 @@ export async function forget(io: Io, paths: Paths, target: string | null, all: b
   if (all) {
     const records = await listRecords(io, paths)
     for (const { hash } of records) await deleteRecord(io, paths, hash)
-    console.log(`Forgot ${records.length} record${records.length === 1 ? '' : 's'}.`)
+    const fixes = await removeAllFixes(io, paths)
+    const n = records.length
+    const done = fixes.removed > 0
+      ? `Forgot ${n} record${n === 1 ? '' : 's'} and ${fixes.removed} fix note${fixes.removed === 1 ? '' : 's'}.`
+      : `Forgot ${n} record${n === 1 ? '' : 's'}.`
+    if (fixes.failed > 0) {
+      console.log(`${done} Could not remove some fix notes; check the permissions under ${join(paths.root, 'fixes')}.`)
+      return 1
+    }
+    console.log(done)
     return 0
   }
   if (!target) {

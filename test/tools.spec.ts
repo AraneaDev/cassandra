@@ -1,6 +1,7 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from '../src/core/tools.ts'
 import { settle, type Call } from '../src/core/engine.ts'
+import { writeFix } from '../src/core/fixes.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
 import { pathsFor, recordPath } from '../src/core/paths.ts'
 import { readRecord } from '../src/core/record.ts'
@@ -136,4 +137,20 @@ test('a store that cannot be read becomes a text result, not a throw', async () 
   io.homeDir = async () => ''
   expect(await queryText(io, cwd, {})).toStartWith('cassandra: ')
   expect(await resolveFailure(io, cwd, { command: 'x', reason: 'y' })).toStartWith('cassandra: ')
+})
+
+test('query with a command appends the fix sentence after the verdict', async () => {
+  await fail('bun test')
+  await writeFix(io, await pathsFor(io, cwd), await hashOf('bun test'), { kind: 'changed', files: ['fix.txt'], more: 0, at: '2026-10-09T10:00:00.000Z' })
+  expect(await queryText(io, cwd, { command: 'bun test' })).toEndWith(
+    'Nothing in this directory tree has changed since. Last time this started working after `fix.txt` changed (2026-10-09).',
+  )
+})
+
+test('query without a command shows the fix sentence before the id', async () => {
+  await fail('bun test')
+  const hash = await hashOf('bun test')
+  await writeFix(io, await pathsFor(io, cwd), hash, { kind: 'changed', files: ['fix.txt'], more: 0, at: '2026-10-09T10:00:00.000Z' })
+  const text = await queryText(io, cwd, {})
+  expect(text).toContain(`changed (2026-10-09). [${hash.slice(0, 8)}]`)
 })

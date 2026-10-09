@@ -11,6 +11,8 @@ export type StateKind = 'git' | 'mtime' | 'none'
 export interface StateStamp {
   kind: StateKind
   value: string
+  /** The raw git state behind a `git` stamp: what a fix note is computed from later. */
+  git?: { head: string; dirty: string[] }
 }
 
 /** One remembered failure, stored as a single JSON file named by its fingerprint. */
@@ -27,6 +29,12 @@ export interface FailureRecord {
   lastSeen: string
   errorExcerpt: string
   agentId?: string
+  /** HEAD when the call failed, git repositories only. */
+  gitHead?: string
+  /** Paths git reported as changed when the call failed, at most 200. */
+  dirty?: string[]
+  /** True when `dirty` was cut at the cap, so a path missing from it may still have been dirty. */
+  dirtyTruncated?: boolean
 }
 
 /** The subset of a Claude Code hook payload Cassandra reads. All fields are optional by design. */
@@ -54,4 +62,16 @@ export interface HookPayload {
   source?: string
   /** SubagentStart: the subagent's type; a fork inherits the transcript. */
   agent_type?: string
+}
+
+/** What changed between a failure and the success that followed, by file name. */
+export interface FixNote {
+  /** Changed paths, at most 10, sorted. */
+  files: string[]
+  /** How many further changed paths were not kept. */
+  more: number
+  /** When the note was computed, ISO. */
+  at: string
+  /** Changed files named, no visible change in the repository, or the failure HEAD is gone. */
+  kind: 'changed' | 'elsewhere' | 'rewritten'
 }

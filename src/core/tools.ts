@@ -2,6 +2,7 @@ import { history, reason, scopeOf } from './describe.ts'
 import { digestText, liveRecords } from './digest.ts'
 import { sanitiseExcerpt } from './engine.ts'
 import { fingerprint } from './fingerprint.ts'
+import { fixSentence, readFix } from './fixes.ts'
 import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
 import { OWN_TOOL_PREFIX } from './own-tools.ts'
@@ -60,7 +61,8 @@ export async function queryText(io: Io, cwd: string, input: unknown): Promise<st
       return withIds.join('\n')
     }
     const hash = await fingerprint(io, 'Bash', { command })
-    const record = hash ? await readRecord(io, await pathsFor(io, cwd), hash) : null
+    const paths = await pathsFor(io, cwd)
+    const record = hash ? await readRecord(io, paths, hash) : null
     if (!hash || !record) return say('No failure of this command is remembered in this project.')
     const stamp = await stateStamp(io, cwd)
     let verdict = 'Cassandra cannot tell whether anything has changed since.'
@@ -70,7 +72,8 @@ export async function queryText(io: Io, cwd: string, input: unknown): Promise<st
         ? `Nothing in ${scope} has changed since.`
         : `Something in ${scope} has changed since, so a retry may be legitimate.`
     }
-    return say(`${history(record)}, most recently ${record.lastSeen}.${reason(record)} ${verdict}`)
+    const note = await readFix(io, paths, hash)
+    return say(`${history(record)}, most recently ${record.lastSeen}.${reason(record)} ${verdict}${note ? ` ${fixSentence(note)}` : ''}`)
   } catch {
     return say('could not read what this project remembers.')
   }

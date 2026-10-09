@@ -284,3 +284,40 @@ test('mtime: a sub-directory that cannot be read poisons the stamp, one that is 
   io.unreadable.add('/w/sub')
   expect((await stateStamp(io, '/w')).kind).toBe('none')
 })
+
+test('parsePorcelain reads plain, renamed and quoted paths', async () => {
+  const { parsePorcelain } = await import('../src/core/freshness.ts')
+  expect(parsePorcelain(' M a.txt\n?? new dir/b.txt\nR  old.txt -> new.txt\n?? "we\\"ird.txt"\n')).toEqual(
+    ['a.txt', 'new dir/b.txt', 'new.txt', 'we"ird.txt'],
+  )
+  expect(parsePorcelain('')).toEqual([])
+})
+
+test('a git stamp carries the head and dirty paths, and its value is unchanged', async () => {
+  const repo = join(tmp, 'r'); initRepo(repo)
+  writeFileSync(join(repo, 'u.txt'), 'x')
+  const s = await stateStamp(nodeIo, repo)
+  expect(s.kind).toBe('git')
+  expect(s.git?.head).toMatch(/^[0-9a-f]{40}$/)
+  expect(s.git?.dirty).toEqual(['u.txt'])
+  const head = Bun.spawnSync(['git', '-C', repo, 'rev-parse', 'HEAD']).stdout.toString()
+  const status = Bun.spawnSync(['git', '-C', repo, 'status', '--porcelain']).stdout.toString()
+  expect(s.value).toBe((await nodeIo.sha256(`${head} ${status}`)).slice(0, 16))
+})
+
+test('parsePorcelain splits a rename after a quoted old path', async () => {
+  const { parsePorcelain, unquote } = await import('../src/core/freshness.ts')
+  expect(parsePorcelain('R  "a -> b" -> c\nR  "x y" -> "z w"\n?? "p -> q"\n')).toEqual(['c', 'z w', 'p -> q'])
+  expect(unquote('"é"')).toBe('é')
+  expect(unquote('"')).toBe('"')
+})
+
+test("unquote decodes git's C-quoted escapes, octal UTF-8 bytes included", async () => {
+  const { unquote, parsePorcelain } = await import('../src/core/freshness.ts')
+  expect(unquote('"caf\\303\\251.txt"')).toBe('café.txt')
+  expect(unquote('"a\\tb"')).toBe('a\tb')
+  expect(unquote('"q\\"x"')).toBe('q"x')
+  expect(unquote('"back\\\\slash"')).toBe('back\\slash')
+  expect(unquote('plain\\303')).toBe('plain\\303')
+  expect(parsePorcelain('?? "caf\\303\\251.txt"\n')).toEqual(['café.txt'])
+})

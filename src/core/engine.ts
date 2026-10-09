@@ -1,5 +1,6 @@
 import { digestText, liveRecords } from './digest.ts'
 import { history, reason, scopeOf } from './describe.ts'
+import { computeFix, fixSentence, readFix, writeFix } from './fixes.ts'
 import { displayFor, fingerprint } from './fingerprint.ts'
 import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
@@ -10,6 +11,8 @@ import { appendStat, attributeBoundary, type BriefBoundary } from './stats.ts'
 import type { RecordKind } from './types.ts'
 
 const EXCERPT_MAX = 240
+/** Most dirty paths a record keeps, so a huge working tree cannot bloat it. */
+const DIRTY_MAX = 200
 
 /**
  * The one piece of free text Cassandra stores and replays.
@@ -79,19 +82,23 @@ export async function check(io: Io, call: Call): Promise<Warning | null> {
     { sessionId: found.sessionId, compactions: found.compactions, agentId: found.agentId },
     { sessionId: call.sessionId, compactions: await compactionCount(io, paths, call.sessionId), agentId: call.agentId },
   )
-  await appendStat(io, paths, { kind: 'warned', hash, boundary })
-
   // `none` never reaches this point, since `unchanged` refuses it.
   const scope = scopeOf(found.stateKind as Exclude<typeof found.stateKind, 'none'>)
-  const text = `cassandra: ${history(found)} before, most recently ${found.lastSeen}. `
+  let text = `cassandra: ${history(found)} before, most recently ${found.lastSeen}. `
     + `Nothing in ${scope} has changed since.${reason(found)}`
+  // What made this call work last time, when a past success left a note.
+  const note = await readFix(io, paths, hash)
+  if (note) text += ` ${fixSentence(note)}`
+  await appendStat(io, paths, note ? { kind: 'warned', hash, boundary, fixNote: true } : { kind: 'warned', hash, boundary })
   return { hash, text }
 }
 
 /**
  * The write path, once a call's outcome is known. `warnedHash` is the record `check`
- * warned about for this very call, if it did: a failure then confirms the warning, and
- * a success proves the freshness probe missed a real change.
+ * warned about for this very call, if it did: a failure then confirms the warning.
+ * Any success of a recorded call forgets the record and, in a git repository, keeps a
+ * fix note of what changed since it failed. A success after a warning additionally
+ * proves the freshness probe missed a change.
  */
 export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: string | null): Promise<void> {
   // An interrupt is not a failure of the command, and a call that never ran did not fail
@@ -100,9 +107,18 @@ export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: s
   if (outcome.kind === 'interrupt' || outcome.kind === 'not_run' || !call.cwd) return
   const paths = await pathsFor(io, call.cwd)
   if (outcome.kind === 'success') {
-    if (!warnedHash) return
-    await appendStat(io, paths, { kind: 'false_positive', hash: warnedHash })
-    await deleteRecord(io, paths, warnedHash)
+    if (warnedHash) await appendStat(io, paths, { kind: 'false_positive', hash: warnedHash })
+    const hash = warnedHash ?? (call.tool ? await fingerprint(io, call.tool, call.input) : null)
+    if (!hash) return
+    const found = await readRecord(io, paths, hash)
+    if (!found) return
+    // The call works now. Keep what changed since it failed, then forget it as a dead end.
+    const note = await computeFix(io, call.cwd, found)
+    if (note) {
+      await writeFix(io, paths, hash, note)
+      await appendStat(io, paths, { kind: 'fixed', hash, files: note.files.length + note.more })
+    }
+    await deleteRecord(io, paths, hash)
     return
   }
   // It failed again after we warned, so the warning was right and was disregarded.
@@ -128,6 +144,13 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
     compactions: await compactionCount(io, paths, call.sessionId),
     errorExcerpt: sanitiseExcerpt(reason),
     agentId: call.agentId,
+    ...(stamp.git
+      ? {
+          gitHead: stamp.git.head,
+          dirty: stamp.git.dirty.slice(0, DIRTY_MAX),
+          ...(stamp.git.dirty.length > DIRTY_MAX ? { dirtyTruncated: true } : {}),
+        }
+      : {}),
   })
 }
 

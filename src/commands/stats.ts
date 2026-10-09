@@ -18,7 +18,8 @@ export async function stats(io: Io, paths: Paths): Promise<number> {
   const warned = events.filter((e) => e.kind === 'warned')
   const briefed = events.filter((e) => e.kind === 'briefed')
   const resolves = events.filter((e) => e.kind === 'resolved' && e.hash)
-  if (warned.length === 0 && briefed.length === 0 && resolves.length === 0) {
+  const fixed = events.filter((e) => e.kind === 'fixed')
+  if (warned.length === 0 && briefed.length === 0 && resolves.length === 0 && fixed.length === 0) {
     console.log('No warnings recorded yet for this project.')
     return 0
   }
@@ -79,6 +80,12 @@ export async function stats(io: Io, paths: Paths): Promise<number> {
     }
     console.log(`${warned.length > 0 || briefed.length > 0 ? '\n' : ''}agent resolves\n`)
     console.log(`  resolved by an agent  ${resolves.length}, failed again ${failedAgain}  (a high second number means resolve is silencing warnings, not reporting fixes)`)
+  }
+
+  if (fixed.length > 0) {
+    const offered = warned.filter((e) => e.fixNote).length
+    console.log(`${warned.length > 0 || briefed.length > 0 || resolves.length > 0 ? '\n' : ''}fix notes\n`)
+    console.log(`  fixes remembered  ${fixed.length}, offered again ${offered}`)
   }
   return 0
 }

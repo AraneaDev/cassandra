@@ -124,6 +124,11 @@ with `resolve`. M counts those resolved failures that were recorded again after 
 resolve. A high M means `resolve` is used to silence warnings rather than to report fixes.
 Like the other two, that is a reason to distrust the feature, not to tune it.
 
+The `fix notes` block reads `fixes remembered N, offered again M`. N counts fix notes
+recorded. M counts warnings that carried a fix sentence: the call failed again after a
+fix was remembered. A high M means fixes keep being undone, for example by reverts or by
+switching branches.
+
 ## How it decides whether to warn
 
 On `PreToolUse`:
@@ -137,6 +142,24 @@ On `PreToolUse`:
 A briefing uses the same rule: a record goes into the note only if the workspace is
 provably unchanged since it failed.
 
+Any success of a remembered call forgets it, not only a success after a warning.
+
+### Fix notes
+
+In a git repository, when a remembered failure later succeeds, Cassandra keeps which
+files changed in between: committed changes since the failure's `HEAD`, plus files whose
+uncommitted state flipped. It then forgets the failure. If git saw no change in the
+repository, the note says the fix was elsewhere (ignored directories such as
+`node_modules` are invisible to it). If the failure's commit no longer exists in the
+repository, for example after garbage collection, the note says history was rewritten, and
+it may still list files. After a rebase the old commit usually still exists, so the note
+lists the changed files. There is one note per call (the latest),
+at most 10 names, sanitised. Outside git there are no fix notes.
+
+If the call fails again, the warning, the briefing line and `query` add one sentence, for
+example: "Last time this started working after `package.json` and `bun.lock` changed
+(2026-10-09)." At most 3 names are shown, then "and N more".
+
 ## Asking and telling
 
 On the mod path, Cassandra registers two tools, which the engine lists as
@@ -149,7 +172,7 @@ answer only when asked, and Cassandra never records calls to its own tools.
   the live dead ends, at most five plus "…and N more live failures.", each with an 8-character id.
 - **`resolve`** is for a fix that happened outside the repository, which the freshness
   probe cannot see. It takes exactly one of `command` or `id`, plus a `reason`. Cassandra
-  forgets the record, the same as `cassandra forget`, and logs a `resolved` stats line with
+  forgets the record, the same as `cassandra forget` (any fix note stays), and logs a `resolved` stats line with
   the sanitised reason, capped at 240 characters. If the call fails again it is remembered
   again, so a wrong claim costs one failure.
 
@@ -234,6 +257,11 @@ measurable, and that is the trade being made.
 
 Known gaps and differences:
 
+- The fingerprint does not include the working directory. In a monorepo, a success of the
+  same command in another package forgets the failure, and its note says the fix was
+  elsewhere.
+- A fix note does not name an edit to a file that already had uncommitted changes when
+  the call failed.
 - A user MCP server named `cassandra` that itself exposes a `query` or `resolve` tool
   would clash with Cassandra's own tools. Its other tools are tracked as usual.
 - Mod timing: the mod hands a new subagent its note after the subagent's first tool
@@ -276,9 +304,9 @@ Known gaps and differences:
 | Command | Does |
 | --- | --- |
 | `cassandra list` | records remembered for this project |
-| `cassandra why <hash>` | one record in full, including the error excerpt |
-| `cassandra forget <hash>` | drop one record |
-| `cassandra forget --all` | drop every record for this project |
+| `cassandra why <hash>` | one record in full, including the error excerpt and its `fix` line |
+| `cassandra forget <hash>` | drop one record (its fix note stays) |
+| `cassandra forget --all` | drop every record and fix note for this project |
 | `cassandra stats` | whether the warnings are earning their place |
 | `cassandra export` | the whole index as JSON |
 

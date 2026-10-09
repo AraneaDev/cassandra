@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { run } from '../src/cli'
@@ -7,6 +7,8 @@ import { pathsFor, recordPath, type Paths } from '../src/core/paths.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { listRecords, upsertRecord } from '../src/core/record.ts'
 import { appendStat } from '../src/core/stats.ts'
+import { fixPath, fixSentence, readFix, writeFix } from '../src/core/fixes.ts'
+import type { FixNote } from '../src/core/types.ts'
 
 let tmp: string
 let cwd: string
@@ -255,4 +257,78 @@ test('stats reports agent resolves and how many failed again afterwards (Review 
   expect(await run(['stats', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('resolved by an agent  3, failed again 1')
   expect(out.join('\n')).toStartWith('agent resolves\n\n  resolved by an agent')
+})
+
+const note: FixNote = { files: ['src/a.ts'], more: 0, at: '2026-02-03T04:05:06.000Z', kind: 'changed' }
+const H1 = 'aa11bb22cc33dd44'
+const H2 = 'bb11bb22cc33dd44'
+
+test('why prints the fix note, and nothing extra without one', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  await upsertRecord(nodeIo, paths, H1, seed)
+  expect(await run(['why', H1, '--cwd', cwd])).toBe(0)
+  const plain = out.join('\n')
+  expect(plain).not.toContain('  fix ')
+  out.length = 0
+  await writeFix(nodeIo, paths, H1, note)
+  expect(await run(['why', H1, '--cwd', cwd])).toBe(0)
+  const withFix = out.join('\n')
+  expect(withFix).toContain(`  fix         ${fixSentence(note)}`)
+  expect(withFix.replace(/\n {2}fix .*/, '')).toBe(plain)
+})
+
+test('forget --all also removes fix notes and says so', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  await upsertRecord(nodeIo, paths, H1, seed)
+  await upsertRecord(nodeIo, paths, H2, seed)
+  await writeFix(nodeIo, paths, H1, note)
+  await writeFix(nodeIo, paths, H2, note)
+  expect(await run(['forget', '--all', '--cwd', cwd])).toBe(0)
+  expect(out.join('\n')).toBe('Forgot 2 records and 2 fix notes.')
+  expect(await readFix(nodeIo, paths, H1)).toBeNull()
+})
+
+test.skipIf(process.getuid?.() === 0)('forget --all reports fix notes it could not remove and exits 1', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  await upsertRecord(nodeIo, paths, H1, seed)
+  await writeFix(nodeIo, paths, H1, note)
+  const shard = dirname(fixPath(paths, H1))
+  chmodSync(shard, 0o000)
+  try {
+    expect(await run(['forget', '--all', '--cwd', cwd])).toBe(1)
+    expect(out.join('\n')).toBe('Forgot 1 record. Could not remove some fix notes; check the permissions under ' + join(paths.root, 'fixes') + '.')
+  } finally {
+    chmodSync(shard, 0o700)
+  }
+})
+
+test('forget --all keeps today\'s text when there are no fix notes', async () => {
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), H1, seed)
+  expect(await run(['forget', '--all', '--cwd', cwd])).toBe(0)
+  expect(out.join('\n')).toBe('Forgot 1 record.')
+})
+
+test('forget <id> keeps the fix note', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  await upsertRecord(nodeIo, paths, H1, seed)
+  await writeFix(nodeIo, paths, H1, note)
+  expect(await run(['forget', H1, '--cwd', cwd])).toBe(0)
+  expect(await readFix(nodeIo, paths, H1)).not.toBeNull()
+})
+
+test('stats counts fixes remembered and offered again', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  line(paths, { kind: 'fixed', hash: H1, files: 1, t: '2026-01-01T00:00:01.000Z' })
+  line(paths, { kind: 'fixed', hash: H2, files: 2, t: '2026-01-01T00:00:02.000Z' })
+  line(paths, { kind: 'warned', hash: H1, boundary: 'session', fixNote: true, t: '2026-01-01T00:00:03.000Z' })
+  expect(await run(['stats', '--cwd', cwd])).toBe(0)
+  const text = out.join('\n')
+  expect(text).toContain('fixes remembered  2, offered again 1')
+  expect(text).toContain('\n\nfix notes\n\n  fixes remembered')
+})
+
+test('stats with only fixed lines starts on the fix notes block', async () => {
+  line(await pathsFor(nodeIo, cwd), { kind: 'fixed', hash: H1, files: 1, t: '2026-01-01T00:00:01.000Z' })
+  expect(await run(['stats', '--cwd', cwd])).toBe(0)
+  expect(out.join('\n')).toBe('fix notes\n\n  fixes remembered  1, offered again 0')
 })

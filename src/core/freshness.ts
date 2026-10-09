@@ -17,23 +17,99 @@ const MAX_ENTRIES = 5000
  */
 async function gitStamp(io: Io, root: string): Promise<StateStamp | null> {
   try {
-    const [head, status] = await Promise.all([
-      io.run(['git', '-C', root, 'rev-parse', 'HEAD'], root),
-      io.run(['git', '-C', root, 'status', '--porcelain'], root),
-    ])
-    if (!status || status.exitCode !== 0) return null
-    // A repository with no commits yet fails `rev-parse HEAD`, so its exit code is
-    // checked explicitly rather than trusting whatever git wrote to stdout on
-    // failure. Substituting a fixed literal keeps the stamp defined by our own
-    // code. The repo is still stampable either way: `status --porcelain` alone
-    // already lists every untracked and staged file, so the stamp stays valid and
-    // moves both with the working tree and with the first commit.
-    const headValue = head && head.exitCode === 0 ? head.stdout : 'no-head'
-    const text = `${headValue} ${status.stdout}`
-    return { kind: 'git', value: (await io.sha256(text)).slice(0, 16) }
+    const state = await gitState(io, root)
+    if (!state) return null
+    // The hashed text is exactly what it always was, so every existing record still matches.
+    const text = `${state.headRaw} ${state.status}`
+    return { kind: 'git', value: (await io.sha256(text)).slice(0, 16), git: { head: state.head, dirty: state.dirty } }
   } catch {
     return null
   }
+}
+
+/** Strip one pair of surrounding double quotes, as git adds to unusual names; escapes stay. */
+export function unquote(path: string): string {
+  if (!(path.length >= 2 && path.startsWith('"') && path.endsWith('"'))) return path
+  return decodeCQuoted(path.slice(1, -1))
+}
+
+/** The single-character escapes git uses in a C-quoted path. */
+const C_ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
+
+/**
+ * Decode the body of a git C-quoted path: `\\303\\251` octal bytes are UTF-8, so `caf\\303\\251`
+ * becomes `café`. An unknown escape is kept as written. Control characters it yields are
+ * the sanitiser's to strip, never this function's.
+ */
+function decodeCQuoted(body: string): string {
+  const bytes: number[] = []
+  const encoder = new TextEncoder()
+  for (let i = 0; i < body.length; i += 1) {
+    const c = body[i]!
+    if (c !== '\\' || i === body.length - 1) {
+      bytes.push(...encoder.encode(c))
+      continue
+    }
+    const next = body[i + 1]!
+    const octal = /^[0-7]{3}/.exec(body.slice(i + 1, i + 4))
+    if (octal) {
+      bytes.push(Number.parseInt(octal[0], 8) & 0xff)
+      i += 3
+    } else if (next in C_ESCAPES) {
+      bytes.push(C_ESCAPES[next]!)
+      i += 1
+    } else {
+      bytes.push(...encoder.encode(c))
+    }
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes))
+}
+
+/**
+ * The paths in `git status --porcelain` output. A rename (`R  old -> new`) yields the new
+ * path; a quoted path keeps its escapes and loses only the surrounding quotes. Never throws.
+ */
+export function parsePorcelain(stdout: string): string[] {
+  const out: string[] = []
+  for (const line of stdout.split('\n')) {
+    if (line.length < 4) continue
+    let path = line.slice(3)
+    if (path.startsWith('"')) {
+      // A quoted old path may itself contain " -> ": find its closing quote first.
+      let close = -1
+      for (let i = 1; i < path.length; i++) {
+        if (path[i] === '\\') i += 1
+        else if (path[i] === '"') { close = i; break }
+      }
+      if (close !== -1 && path.startsWith(' -> ', close + 1)) path = path.slice(close + 5)
+    } else {
+      const arrow = path.indexOf(' -> ')
+      if (arrow !== -1) path = path.slice(arrow + 4)
+    }
+    path = unquote(path)
+    if (path) out.push(path)
+  }
+  return out
+}
+
+/** HEAD and the working tree as git reports them; null when git cannot answer. */
+export async function gitState(
+  io: Io,
+  root: string,
+): Promise<{ head: string; headRaw: string; dirty: string[]; status: string } | null> {
+  const [head, status] = await Promise.all([
+    io.run(['git', '-C', root, 'rev-parse', 'HEAD'], root),
+    io.run(['git', '-C', root, 'status', '--porcelain'], root),
+  ])
+  if (!status || status.exitCode !== 0) return null
+  // A repository with no commits yet fails `rev-parse HEAD`, so its exit code is
+  // checked explicitly rather than trusting whatever git wrote to stdout on
+  // failure. Substituting a fixed literal keeps the stamp defined by our own
+  // code. The repo is still stampable either way: `status --porcelain` alone
+  // already lists every untracked and staged file, so the stamp stays valid and
+  // moves both with the working tree and with the first commit.
+  const headRaw = head && head.exitCode === 0 ? head.stdout : 'no-head'
+  return { head: headRaw === 'no-head' ? 'no-head' : headRaw.trim(), headRaw, dirty: parsePorcelain(status.stdout), status: status.stdout }
 }
 
 /**
