@@ -281,8 +281,8 @@ Known gaps and differences:
 - A package without one of the listed manifests counts as part of the nearest parent
   package, or of the root.
 - A fix note names an edit to a file that already had uncommitted changes when the call
-  failed, unless that file was over 256 KB or beyond the first 50 dirty files at the
-  time.
+  failed, unless that file held over 256K characters of text, sat under a symlinked
+  directory, or was beyond the first 50 dirty files at the time.
 - A user MCP server named `cassandra` that itself exposes a `query` or `resolve` tool
   would clash with Cassandra's own tools. Its other tools are tracked as usual.
 - Mod timing: the mod hands a new subagent its note after the subagent's first tool
