@@ -12,7 +12,12 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, utim
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { stateStamp } from '../src/core/freshness.ts'
+import type { Io } from '../src/core/io.ts'
 import { nodeIo } from '../src/io/node.ts'
+import { modIo } from '../src/io/mod.ts'
+import { nodeHost } from '../test/support/node-host.ts'
+
+const io: Io = process.argv.includes('--io=mod') ? modIo(nodeHost()) : nodeIo
 
 interface Mutation {
   name: string
@@ -69,9 +74,9 @@ async function runSynthetic(): Promise<number> {
     for (const m of MUTATIONS) {
       const dir = join(root, `${asRepo ? 'g' : 'm'}-${m.name.replace(/\W+/g, '-')}`)
       seed(dir, asRepo)
-      const before = await stateStamp(nodeIo, dir)
+      const before = await stateStamp(io, dir)
       m.apply(dir)
-      const after = await stateStamp(nodeIo, dir)
+      const after = await stateStamp(io, dir)
       total += 1
       const moved = before.value !== after.value && after.kind !== 'none'
       if (!moved) {
@@ -82,7 +87,7 @@ async function runSynthetic(): Promise<number> {
   }
 
   const rate = ((failures / total) * 100).toFixed(1)
-  console.error(`\nfreshness FP harness: ${total - failures}/${total} mutations detected, false-positive rate ${rate}%`)
+  console.error(`\nfreshness FP harness (io=${process.argv.includes('--io=mod') ? 'mod' : 'node'}): ${total - failures}/${total} mutations detected, false-positive rate ${rate}%`)
 
   // Known blind spot, reported for the record rather than folded into the total
   // above. A same-length rewrite that also restores the file's original atime and
@@ -95,7 +100,7 @@ async function runSynthetic(): Promise<number> {
     seed(dir, false)
     const p = join(dir, 'a.txt')
     const original = statSync(p)
-    const before = await stateStamp(nodeIo, dir)
+    const before = await stateStamp(io, dir)
     writeFileSync(p, 'ONE')
     // utimesSync accepts Date objects or numeric seconds-since-epoch. A Date only
     // carries whole-millisecond precision, but this filesystem stores mtimes with
@@ -104,7 +109,7 @@ async function runSynthetic(): Promise<number> {
     // original mtime and this case would falsely appear detected. Passing the
     // fraction through as seconds restores the exact original mtimeMs.
     utimesSync(p, original.mtimeMs / 1000, original.mtimeMs / 1000)
-    const after = await stateStamp(nodeIo, dir)
+    const after = await stateStamp(io, dir)
     const detected = before.value !== after.value && after.kind !== 'none'
     console.error(
       `known blind spot [mtime] same size, same mtime, different content: ${detected ? 'DETECTED (unexpected)' : 'NOT DETECTED (expected)'}`,
@@ -121,9 +126,9 @@ async function runSynthetic(): Promise<number> {
   for (const m of MUTATIONS) {
     const dir = join(root, `headless-${m.name.replace(/\W+/g, '-')}`)
     seed(dir, true, { headless: true })
-    const before = await stateStamp(nodeIo, dir)
+    const before = await stateStamp(io, dir)
     m.apply(dir)
-    const after = await stateStamp(nodeIo, dir)
+    const after = await stateStamp(io, dir)
     headlessTotal += 1
     const moved = before.value !== after.value && after.kind !== 'none'
     if (!moved) {
@@ -226,9 +231,9 @@ async function runReal(): Promise<number> {
 
   for (const root of roots) {
     const t0 = performance.now()
-    const a = await stateStamp(nodeIo, root)
+    const a = await stateStamp(io, root)
     const elapsed = performance.now() - t0
-    const b = await stateStamp(nodeIo, root)
+    const b = await stateStamp(io, root)
 
     const stable = a.value === b.value && a.kind !== 'none'
     if (!stable) unstable += 1
