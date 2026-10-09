@@ -221,6 +221,8 @@ describe('settle success writes fix notes', () => {
   test('a repeat failure stores dirtyStats and reads only the dirty files whose size or mtime moved', async () => {
     const dir = repo()
     writeFileSync(join(dir, 'a.txt'), 'edited'); writeFileSync(join(dir, 'b.txt'), 'x'); writeFileSync(join(dir, 'c.txt'), 'y')
+    const OLD = 1_700_000_000
+    for (const f of ['a.txt', 'b.txt', 'c.txt']) utimesSync(join(dir, f), OLD, OLD)
     const stat = (f: string): string => { const s = statSync(join(dir, f)); return `${s.size}:${Math.trunc(s.mtimeMs)}` }
     const paths = await pathsFor(nodeIo, dir)
     const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
@@ -233,8 +235,8 @@ describe('settle success writes fix notes', () => {
     await settle(watching, gcall(dir), { kind: 'failure', reason: 'x' }, null)
     expect(worked()).toEqual([])
     expect((await readRecord(nodeIo, paths, hash))!.dirtyHashes).toEqual(first.dirtyHashes)
-    // b changes size, c only mtime: both are read again, a is not.
-    writeFileSync(join(dir, 'b.txt'), 'xx'); utimesSync(join(dir, 'c.txt'), 1_700_000_000, 1_700_000_000)
+    // b changes only its size (mtime put back), c only its mtime: both are read again, a is not.
+    writeFileSync(join(dir, 'b.txt'), 'xx'); utimesSync(join(dir, 'b.txt'), OLD, OLD); utimesSync(join(dir, 'c.txt'), OLD + 5, OLD + 5)
     await settle(watching, gcall(dir), { kind: 'failure', reason: 'x' }, null)
     expect(worked()).toEqual(['b.txt', 'c.txt'])
     const third = (await readRecord(nodeIo, paths, hash))!
@@ -242,9 +244,24 @@ describe('settle success writes fix notes', () => {
     expect(third.dirtyStats).toEqual({ 'a.txt': stat('a.txt'), 'b.txt': stat('b.txt'), 'c.txt': stat('c.txt') })
   })
 
-  test('a previous record with malformed hashes or stats is ignored, and everything is read', async () => {
+  test('a file modified in the last 2 seconds gets a hash but no stat, so a repeat failure reads it again', async () => {
     const dir = repo()
     writeFileSync(join(dir, 'a.txt'), 'edited')
+    const paths = await pathsFor(nodeIo, dir)
+    const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
+    await settle(nodeIo, gcall(dir), { kind: 'failure', reason: 'x' }, null)
+    const rec = (await readRecord(nodeIo, paths, hash))!
+    expect(Object.keys(rec.dirtyHashes ?? {})).toEqual(['a.txt'])
+    expect('dirtyStats' in rec).toBe(false)
+    const read: string[] = []
+    const watching = { ...nodeIo, readText: async (p: string) => { read.push(p); return nodeIo.readText(p) } }
+    await settle(watching, gcall(dir), { kind: 'failure', reason: 'x' }, null)
+    expect(read.filter((p) => p.endsWith('a.txt'))).toHaveLength(1)
+  })
+
+  test('a previous record with malformed hashes or stats is ignored, and everything is read', async () => {
+    const dir = repo()
+    writeFileSync(join(dir, 'a.txt'), 'edited'); utimesSync(join(dir, 'a.txt'), 1_700_000_000, 1_700_000_000)
     const paths = await pathsFor(nodeIo, dir)
     const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
     await settle(nodeIo, gcall(dir), { kind: 'failure', reason: 'x' }, null)

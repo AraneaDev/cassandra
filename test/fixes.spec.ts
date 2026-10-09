@@ -40,6 +40,8 @@ async function failedHashed(dir: string): Promise<FailureRecord> {
   return Object.keys(hashes).length > 0 ? { ...rec, dirtyHashes: hashes, dirtyStats: stats } : rec
 }
 const KB256 = 256 * 1024
+/** Well before now, so a stat is kept for the file. */
+const OLD = 1_700_000_000
 
 test('a committed change is named', async () => {
   const dir = repo(); const rec = await failedAt(dir)
@@ -306,6 +308,7 @@ describe('content hashes of already-dirty files', () => {
     /** The record as the engine writes it, plus an Io that notes which files get read. */
     async function recorded(dir: string): Promise<{ rec: FailureRecord; read: string[]; io: typeof nodeIo }> {
       const rec = await failedAt(dir)
+      for (const f of rec.dirty ?? []) if (!f.endsWith('/')) utimesSync(join(dir, f), OLD, OLD)
       const state = await dirtyHashes(nodeIo, dir, rec.dirty ?? [])
       const read: string[] = []
       const io = { ...nodeIo, readText: async (p: string) => { read.push(p.slice(dir.length + 1)); return nodeIo.readText(p) } }
@@ -316,10 +319,33 @@ describe('content hashes of already-dirty files', () => {
     test('stats are "size:mtime" in whole milliseconds, only for paths that have a hash', async () => {
       const dir = repo()
       writeFileSync(join(dir, 'a.txt'), 'edited'); writeFileSync(join(dir, 'big.txt'), 'x'.repeat(KB256 + 1))
-      utimesSync(join(dir, 'a.txt'), 1_700_000_000, 1_700_000_000)
+      utimesSync(join(dir, 'a.txt'), OLD, OLD)
       const got = await dirtyHashes(nodeIo, dir, ['a.txt', 'big.txt', 'gone.txt'])
       expect(Object.keys(got.hashes)).toEqual(['a.txt'])
       expect(got.stats).toEqual({ 'a.txt': '6:1700000000000' })
+    })
+
+    test('a stat is kept only for a file at least 2 s older than now; a newer or future mtime is always hashed again', async () => {
+      const dir = repo()
+      writeFileSync(join(dir, 'a.txt'), 'edited')
+      utimesSync(join(dir, 'a.txt'), OLD, OLD)
+      const at = (ms: number) => ({ ...nodeIo, now: () => new Date(ms).toISOString() })
+      const kept = await dirtyHashes(at(OLD * 1000 + 2000), dir, ['a.txt'])
+      expect(kept.stats).toEqual({ 'a.txt': `6:${OLD * 1000}` })
+      const racy = await dirtyHashes(at(OLD * 1000 + 1999), dir, ['a.txt'])
+      expect(racy.stats).toEqual({})
+      expect(racy.hashes).toEqual(kept.hashes)
+      expect((await dirtyHashes(at(OLD * 1000 - 5000), dir, ['a.txt'])).stats).toEqual({})
+    })
+
+    test('a dirty file named __proto__ is kept like any other', async () => {
+      const dir = repo()
+      writeFileSync(join(dir, '__proto__'), 'odd'); utimesSync(join(dir, '__proto__'), OLD, OLD)
+      const got = await dirtyHashes(nodeIo, dir, ['__proto__'])
+      expect(Object.keys(got.hashes)).toEqual(['__proto__'])
+      expect(Object.keys(got.stats)).toEqual(['__proto__'])
+      const again = await dirtyHashes(nodeIo, dir, ['__proto__'], { dirtyHashes: got.hashes, dirtyStats: got.stats } as FailureRecord)
+      expect(again).toEqual(got)
     })
 
     test('an untouched file is not read; an edited one is still named', async () => {
@@ -337,7 +363,7 @@ describe('content hashes of already-dirty files', () => {
       const dir = repo()
       writeFileSync(join(dir, 'a.txt'), 'edited')
       const { rec, read, io } = await recorded(dir)
-      utimesSync(join(dir, 'a.txt'), 1_700_000_000, 1_700_000_000)
+      utimesSync(join(dir, 'a.txt'), OLD + 5, OLD + 5)
       expect((await computeFix(io, dir, rec))?.files).toEqual([])
       expect(worked(read)).toEqual(['a.txt'])
     })
@@ -355,7 +381,7 @@ describe('content hashes of already-dirty files', () => {
       const dir = repo()
       writeFileSync(join(dir, 'a.txt'), 'edited')
       const { rec, read, io } = await recorded(dir)
-      const cases: unknown[] = [{ 'a.txt': 7 }, { 'a.txt': {} }, { 'a.txt': ['x'] }, { 'a.txt': null }, { 'a.txt': '6:0' }, { 'a.txt': 'garbage' }, 'nope', 7, null, ['x'], JSON.parse('{"__proto__":{"a.txt":"1:1"}}')]
+      const cases: unknown[] = [{ 'a.txt': 7 }, { 'a.txt': {} }, { 'a.txt': ['x'] }, { 'a.txt': null }, { 'a.txt': '6:0' }, { 'a.txt': 'garbage' }, 'nope', 7, null, ['x'], Object.create({ 'a.txt': rec.dirtyStats!['a.txt'] })]
       for (const dirtyStats of cases) {
         read.length = 0
         expect((await computeFix(io, dir, { ...rec, dirtyStats } as unknown as FailureRecord))?.files).toEqual([])

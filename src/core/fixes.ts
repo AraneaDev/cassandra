@@ -12,6 +12,8 @@ const SENTENCE_NAMES = 3
 
 /** Most dirty paths whose content a failure record hashes. */
 const HASHED_MAX = 50
+/** A stat is stored only for a file last modified at least this long (ms) before it was hashed, as git does for its racy entries. */
+const STAT_SETTLED_MS = 2000
 /** Longest text, in string length, that is hashed; a longer file has no hash. */
 const HASHED_TEXT_MAX = 256 * 1024
 
@@ -90,14 +92,19 @@ export interface DirtyState {
  * Content hashes of the first 50 dirty paths, in git's order, for a failure record, with the
  * stat each was taken at. A path that cannot be hashed is left out silently. A path whose
  * stat equals the one in `previous` (an earlier record of the same call) keeps its stored
- * hash unread. Reads files only; writes nothing to git.
+ * hash unread. A stat is kept only for a file at least 2 s older than now. Reads files only; writes nothing to git.
  */
 export async function dirtyHashes(io: Io, root: string, dirty: readonly string[], previous?: FailureRecord | null): Promise<DirtyState> {
-  const out: DirtyState = { hashes: {}, stats: {} }
+  // No prototype, so a file named `__proto__` is kept like any other.
+  const out: DirtyState = { hashes: Object.create(null) as Record<string, string>, stats: Object.create(null) as Record<string, string> }
+  const clock = Date.parse(io.now())
   const listings: Listings = new Map()
   for (const path of dirty.slice(0, HASHED_MAX)) {
     const seen = await contentHash(io, root, path, listings, known(previous?.dirtyHashes, previous?.dirtyStats, path))
-    if (seen) { out.hashes[path] = seen.hash; out.stats[path] = seen.stat }
+    if (!seen) continue
+    out.hashes[path] = seen.hash
+    // A file modified close to now could still be rewritten within the same timestamp tick, so it is always hashed again.
+    if (Number(seen.stat.split(':')[1]) <= clock - STAT_SETTLED_MS) out.stats[path] = seen.stat
   }
   return out
 }

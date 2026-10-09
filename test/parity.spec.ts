@@ -9,13 +9,14 @@ import { nodeIo } from '../src/io/node.ts'
 import { nodeHost } from './support/node-host.ts'
 
 const NOW = '2026-01-01T00:00:00.000Z'
-/** A fixed mtime with a fraction of a millisecond, so two repos written at different moments store the same dirtyStats. */
+/** A fixed mtime (years before NOW, so the stat is stored) with a fraction of a millisecond, so two repos written at different moments store the same dirtyStats. */
 const MTIME = 1_700_000_000.4567
 
 /** Write a step's file and pin its mtime. */
-function touch(cwd: string, step: { touch: string; text?: string }): void {
+function touch(cwd: string, step: { touch: string; text?: string }, index: number): void {
   writeFileSync(join(cwd, step.touch), step.text ?? 'x')
-  utimesSync(join(cwd, step.touch), MTIME, MTIME)
+  // Distinct per step, so a rewrite is seen by its mtime as well as its size.
+  utimesSync(join(cwd, step.touch), MTIME + index, MTIME + index)
 }
 
 /**
@@ -115,8 +116,8 @@ async function runBinary(cwd: string, script: Step[] = SCRIPT): Promise<string[]
   const io: Io = { ...nodeIo, now: () => NOW }
   const said: string[] = []
   let n = 0
-  for (const step of script) {
-    if ('touch' in step) { touch(cwd, step); continue }
+  for (const [index, step] of script.entries()) {
+    if ('touch' in step) { touch(cwd, step, index); continue }
     if ('remove' in step) { rmSync(join(cwd, step.remove), { force: true }); continue }
     if ('compact' in step) {
       await handle({ hook_event_name: 'PostCompact', session_id: 's1', cwd }, io)
@@ -148,8 +149,8 @@ async function runMod(cwd: string, script: Step[] = SCRIPT): Promise<string[]> {
   install(((event: string, a: unknown, b?: unknown) => { hooks.set(event, (b ?? a) as never) }) as never, (io) => ({ ...io, now: () => NOW }))
   const said: string[] = []
   let n = 0
-  for (const step of script) {
-    if ('touch' in step) { touch(cwd, step); continue }
+  for (const [index, step] of script.entries()) {
+    if ('touch' in step) { touch(cwd, step, index); continue }
     if ('remove' in step) { rmSync(join(cwd, step.remove), { force: true }); continue }
     if ('compact' in step || 'spawn' in step) {
       opts.cwd = cwd
