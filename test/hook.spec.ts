@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync }
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { handle } from '../src/hook'
-import { pathsFor, pendingPath } from '../src/core/paths.ts'
+import { pathsFor, pendingDir, pendingPath } from '../src/core/paths.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
 import { readRecord } from '../src/core/record.ts'
@@ -76,7 +76,7 @@ test('a repeat after a real edit is silent', async () => {
 test('warning writes a pending marker naming the record', async () => {
   await handle(fail('bun test'))
   await handle(pre('bun test'))
-  expect(existsSync(pendingPath(await pathsFor(nodeIo, cwd), 't2'))).toBe(true)
+  expect(existsSync(pendingPath(await pendingDir(nodeIo), 't2'))).toBe(true)
 })
 
 test('a success on a warned call clears the record and logs a false positive', async () => {
@@ -245,11 +245,11 @@ test('control characters never reach the replayed context either', async () => {
 // directory, so without this it only ever grows.
 
 test('markPending clears markers older than 24 hours and keeps fresh ones', async () => {
-  const paths = await pathsFor(nodeIo, cwd)
-  mkdirSync(paths.pending, { recursive: true })
+  const dir = await pendingDir(nodeIo)
+  mkdirSync(dir, { recursive: true })
 
-  const stale = join(paths.pending, 'toolu_dead_session')
-  const fresh = join(paths.pending, 'toolu_recent')
+  const stale = join(dir, 'toolu_dead_session')
+  const fresh = join(dir, 'toolu_recent')
   writeFileSync(stale, 'aa11bb22cc33dd44')
   writeFileSync(fresh, 'bb11bb22cc33dd44')
   const old = new Date(Date.now() - 25 * 60 * 60 * 1000)
@@ -261,13 +261,13 @@ test('markPending clears markers older than 24 hours and keeps fresh ones', asyn
 
   expect(existsSync(stale)).toBe(false)
   expect(existsSync(fresh)).toBe(true)
-  expect(existsSync(pendingPath(paths, 't2'))).toBe(true)
+  expect(existsSync(pendingPath(dir, 't2'))).toBe(true)
 })
 
 test('a marker just under the cutoff survives', async () => {
-  const paths = await pathsFor(nodeIo, cwd)
-  mkdirSync(paths.pending, { recursive: true })
-  const nearly = join(paths.pending, 'toolu_23h')
+  const dir = await pendingDir(nodeIo)
+  mkdirSync(dir, { recursive: true })
+  const nearly = join(dir, 'toolu_23h')
   writeFileSync(nearly, 'aa11bb22cc33dd44')
   const when = new Date(Date.now() - 23 * 60 * 60 * 1000)
   utimesSync(nearly, when, when)
@@ -412,7 +412,7 @@ test('a success settles with the directory the call started in, not where the sh
   await handle(at('PostToolUse', 'm2', join(cwd, 'packages/a')))
 
   expect(await readRecord(nodeIo, paths, hash)).toBeNull()
-  expect(existsSync(pendingPath(paths, 'm2'))).toBe(false)
+  expect(existsSync(pendingPath(await pendingDir(nodeIo), 'm2'))).toBe(false)
   expect((await readStats(nodeIo, paths)).some((e) => e.kind === 'fixed')).toBe(true)
 })
 
@@ -420,8 +420,9 @@ test('a marker in the old hash-only shape still names the warned record', async 
   await handle(fail('bun test'))
   const paths = await pathsFor(nodeIo, cwd)
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
-  mkdirSync(paths.pending, { recursive: true })
-  writeFileSync(pendingPath(paths, 'old1'), hash)
+  const dir = await pendingDir(nodeIo)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(pendingPath(dir, 'old1'), hash)
   // The input differs, so only the marker can lead settle to the record.
   await handle({ hook_event_name: 'PostToolUse', session_id: 's1', cwd, tool_name: 'Bash', tool_input: { command: 'bun  test --x' }, tool_use_id: 'old1' })
   expect(await readRecord(nodeIo, paths, hash)).toBeNull()
@@ -429,13 +430,26 @@ test('a marker in the old hash-only shape still names the warned record', async 
 })
 
 test('takePending reads both marker shapes', async () => {
+  const dir = await pendingDir(nodeIo)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(pendingPath(dir, 'a'), 'aa11bb22cc33dd44')
+  writeFileSync(pendingPath(dir, 'b'), '\n/x/y')
+  writeFileSync(pendingPath(dir, 'c'), 'aa11bb22cc33dd44\n/x/y\n')
+  expect(await takePending(nodeIo, dir, 'a')).toEqual({ hash: 'aa11bb22cc33dd44', cwd: null })
+  expect(await takePending(nodeIo, dir, 'b')).toEqual({ hash: null, cwd: '/x/y' })
+  expect(await takePending(nodeIo, dir, 'c')).toEqual({ hash: 'aa11bb22cc33dd44', cwd: '/x/y' })
+  expect(await takePending(nodeIo, dir, 'a')).toEqual({ hash: null, cwd: null })
+})
+
+test('markers live in one per-user directory, and a marker left in the old per-project one is ignored', async () => {
   const paths = await pathsFor(nodeIo, cwd)
-  mkdirSync(paths.pending, { recursive: true })
-  writeFileSync(pendingPath(paths, 'a'), 'aa11bb22cc33dd44')
-  writeFileSync(pendingPath(paths, 'b'), '\n/x/y')
-  writeFileSync(pendingPath(paths, 'c'), 'aa11bb22cc33dd44\n/x/y\n')
-  expect(await takePending(nodeIo, paths, 'a')).toEqual({ hash: 'aa11bb22cc33dd44', cwd: null })
-  expect(await takePending(nodeIo, paths, 'b')).toEqual({ hash: null, cwd: '/x/y' })
-  expect(await takePending(nodeIo, paths, 'c')).toEqual({ hash: 'aa11bb22cc33dd44', cwd: '/x/y' })
-  expect(await takePending(nodeIo, paths, 'a')).toEqual({ hash: null, cwd: null })
+  await handle(fail('bun test'))
+  const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
+  const old = join(paths.root, 'pending')
+  mkdirSync(old, { recursive: true })
+  writeFileSync(join(old, 'legacy'), `${hash}\n${cwd}`)
+  expect(existsSync(join(await pendingDir(nodeIo), 'legacy'))).toBe(false)
+  expect(await takePending(nodeIo, await pendingDir(nodeIo), 'legacy')).toEqual({ hash: null, cwd: null })
+  expect(existsSync(join(old, 'legacy'))).toBe(true)
+  expect(await pendingDir(nodeIo)).toBe(join(tmp, 'home', 'pending'))
 })

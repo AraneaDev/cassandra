@@ -1,6 +1,6 @@
 import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome } from './core/engine.ts'
 import type { Io } from './core/io.ts'
-import { pathsFor } from './core/paths.ts'
+import { pathsFor, pendingDir } from './core/paths.ts'
 import { markPending, takePending, type Pending } from './core/pending.ts'
 import { bumpCompactions, isModSession } from './core/session.ts'
 import type { BriefBoundary } from './core/stats.ts'
@@ -17,7 +17,7 @@ async function onPreToolUse(io: Io, p: HookPayload): Promise<string | null> {
   // the shell ended up. So every Bash call leaves its starting directory behind.
   const keepCwd = p.tool_name === 'Bash'
   if (p.tool_use_id && p.cwd && (warning || keepCwd)) {
-    await markPending(io, await pathsFor(io, p.cwd), p.tool_use_id, { hash: warning?.hash ?? null, cwd: keepCwd ? p.cwd : null })
+    await markPending(io, await pendingDir(io), p.tool_use_id, { hash: warning?.hash ?? null, cwd: keepCwd ? p.cwd : null })
   }
   if (!warning) return null
   return JSON.stringify({
@@ -27,8 +27,9 @@ async function onPreToolUse(io: Io, p: HookPayload): Promise<string | null> {
 
 /** What PreToolUse left for this call, consumed so it resolves exactly once. */
 async function pendingFor(io: Io, p: HookPayload): Promise<Pending> {
-  if (!p.cwd || !p.tool_use_id) return { hash: null, cwd: null }
-  return takePending(io, await pathsFor(io, p.cwd), p.tool_use_id)
+  if (!p.tool_use_id) return { hash: null, cwd: null }
+  // Not keyed on `p.cwd`: after a `cd` in the command it is not where the call started.
+  return takePending(io, await pendingDir(io), p.tool_use_id)
 }
 
 async function onOutcome(io: Io, p: HookPayload, outcome: Outcome): Promise<null> {

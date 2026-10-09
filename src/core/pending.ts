@@ -1,5 +1,5 @@
 import type { Io } from './io.ts'
-import { pendingPath, type Paths } from './paths.ts'
+import { pendingPath } from './paths.ts'
 import { join } from './path.ts'
 
 /** How long a marker can sit unresolved before it is assumed to belong to a dead session. */
@@ -45,21 +45,21 @@ export interface Pending {
  * The first line holds the warned hash (empty when there was no warning), the second the
  * directory the call started in. The outcome payload reports the shell's directory after
  * the command ran, so a `cd` inside the command would otherwise move the call to another
- * package. A marker from before this format holds only the hash, and still reads.
+ * package. The directory is shared by every project, for the same reason. A marker from before this format holds only the hash, and still reads.
  */
-export async function markPending(io: Io, paths: Paths, toolUseId: string, pending: Pending): Promise<void> {
+export async function markPending(io: Io, dir: string, toolUseId: string, pending: Pending): Promise<void> {
   try {
-    await prunePending(io, paths.pending)
-    await io.writeText(pendingPath(paths, toolUseId), `${pending.hash ?? ''}\n${pending.cwd ?? ''}`)
+    await prunePending(io, dir)
+    await io.writeText(pendingPath(dir, toolUseId), `${pending.hash ?? ''}\n${pending.cwd ?? ''}`)
   } catch {
     // A missing marker only costs a metric, or the package of one call.
   }
 }
 
 /** Read and remove the marker for a tool call. Both fields are null when there is none. */
-export async function takePending(io: Io, paths: Paths, toolUseId: string): Promise<Pending> {
+export async function takePending(io: Io, dir: string, toolUseId: string): Promise<Pending> {
   try {
-    const p = pendingPath(paths, toolUseId)
+    const p = pendingPath(dir, toolUseId)
     const text = await io.readText(p)
     if (text === null) return { hash: null, cwd: null }
     await io.remove(p)
