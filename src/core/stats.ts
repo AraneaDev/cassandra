@@ -4,17 +4,22 @@ import type { Paths } from './paths.ts'
 /** Which boundary a warning crossed. `same_context` means the model could already see the failure. */
 export type Boundary = 'compaction' | 'session' | 'subagent' | 'same_context'
 
-/**
- * What happened to a warning. `false_positive` means the warned call then succeeded,
- * so the freshness probe missed a real change. `confirmed` means it failed again.
- */
-type StatKind = 'warned' | 'false_positive' | 'confirmed'
+/** Which boundary a briefing was handed over at. */
+export type BriefBoundary = 'subagent' | 'compaction'
 
-/** One line of the efficacy log. */
+/**
+ * What a stats line records. `false_positive` means the warned call then succeeded,
+ * so the freshness probe missed a real change. `confirmed` means it failed again.
+ * `briefed` means a note listing live failures was handed over at a boundary.
+ */
+type StatKind = 'warned' | 'false_positive' | 'confirmed' | 'briefed'
+
+/** One line of the efficacy log. A briefing carries `hashes`; every other kind one `hash`. */
 export interface StatEvent {
   t: string
   kind: StatKind
-  hash: string
+  hash?: string
+  hashes?: string[]
   boundary?: Boundary
 }
 
@@ -40,7 +45,11 @@ export async function readStats(io: Io, paths: Paths): Promise<StatEvent[]> {
           const parsed = JSON.parse(line)
           // Validate shape: must be object, not array, with required fields
           if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') return null
-          const { kind, hash } = parsed
+          const { kind, hash, hashes } = parsed
+          if (kind === 'briefed') {
+            if (!Array.isArray(hashes) || !hashes.every((h: unknown) => typeof h === 'string')) return null
+            return parsed as StatEvent
+          }
           if (typeof hash !== 'string') return null
           if (typeof kind !== 'string' || !['warned', 'false_positive', 'confirmed'].includes(kind)) return null
           return parsed as StatEvent

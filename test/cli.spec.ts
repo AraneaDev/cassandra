@@ -196,3 +196,24 @@ test('export without --cwd emits parseable JSON, not usage', async () => {
   expect(text).not.toContain('Usage')
   expect(() => JSON.parse(text)).not.toThrow()
 })
+
+test('stats reports briefings and how many briefed calls were repeated anyway', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  await appendStat(nodeIo, paths, { kind: 'warned', hash: 'aa11bb22cc33dd44', boundary: 'same_context' })
+  await appendStat(nodeIo, paths, { kind: 'briefed', boundary: 'subagent', hashes: ['aa11bb22cc33dd44', 'bb11bb22cc33dd44'] })
+  await appendStat(nodeIo, paths, { kind: 'warned', hash: 'aa11bb22cc33dd44', boundary: 'subagent' })
+  await appendStat(nodeIo, paths, { kind: 'briefed', boundary: 'compaction', hashes: ['cc11bb22cc33dd44'] })
+  expect(await run(['stats', '--cwd', cwd])).toBe(0)
+  const text = out.join('\n')
+  expect(text).toContain('2 briefings sent')
+  expect(text).toMatch(/subagent\s+1/)
+  expect(text).toMatch(/compaction\s+1/)
+  expect(text).toContain('repeated after briefing  1 of 3')
+})
+
+test('stats with only briefings still reports them', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  await appendStat(nodeIo, paths, { kind: 'briefed', boundary: 'subagent', hashes: ['aa11bb22cc33dd44'] })
+  expect(await run(['stats', '--cwd', cwd])).toBe(0)
+  expect(out.join('\n')).toContain('1 briefing sent')
+})

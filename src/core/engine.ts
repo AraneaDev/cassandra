@@ -1,3 +1,4 @@
+import { digestText, liveRecords } from './digest.ts'
 import { history, reason, scopeOf } from './describe.ts'
 import { displayFor, fingerprint } from './fingerprint.ts'
 import { stateStamp, unchanged } from './freshness.ts'
@@ -5,7 +6,7 @@ import type { Io } from './io.ts'
 import { pathsFor } from './paths.ts'
 import { deleteRecord, readRecord, upsertRecord } from './record.ts'
 import { compactionCount } from './session.ts'
-import { appendStat, attributeBoundary } from './stats.ts'
+import { appendStat, attributeBoundary, type BriefBoundary } from './stats.ts'
 import type { RecordKind } from './types.ts'
 
 const EXCERPT_MAX = 240
@@ -127,4 +128,27 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
     errorExcerpt: excerpt(reason),
     agentId: call.agentId,
   })
+}
+
+/** A note listing the project's live failures, and the records it named. */
+export interface Briefing {
+  text: string
+  hashes: string[]
+}
+
+/**
+ * The note for a boundary where the transcript is gone: a subagent starting, or a
+ * conversation compacted. Null when nothing is live. A pure read: it writes nothing, so a
+ * front end that cannot hand the note over leaves no trace.
+ */
+export async function buildBriefing(io: Io, cwd: string): Promise<Briefing | null> {
+  if (!cwd) return null
+  const live = await liveRecords(io, cwd)
+  if (!live) return null
+  return { text: digestText(live.records, live.kind), hashes: live.records.map((r) => r.hash) }
+}
+
+/** Log that a note was handed over, so `cassandra stats` can say whether briefings are heeded. */
+export async function recordBriefing(io: Io, cwd: string, boundary: BriefBoundary, briefing: Briefing): Promise<void> {
+  await appendStat(io, await pathsFor(io, cwd), { kind: 'briefed', boundary, hashes: briefing.hashes })
 }

@@ -130,3 +130,11 @@ test('invalid json shapes are skipped without breaking the read', async () => {
   expect(events[0]!.hash).toBe('aaaa')
   expect(events[1]!.hash).toBe('bbbb')
 })
+
+test('briefed lines round-trip, and a malformed one is skipped', async () => {
+  await appendStat(nodeIo, paths, { kind: 'briefed', boundary: 'compaction', hashes: ['aa11bb22cc33dd44'] })
+  appendFileSync(paths.stats, '{"kind":"briefed","boundary":"subagent","hashes":"not-an-array","t":"x"}\n')
+  const events = await readStats(nodeIo, paths)
+  expect(events).toHaveLength(1)
+  expect(events[0]).toMatchObject({ kind: 'briefed', boundary: 'compaction', hashes: ['aa11bb22cc33dd44'] })
+})
