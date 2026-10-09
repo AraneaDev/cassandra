@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.22](https://github.com/AraneaDev/cassandra/compare/v0.0.21...v0.0.22) (2026-10-09)
+
+
+### Fixes
+
+* match mtime records across front ends and tidy hand-check findings ([#54](https://github.com/AraneaDev/cassandra/issues/54)) ([6016894](https://github.com/AraneaDev/cassandra/commit/6016894fea7ee046447c2b840c59cccaf1398091))
+
 ## [0.0.21](https://github.com/AraneaDev/cassandra/compare/v0.0.20...v0.0.21) (2026-10-09)
 
 
