@@ -1,5 +1,6 @@
-import { listRecords } from '../record'
-import { isFingerprint, type Paths } from '../paths'
+import { listRecords } from '../core/record.ts'
+import type { Io } from '../core/io.ts'
+import { isFingerprint, type Paths } from '../core/paths.ts'
 
 /** What a prefix lookup produced: exactly one match, nothing, or several. */
 export type Resolution =
@@ -18,13 +19,13 @@ const MIN_PREFIX = 4
  * full sixteen-character hash ever reaches a path builder, so the traversal guard on
  * `recordPath` keeps its meaning: argv never becomes a path segment.
  */
-export function resolveHash(paths: Paths, input: string): Resolution {
+export async function resolveHash(io: Io, paths: Paths, input: string): Promise<Resolution> {
   const v = (input ?? '').trim().toLowerCase()
   if (isFingerprint(v)) return { ok: true, hash: v }
   if (!/^[0-9a-f]+$/.test(v) || v.length < MIN_PREFIX || v.length > 16) {
     return { ok: false, why: 'malformed', matches: [] }
   }
-  const matches = listRecords(paths).map((e) => e.hash).filter((h) => h.startsWith(v))
+  const matches = (await listRecords(io, paths)).map((e) => e.hash).filter((h) => h.startsWith(v))
   if (matches.length === 1) return { ok: true, hash: matches[0]! }
   return { ok: false, why: matches.length === 0 ? 'unknown' : 'ambiguous', matches }
 }

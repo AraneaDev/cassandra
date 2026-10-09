@@ -1,5 +1,6 @@
-import { readStats, type Boundary } from '../stats'
-import type { Paths } from '../paths'
+import { readStats, type Boundary } from '../core/stats.ts'
+import type { Io } from '../core/io.ts'
+import type { Paths } from '../core/paths.ts'
 
 const BOUNDARIES: Boundary[] = ['compaction', 'session', 'subagent', 'same_context']
 
@@ -11,8 +12,8 @@ const BOUNDARIES: Boundary[] = ['compaction', 'session', 'subagent', 'same_conte
  * model something already visible in its own transcript, which is the case for
  * removing the plugin rather than tuning it.
  */
-export function stats(paths: Paths): number {
-  const events = readStats(paths)
+export async function stats(io: Io, paths: Paths): Promise<number> {
+  const events = await readStats(io, paths)
   const warned = events.filter((e) => e.kind === 'warned')
   if (warned.length === 0) {
     console.log('No warnings recorded yet for this project.')

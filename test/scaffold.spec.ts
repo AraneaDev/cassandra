@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
-import type { FailureRecord } from '../src/types'
+import type { FailureRecord } from '../src/core/types.ts'
 
-test('FailureRecord shape is constructible', () => {
+test('FailureRecord shape is constructible', async () => {
   const r: FailureRecord = {
     tool: 'Bash',
     display: 'bun test',

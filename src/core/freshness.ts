@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
-import { findRepoRoot } from './paths'
-import type { StateKind, StateStamp } from './types'
+import type { Io } from './io.ts'
+import { join } from './path.ts'
+import { findRepoRoot, isRepoMarker } from './paths.ts'
+import type { StateKind, StateStamp } from './types.ts'
 
 /** Directories the mtime walk never descends into: churn that says nothing about source. */
 const SKIP = new Set(['node_modules', 'dist', 'build', 'target', 'coverage', 'vendor', '__pycache__'])
@@ -16,36 +15,25 @@ const MAX_ENTRIES = 5000
  * It sees commits, staged and unstaged edits, and untracked files, which together
  * cover every way the workspace moves, including edits made outside Claude Code.
  */
-function gitStamp(root: string): StateStamp | null {
+async function gitStamp(io: Io, root: string): Promise<StateStamp | null> {
   try {
-    const head = Bun.spawnSync(['git', '-C', root, 'rev-parse', 'HEAD'], { stderr: 'ignore' })
-    const status = Bun.spawnSync(['git', '-C', root, 'status', '--porcelain'], { stderr: 'ignore' })
-    if (status.exitCode !== 0) return null
+    const [head, status] = await Promise.all([
+      io.run(['git', '-C', root, 'rev-parse', 'HEAD'], root),
+      io.run(['git', '-C', root, 'status', '--porcelain'], root),
+    ])
+    if (!status || status.exitCode !== 0) return null
     // A repository with no commits yet fails `rev-parse HEAD`, so its exit code is
     // checked explicitly rather than trusting whatever git wrote to stdout on
     // failure. Substituting a fixed literal keeps the stamp defined by our own
     // code. The repo is still stampable either way: `status --porcelain` alone
     // already lists every untracked and staged file, so the stamp stays valid and
     // moves both with the working tree and with the first commit.
-    const headValue = head.exitCode === 0 ? head.stdout.toString() : 'no-head'
-    const text = `${headValue} ${status.stdout.toString()}`
-    return { kind: 'git', value: createHash('sha256').update(text).digest('hex').slice(0, 16) }
+    const headValue = head && head.exitCode === 0 ? head.stdout : 'no-head'
+    const text = `${headValue} ${status.stdout}`
+    return { kind: 'git', value: (await io.sha256(text)).slice(0, 16) }
   } catch {
     return null
   }
-}
-
-/**
- * Distinguishes a subdirectory that is genuinely gone from one that could not be
- * read for some other reason. Only `ENOENT` and `ENOTDIR` mean gone: the walk may
- * safely skip that subtree, since its absence is real information. Every other
- * code, most importantly `EACCES`/`EPERM`, means the content is still there but
- * invisible to the walk, and must not be treated the same as absence, or a change
- * confined to that subtree would never move the stamp.
- */
-export function isMissingSubtree(err: unknown): boolean {
-  const code = (err as NodeJS.ErrnoException | undefined)?.code
-  return code === 'ENOENT' || code === 'ENOTDIR'
 }
 
 /**
@@ -75,58 +63,48 @@ export function isMissingSubtree(err: unknown): boolean {
  * would let `unchanged()` report true for a workspace that actually changed, which
  * is the one failure mode this module exists to avoid.
  */
-function mtimeStamp(root: string): StateStamp | null {
+async function mtimeStamp(io: Io, root: string): Promise<StateStamp | null> {
   try {
-    readdirSync(root)
-  } catch {
-    return null
-  }
+    const top = await io.list(root)
+    if (!top.ok) return null
 
-  const parts: string[] = []
-  let seen = 0
-  let poisoned = false
-  const walk = (dir: string, depth: number): void => {
-    if (poisoned) return
-    if (depth > MAX_DEPTH || seen >= MAX_ENTRIES) return
-    let entries
-    try {
-      entries = readdirSync(dir, { withFileTypes: true })
-    } catch (err) {
-      if (!isMissingSubtree(err)) poisoned = true
-      return
-    }
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    const parts: string[] = []
+    let seen = 0
+    let poisoned = false
+    const walk = async (dir: string, depth: number, given?: Awaited<ReturnType<Io['list']>>): Promise<void> => {
       if (poisoned) return
-      if (seen >= MAX_ENTRIES) return
-      if (entry.name.startsWith('.') || SKIP.has(entry.name)) continue
-      const full = join(dir, entry.name)
-      if (entry.isDirectory()) {
-        walk(full, depth + 1)
-        continue
+      if (depth > MAX_DEPTH || seen >= MAX_ENTRIES) return
+      const listing = given ?? await io.list(dir)
+      if (!listing.ok) {
+        if (!listing.missing) poisoned = true
+        return
       }
-      if (!entry.isFile()) continue
-      try {
-        const st = statSync(full)
-        parts.push(`${full}:${st.size}:${st.mtimeMs}`)
+      for (const entry of [...listing.entries].sort((a, b) => a.name.localeCompare(b.name))) {
+        if (poisoned) return
+        if (seen >= MAX_ENTRIES) return
+        if (entry.name.startsWith('.') || SKIP.has(entry.name)) continue
+        const full = join(dir, entry.name)
+        if (entry.kind === 'dir') {
+          await walk(full, depth + 1)
+          continue
+        }
+        if (entry.kind !== 'file') continue
+        parts.push(`${full}:${entry.size}:${entry.mtimeMs}`)
         seen += 1
-      } catch {
-        // A file that vanished mid-walk simply does not contribute.
       }
     }
-  }
-  try {
-    walk(root, 0)
+    await walk(root, 0, top)
+    if (poisoned) return null
+
+    // A real entry line always has the shape `<fullpath>:<size>:<mtimeMs>`, where
+    // `<fullpath>` is produced by `join` and so never begins with a space. The
+    // sentinel below does, so it can never collide with a genuine listing: an empty,
+    // readable directory is a valid, stable state, not an unknown one.
+    const payload = parts.length === 0 ? ' empty' : parts.join('\n')
+    return { kind: 'mtime', value: (await io.sha256(payload)).slice(0, 16) }
   } catch {
     return null
   }
-  if (poisoned) return null
-
-  // A real entry line always has the shape `<fullpath>:<size>:<mtimeMs>`, where
-  // `<fullpath>` is produced by `join` and so never begins with a space. The
-  // sentinel below does, so it can never collide with a genuine listing: an empty,
-  // readable directory is a valid, stable state, not an unknown one.
-  const payload = parts.length === 0 ? ' empty' : parts.join('\n')
-  return { kind: 'mtime', value: createHash('sha256').update(payload).digest('hex').slice(0, 16) }
 }
 
 /**
@@ -135,14 +113,14 @@ function mtimeStamp(root: string): StateStamp | null {
  * Runs only after a hash hit, never on a miss, which is what lets it afford a
  * subprocess. Returns `none` when it cannot tell, and `none` never warns.
  */
-export function stateStamp(cwd: string): StateStamp {
-  if (!existsSync(cwd)) return { kind: 'none', value: '' }
-  const root = findRepoRoot(cwd)
-  if (existsSync(join(root, '.git'))) {
-    const stamp = gitStamp(root)
+export async function stateStamp(io: Io, cwd: string): Promise<StateStamp> {
+  if (!(await io.exists(cwd))) return { kind: 'none', value: '' }
+  const root = await findRepoRoot(io, cwd)
+  if (await isRepoMarker(io, root)) {
+    const stamp = await gitStamp(io, root)
     if (stamp) return stamp
   }
-  return mtimeStamp(root) ?? { kind: 'none', value: '' }
+  return (await mtimeStamp(io, root)) ?? { kind: 'none', value: '' }
 }
 
 /**

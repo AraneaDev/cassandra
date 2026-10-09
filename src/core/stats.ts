@@ -1,5 +1,5 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
-import type { Paths } from './paths'
+import type { Io } from './io.ts'
+import type { Paths } from './paths.ts'
 
 /** Which boundary a warning crossed. `same_context` means the model could already see the failure. */
 export type Boundary = 'compaction' | 'session' | 'subagent' | 'same_context'
@@ -19,20 +19,20 @@ export interface StatEvent {
 }
 
 /** Append one event. Never throws: losing a metric must not cost a session. */
-export function appendStat(paths: Paths, event: Omit<StatEvent, 't'>): void {
+export async function appendStat(io: Io, paths: Paths, event: Omit<StatEvent, 't'>): Promise<void> {
   try {
-    mkdirSync(paths.root, { recursive: true })
-    appendFileSync(paths.stats, `${JSON.stringify({ ...event, t: new Date().toISOString() })}\n`)
+    await io.appendText(paths.stats, `${JSON.stringify({ ...event, t: io.now() })}\n`)
   } catch {
     // Best effort by design.
   }
 }
 
 /** Read the log, skipping any line that does not parse. */
-export function readStats(paths: Paths): StatEvent[] {
-  if (!existsSync(paths.stats)) return []
+export async function readStats(io: Io, paths: Paths): Promise<StatEvent[]> {
   try {
-    return readFileSync(paths.stats, 'utf8')
+    const text = await io.readText(paths.stats)
+    if (text === null) return []
+    return text
       .split('\n')
       .filter((line) => line.trim().length > 0)
       .map((line) => {

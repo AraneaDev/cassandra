@@ -1,13 +1,14 @@
-import { listRecords } from '../record'
-import { readStats } from '../stats'
-import type { Paths } from '../paths'
+import { listRecords } from '../core/record.ts'
+import { readStats } from '../core/stats.ts'
+import type { Io } from '../core/io.ts'
+import type { Paths } from '../core/paths.ts'
 
 /** Emit the whole project index as JSON, so you can do your own arithmetic on it. */
-export function exportAll(paths: Paths): number {
+export async function exportAll(io: Io, paths: Paths): Promise<number> {
   console.log(JSON.stringify({
     exportedAt: new Date().toISOString(),
-    records: listRecords(paths).map(({ hash, record }) => ({ hash, ...record })),
-    stats: readStats(paths),
+    records: (await listRecords(io, paths)).map(({ hash, record }) => ({ hash, ...record })),
+    stats: await readStats(io, paths),
   }, null, 2))
   return 0
 }

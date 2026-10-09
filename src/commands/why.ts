@@ -1,6 +1,7 @@
-import { readRecord } from '../record'
-import { type Paths } from '../paths'
-import { explainResolution, resolveHash } from './resolve'
+import { readRecord } from '../core/record.ts'
+import type { Io } from '../core/io.ts'
+import { type Paths } from '../core/paths.ts'
+import { explainResolution, resolveHash } from './resolve.ts'
 
 /**
  * Print one record in full, including the error excerpt that produced it.
@@ -10,13 +11,13 @@ import { explainResolution, resolveHash } from './resolve'
  * end in a delete when the record does not parse, and argv is not a trusted source for
  * a path segment.
  */
-export function why(paths: Paths, hash: string): number {
-  const r = resolveHash(paths, hash)
+export async function why(io: Io, paths: Paths, hash: string): Promise<number> {
+  const r = await resolveHash(io, paths, hash)
   if (!r.ok) {
     console.log(explainResolution(hash, r))
     return 1
   }
-  const record = readRecord(paths, r.hash)
+  const record = await readRecord(io, paths, r.hash)
   if (!record) {
     console.log(`No record for ${r.hash}.`)
     return 1

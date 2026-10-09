@@ -1,9 +1,10 @@
-import { listRecords } from '../record'
-import type { Paths } from '../paths'
+import { listRecords } from '../core/record.ts'
+import type { Io } from '../core/io.ts'
+import type { Paths } from '../core/paths.ts'
 
 /** Print every remembered failure for this project, most recent first. */
-export function list(paths: Paths): number {
-  const all = listRecords(paths).sort((a, b) => b.record.lastSeen.localeCompare(a.record.lastSeen))
+export async function list(io: Io, paths: Paths): Promise<number> {
+  const all = (await listRecords(io, paths)).sort((a, b) => b.record.lastSeen.localeCompare(a.record.lastSeen))
   if (all.length === 0) {
     console.log('No remembered failures for this project.')
     return 0

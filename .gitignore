@@ -9,3 +9,4 @@ test/fixtures/
 /.superpowers/
 /docs/superpowers/
 CLAUDE.md
+/.claude-plugin/types/

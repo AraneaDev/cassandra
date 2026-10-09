@@ -1,13 +1,21 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreExportsUsedInFile": true,
   "entry": [
     "src/hook.ts",
     "scripts/*.ts",
-    "test/**/*.test.ts"
+    "test/**/*.spec.ts",
+    "test/support/**/*.ts",
+    "mod/index.ts",
+    "mod/*.test.ts"
   ],
   "project": [
     "src/**/*.ts",
     "scripts/**/*.ts",
-    "test/**/*.ts"
+    "test/**/*.ts",
+    "mod/**/*.ts"
+  ],
+  "ignoreDependencies": [
+    "claude-code"
   ]
 }
