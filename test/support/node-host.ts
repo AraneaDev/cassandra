@@ -11,6 +11,8 @@ export interface NodeHostOptions {
   appended?: Array<{ agentId?: string; text: string }>
   /** Make `$.session.append` reject, as the engine does for a loop that is not running. */
   appendRejects?: boolean
+  /** Make `$.session.append` resolve `{ deny }` with this reason, as when a plugin above refuses the row. */
+  appendDenies?: string
 }
 
 /** The slice of `$` the mod uses beyond `ModHost`. */
@@ -18,7 +20,7 @@ export type NodeHost = ModHost & {
   session: {
     id(): Promise<string>
     cwd(): Promise<string>
-    append(args: { message: { content: Array<{ text: string }> }; agentId?: string }): Promise<unknown>
+    append(args: { message: { content: Array<{ text: string }> }; agentId?: string }): Promise<{ deny?: string }>
   }
 }
 
@@ -80,6 +82,7 @@ export function nodeHost(opts: NodeHostOptions = {}): NodeHost {
       },
       async append(args) {
         if (opts.appendRejects) throw new Error('no running loop')
+        if (opts.appendDenies !== undefined) return { deny: opts.appendDenies }
         ;(opts.appended ??= []).push({ agentId: args.agentId, text: args.message.content.map((c) => c.text).join('') })
         return {}
       },

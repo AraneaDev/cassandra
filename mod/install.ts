@@ -11,9 +11,22 @@ export interface AppendArgs {
   agentId?: string
 }
 
+/** What an append resolves to: the stored row, or `{ deny }` when a plugin above refused it. */
+export interface AppendResult {
+  deny?: string
+  [key: string]: unknown
+}
+
 /** The slice of `$` the hooks use: the core's, plus the session's identity and its append. */
 export type ModEngine = ModHost & {
-  session: { id(): Promise<string>; cwd(): Promise<string>; append(args: AppendArgs): Promise<unknown> }
+  session: { id(): Promise<string>; cwd(): Promise<string>; append(args: AppendArgs): Promise<AppendResult> }
+}
+
+/** A `session.compact` input, as far as the mod reads it. */
+export interface CompactEvent {
+  /** What is compacting; 'precompute' prepares a summary ahead of time and installs nothing. */
+  trigger?: 'manual' | 'auto' | 'plugin' | 'precompute'
+  agentId?: string
 }
 
 /** A `session.append` input: one row a loop of the session keeps. */
@@ -68,7 +81,7 @@ export type Next<E, R> = ((e: E) => Promise<R>) & { signal?: AbortSignal }
 export interface ModOn {
   (event: 'session.start', hook: ($: ModEngine, e: unknown, next: Next<unknown, unknown>) => Promise<unknown>): unknown
   (event: 'session.end', hook: ($: ModEngine, e: { sessionId: string }, next: Next<{ sessionId: string }, unknown>) => Promise<unknown>): unknown
-  (event: 'session.compact', hook: ($: ModEngine, e: { agentId?: string }, next: Next<{ agentId?: string }, { skip?: string }>) => Promise<unknown>): unknown
+  (event: 'session.compact', hook: ($: ModEngine, e: CompactEvent, next: Next<CompactEvent, { skip?: string }>) => Promise<unknown>): unknown
   (event: 'session.append', hook: ($: ModEngine, e: AppendEvent, next: Next<AppendEvent, unknown>) => Promise<unknown>): unknown
   (event: 'agent.spawn', hook: ($: ModEngine, e: SpawnEvent, next: Next<SpawnEvent, SpawnResult>) => Promise<unknown>): unknown
   (event: 'tool.call', matcher: { tool: RegExp }, hook: ($: ModEngine, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>) => Promise<ToolCallOutcome>): unknown
@@ -137,7 +150,9 @@ async function handOver($: ModEngine, io: Io, owed: Owed, agentId: string | unde
     return null
   }
   try {
-    await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: briefing.text }] }, agentId })
+    const appended = await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: briefing.text }] }, agentId })
+    // A plugin above refused the row: nothing was stored, and asking again gets the same answer.
+    if (appended?.deny !== undefined) return null
   } catch {
     // A loop not running yet (a subagent registers just after its spawn) or already ended.
     const attempts = owed.attempts + 1
@@ -149,6 +164,22 @@ async function handOver($: ModEngine, io: Io, owed: Owed, agentId: string | unde
     // Delivered; only the stat is lost.
   }
   return null
+}
+
+/**
+ * Claim the session before a boundary, because the classic SubagentStart and
+ * SessionStart(compact) hooks beneath run inside `next` and must already see the claim
+ * (after a /clear nothing has claimed the new id yet). Resolves to the io to use while
+ * the claim stands, or null: unclaimed, the binary briefs and the mod owes nothing.
+ * Never throws. Top-level because it takes `$`: the validator follows `$` nowhere else.
+ */
+async function holdClaim($: ModEngine, wrapIo: (io: Io) => Io, claim: (io: Io, id: string) => Promise<boolean>): Promise<Io | null> {
+  try {
+    const io = wrapIo(modIo(hostOf($)))
+    return (await claim(io, await $.session.id())) ? io : null
+  } catch {
+    return null
+  }
 }
 
 /** The tool's own arguments, as the classic hook's `tool_input` carries them. */
@@ -186,8 +217,10 @@ export function outcomeOf(r: ToolCallOutcome, aborted: boolean): Outcome {
  *
  * One `tool.call` hook does what the binary needs four classic events and a pending
  * marker for: it checks before the call, runs it, and settles on the result it sees
- * directly. Everything is wrapped: the call runs exactly once whatever the core does,
- * and its result is never lost or changed beyond the one added line of context.
+ * directly. `agent.spawn` and `session.compact` owe a loop a note of the live failures,
+ * which `session.append` hands over at that loop's next qualifying row. Everything is
+ * wrapped: the call runs exactly once whatever the core does, and its result is never
+ * lost or changed beyond the one added line of context.
  */
 export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
   let claimed: { id: string; root: string; at: number } | null = null
@@ -235,12 +268,15 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
   })
 
   on('session.compact', async ($, e, next) => {
+    // A precompute prepares a summary for a later compaction and installs nothing: the
+    // window is intact, so nothing is owed and nothing is counted.
+    if (e.trigger === 'precompute') return next(e)
+    const io = await holdClaim($, wrapIo, claim)
     const compacted = await next(e)
-    if (compacted?.skip !== undefined) return compacted
+    if (!io || compacted?.skip !== undefined) return compacted
     owed.set(e.agentId ?? 'main', { boundary: 'compaction', attempts: 0 })
     if (e.agentId !== undefined) return compacted
     try {
-      const io = wrapIo(modIo(hostOf($)))
       await bumpCompactions(io, await pathsFor(io, await $.session.cwd()), await $.session.id())
     } catch {
       // A missed count only blurs one boundary attribution.
@@ -248,10 +284,11 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     return compacted
   })
 
-  on('agent.spawn', async (_$, e, next) => {
+  on('agent.spawn', async ($, e, next) => {
+    const io = await holdClaim($, wrapIo, claim)
     const spawned = await next(e)
     // A fork inherits the transcript and already sees the failures.
-    if (e.subagentType !== 'fork' && spawned?.deny === undefined && spawned?.agentId) {
+    if (io && e.subagentType !== 'fork' && spawned?.deny === undefined && spawned?.agentId) {
       owed.set(spawned.agentId, { boundary: 'subagent', attempts: 0 })
     }
     return spawned
@@ -265,13 +302,15 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
       // The compaction's own rows come before its boundary; a row of ours is our note.
       if (!entry || e.door === 'compaction' || (e.origin?.kind === 'plugin' && e.origin.name === PLUGIN_NAME)) return stored
       // A subagent's opening rows (its prompt, its attachments) arrive before its loop is
-      // registered, where the append is refused; its own model output means it is running.
-      // Those rows are passed over without costing an attempt.
-      if (entry.boundary === 'subagent' && e.door !== 'response') return stored
+      // registered, where the append is refused. Its first tool result means it is running
+      // and will make another request, so the note is read; it never lands between the
+      // blocks of one response. A subagent that never uses a tool gets no note.
+      if (entry.boundary === 'subagent' && e.door !== 'tool-result') return stored
       // Deleted first, so the note's own append never hands it over again.
       owed.delete(loop)
       const again = await handOver($, wrapIo(modIo(hostOf($))), entry, e.agentId)
-      if (again) owed.set(loop, again)
+      // Re-owed only if no newer boundary has owed this loop a note in the meantime.
+      if (again && !owed.has(loop)) owed.set(loop, again)
     } catch {
       // The row is stored; only the note is lost.
     }

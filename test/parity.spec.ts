@@ -136,7 +136,7 @@ async function runMod(cwd: string): Promise<string[]> {
         await flush({ door: 'notice', origin: { kind: 'engine' }, message: { type: 'system', content: [] } })
       } else {
         await hooks.get('agent.spawn')!(host, { subagentType: step.spawn }, async () => ({ model: 'm', agentId: 'sub-1' }))
-        await flush({ door: 'response', origin: { kind: 'model' }, agentId: 'sub-1', message: { type: 'assistant', content: [] } })
+        await flush({ door: 'tool-result', origin: { kind: 'tool' }, agentId: 'sub-1', message: { type: 'user', content: [] } })
       }
       said.push((opts.appended ?? []).slice(before).map((a) => a.text).join('\n'))
       continue
