@@ -88,10 +88,11 @@ export default tseslint.config(
   {
     // The core and the mod run inside Claude Code's mod runtime, which has no Node and
     // no Bun. Anything that reaches the outside world goes through `Io`.
-    files: ['src/core/**/*.ts', 'src/io/mod.ts', 'mod/**/*.ts'],
+    files: ['src/core/**/*.ts', 'src/commands/**/*.ts', 'src/io/mod.ts', 'mod/**/*.ts'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [{ group: ['node:*', 'bun', 'bun:*'], message: 'core and mod code reach the world through Io only' }] }],
       'no-restricted-globals': ['error', 'process', 'Bun', 'Buffer', 'require'],
+      'no-console': 'error',
     },
   },
 )
