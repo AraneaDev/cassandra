@@ -112,3 +112,38 @@ test('sanitiseExcerpt is the excerpt rule: control characters out, whitespace co
   expect(long).toHaveLength(240)
   expect(long.endsWith('...')).toBe(true)
 })
+
+test('a failure in a git repo stores HEAD and the dirty paths (capped at 200); outside git it stores neither', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { nodeIo } = await import('../src/io/node.ts')
+  const dir = mkdtempSync(join(tmpdir(), 'cass-eng-'))
+  const home = mkdtempSync(join(tmpdir(), 'cass-home-'))
+  const prev = process.env.CASSANDRA_HOME
+  process.env.CASSANDRA_HOME = home
+  try {
+    const g = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: dir, stdout: 'ignore', stderr: 'ignore' })
+    g('init', '-q'); g('config', 'user.email', 't@example.com'); g('config', 'user.name', 'T')
+    writeFileSync(join(dir, 'a.txt'), 'one')
+    g('add', '-A'); g('commit', '-qm', 'init')
+    for (let i = 0; i < 205; i++) writeFileSync(join(dir, `f${i}.txt`), 'x')
+    const c: Call = { tool: 'Bash', input: { command: 'bun test' }, cwd: dir, sessionId: 's1' }
+    await settle(nodeIo, c, { kind: 'failure', reason: 'x' }, null)
+    const hash = (await fingerprint(nodeIo, 'Bash', c.input))!
+    const rec = await readRecord(nodeIo, await pathsFor(nodeIo, dir), hash)
+    expect(rec?.gitHead).toMatch(/^[0-9a-f]{40}$/)
+    expect(rec?.dirty?.length).toBe(200)
+  } finally {
+    if (prev === undefined) delete process.env.CASSANDRA_HOME
+    else process.env.CASSANDRA_HOME = prev
+    rmSync(dir, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true })
+  }
+  // mtime case: the memory io has no git
+  await settle(io, call('bun test'), { kind: 'failure', reason: 'x' }, null)
+  const hash = (await fingerprint(io, 'Bash', { command: 'bun test' }))!
+  const rec = await readRecord(io, await pathsFor(io, cwd), hash)
+  expect(rec).not.toBeNull()
+  expect(rec?.gitHead).toBeUndefined()
+  expect(rec?.dirty).toBeUndefined()
+})

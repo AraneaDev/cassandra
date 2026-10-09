@@ -10,6 +10,8 @@ import { appendStat, attributeBoundary, type BriefBoundary } from './stats.ts'
 import type { RecordKind } from './types.ts'
 
 const EXCERPT_MAX = 240
+/** Most dirty paths a record keeps, so a huge working tree cannot bloat it. */
+const DIRTY_MAX = 200
 
 /**
  * The one piece of free text Cassandra stores and replays.
@@ -128,6 +130,7 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
     compactions: await compactionCount(io, paths, call.sessionId),
     errorExcerpt: sanitiseExcerpt(reason),
     agentId: call.agentId,
+    ...(stamp.git ? { gitHead: stamp.git.head, dirty: stamp.git.dirty.slice(0, DIRTY_MAX) } : {}),
   })
 }
 

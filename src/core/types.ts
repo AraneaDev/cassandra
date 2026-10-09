@@ -11,6 +11,8 @@ export type StateKind = 'git' | 'mtime' | 'none'
 export interface StateStamp {
   kind: StateKind
   value: string
+  /** The raw git state behind a `git` stamp: what a fix note is computed from later. */
+  git?: { head: string; dirty: string[] }
 }
 
 /** One remembered failure, stored as a single JSON file named by its fingerprint. */
@@ -27,6 +29,10 @@ export interface FailureRecord {
   lastSeen: string
   errorExcerpt: string
   agentId?: string
+  /** HEAD when the call failed, git repositories only. */
+  gitHead?: string
+  /** Paths git reported as changed when the call failed, at most 200. */
+  dirty?: string[]
 }
 
 /** The subset of a Claude Code hook payload Cassandra reads. All fields are optional by design. */

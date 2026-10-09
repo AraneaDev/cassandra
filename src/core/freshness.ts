@@ -17,23 +17,51 @@ const MAX_ENTRIES = 5000
  */
 async function gitStamp(io: Io, root: string): Promise<StateStamp | null> {
   try {
-    const [head, status] = await Promise.all([
-      io.run(['git', '-C', root, 'rev-parse', 'HEAD'], root),
-      io.run(['git', '-C', root, 'status', '--porcelain'], root),
-    ])
-    if (!status || status.exitCode !== 0) return null
-    // A repository with no commits yet fails `rev-parse HEAD`, so its exit code is
-    // checked explicitly rather than trusting whatever git wrote to stdout on
-    // failure. Substituting a fixed literal keeps the stamp defined by our own
-    // code. The repo is still stampable either way: `status --porcelain` alone
-    // already lists every untracked and staged file, so the stamp stays valid and
-    // moves both with the working tree and with the first commit.
-    const headValue = head && head.exitCode === 0 ? head.stdout : 'no-head'
-    const text = `${headValue} ${status.stdout}`
-    return { kind: 'git', value: (await io.sha256(text)).slice(0, 16) }
+    const state = await gitState(io, root)
+    if (!state) return null
+    // The hashed text is exactly what it always was, so every existing record still matches.
+    const text = `${state.headRaw} ${state.status}`
+    return { kind: 'git', value: (await io.sha256(text)).slice(0, 16), git: { head: state.head, dirty: state.dirty } }
   } catch {
     return null
   }
+}
+
+/**
+ * The paths in `git status --porcelain` output. A rename (`R  old -> new`) yields the new
+ * path; a quoted path keeps its escapes and loses only the surrounding quotes. Never throws.
+ */
+export function parsePorcelain(stdout: string): string[] {
+  const out: string[] = []
+  for (const line of stdout.split('\n')) {
+    if (line.length < 4) continue
+    let path = line.slice(3)
+    const arrow = path.indexOf(' -> ')
+    if (arrow !== -1) path = path.slice(arrow + 4)
+    if (path.startsWith('"') && path.endsWith('"') && path.length >= 2) path = path.slice(1, -1)
+    if (path) out.push(path)
+  }
+  return out
+}
+
+/** HEAD and the working tree as git reports them; null when git cannot answer. */
+export async function gitState(
+  io: Io,
+  root: string,
+): Promise<{ head: string; headRaw: string; dirty: string[]; status: string } | null> {
+  const [head, status] = await Promise.all([
+    io.run(['git', '-C', root, 'rev-parse', 'HEAD'], root),
+    io.run(['git', '-C', root, 'status', '--porcelain'], root),
+  ])
+  if (!status || status.exitCode !== 0) return null
+  // A repository with no commits yet fails `rev-parse HEAD`, so its exit code is
+  // checked explicitly rather than trusting whatever git wrote to stdout on
+  // failure. Substituting a fixed literal keeps the stamp defined by our own
+  // code. The repo is still stampable either way: `status --porcelain` alone
+  // already lists every untracked and staged file, so the stamp stays valid and
+  // moves both with the working tree and with the first commit.
+  const headRaw = head && head.exitCode === 0 ? head.stdout : 'no-head'
+  return { head: headRaw === 'no-head' ? 'no-head' : headRaw.trim(), headRaw, dirty: parsePorcelain(status.stdout), status: status.stdout }
 }
 
 /**
