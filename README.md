@@ -27,6 +27,8 @@
 repeats one without a project change. When a subagent starts or a conversation compacts, it
 also hands over one note listing the project's live dead ends. It hooks the tool-call
 lifecycle, fingerprints structured call data, and keeps one record per distinct failure.
+Agents can also ask Cassandra whether a call already failed, or tell it that something was
+fixed elsewhere.
 
 Inside one intact context window an agent can usually see the failure itself, a few
 thousand tokens back in its own transcript, and correct course without help. Cassandra
@@ -116,6 +118,11 @@ and the "repeated after briefing" share: briefed hashes that were then retried a
 boundary anyway. A high share means notes are handed over but not heeded. Like a high
 `same_context` share, that is a reason to doubt the feature, not to tune it.
 
+A line reads `resolved by an agent N, failed again M`. N counts records an agent cleared
+with `resolve`. M counts those resolved failures that were recorded again after the
+resolve. A high M means `resolve` is used to silence warnings rather than to report fixes.
+Like the other two, that is a reason to distrust the feature, not to tune it.
+
 ## How it decides whether to warn
 
 On `PreToolUse`:
@@ -128,6 +135,24 @@ On `PreToolUse`:
 
 A briefing uses the same rule: a record goes into the note only if the workspace is
 provably unchanged since it failed.
+
+## Asking and telling
+
+On the mod path, Cassandra registers two tools, which the engine lists as
+`mcp__cassandra__query` and `mcp__cassandra__resolve`. Subagents can call them too. Both
+answer only when asked, and Cassandra never records calls to its own tools.
+
+- **`query`** writes nothing. With a `command`, it answers whether that `Bash` command
+  already failed in this project, how often and when, the fenced last reason, and whether
+  anything in this repository or directory tree changed since. Without a command, it lists
+  the live dead ends, at most five plus "...and N more", each with an 8-character id.
+- **`resolve`** is for a fix that happened outside the repository, which the freshness
+  probe cannot see. It takes exactly one of `command` or `id`, plus a `reason`. Cassandra
+  forgets the record, the same as `cassandra forget`, and logs a `resolved` stats line with
+  the sanitised reason, capped at 240 characters. If the call fails again it is remembered
+  again, so a wrong claim costs one failure.
+
+These are mod-only. The classic binary cannot register tools.
 
 ## The freshness probe
 
@@ -237,9 +262,11 @@ Known gaps and differences:
   installed plugin.
 - The `/cassandra` slash command and the `cassandra` CLI still run on Bun
   (`bun src/cli.ts`). On a machine with the mod and no Bun they do not work yet.
-- The engine smoke test (`mod/smoke.test.ts`) only proves the hook passes a call through
-  once, unchanged, because the test kit's `$` has no filesystem or process access.
-  Behaviour is covered by the bun suites against a node-backed stand-in for `$`.
+- The engine smoke tests (`mod/smoke.test.ts`) prove routing. One checks that a tool call
+  passes through once, unchanged. One checks that a `query` call reaches Cassandra's own
+  tool hook and is answered without being passed on. Neither reaches a real store, because
+  the test kit's `$` has no filesystem or process access. The behaviour itself is covered
+  by the bun suites against a node-backed stand-in for `$`.
 
 ## Commands
 
