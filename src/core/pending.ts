@@ -33,26 +33,41 @@ async function prunePending(io: Io, dir: string): Promise<void> {
   }
 }
 
-/** Write the marker that lets PostToolUse attribute an outcome without re-hashing. */
-export async function markPending(io: Io, paths: Paths, toolUseId: string, hash: string): Promise<void> {
+/** What a marker remembers about a call: the record it was warned about, and where it started. */
+export interface Pending {
+  hash: string | null
+  cwd: string | null
+}
+
+/**
+ * Write the marker that lets the outcome hook attribute a call without re-hashing.
+ *
+ * The first line holds the warned hash (empty when there was no warning), the second the
+ * directory the call started in. The outcome payload reports the shell's directory after
+ * the command ran, so a `cd` inside the command would otherwise move the call to another
+ * package. A marker from before this format holds only the hash, and still reads.
+ */
+export async function markPending(io: Io, paths: Paths, toolUseId: string, pending: Pending): Promise<void> {
   try {
     await prunePending(io, paths.pending)
-    await io.writeText(pendingPath(paths, toolUseId), hash)
+    await io.writeText(pendingPath(paths, toolUseId), `${pending.hash ?? ''}\n${pending.cwd ?? ''}`)
   } catch {
-    // A missing marker only costs a metric.
+    // A missing marker only costs a metric, or the package of one call.
   }
 }
 
-/** Read and remove the marker for a tool call, if this call was warned about. */
-export async function takePending(io: Io, paths: Paths, toolUseId: string): Promise<string | null> {
+/** Read and remove the marker for a tool call. Both fields are null when there is none. */
+export async function takePending(io: Io, paths: Paths, toolUseId: string): Promise<Pending> {
   try {
     const p = pendingPath(paths, toolUseId)
     const text = await io.readText(p)
-    if (text === null) return null
+    if (text === null) return { hash: null, cwd: null }
     await io.remove(p)
-    const hash = text.trim()
-    return hash || null
+    const cut = text.indexOf('\n')
+    const hash = (cut === -1 ? text : text.slice(0, cut)).trim()
+    const cwd = cut === -1 ? '' : text.slice(cut + 1).replace(/\n$/, '')
+    return { hash: hash || null, cwd: cwd || null }
   } catch {
-    return null
+    return { hash: null, cwd: null }
   }
 }

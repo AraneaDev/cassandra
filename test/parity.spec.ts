@@ -10,9 +10,13 @@ import { nodeHost } from './support/node-host.ts'
 
 const NOW = '2026-01-01T00:00:00.000Z'
 
-/** One scripted step: a call and how it ended, or a compaction. */
+/**
+ * One scripted step: a call and how it ended, or a compaction. `postDir` is where the
+ * binary's outcome payload says the shell ended up, as after a `cd` in the command; the
+ * mod reads the directory before the call and never sees it.
+ */
 type Step =
-  | { call: string; tool?: string; input?: Record<string, unknown>; ends: 'fail' | 'ok' | 'deny' | 'interrupt'; agentId?: string; sessionId?: string; dir?: string }
+  | { call: string; tool?: string; input?: Record<string, unknown>; ends: 'fail' | 'ok' | 'deny' | 'interrupt'; agentId?: string; sessionId?: string; dir?: string; postDir?: string }
   | { compact: true }
   | { spawn: string }
   | { touch: string }
@@ -120,7 +124,8 @@ async function runBinary(cwd: string, script: Step[] = SCRIPT): Promise<string[]
     const base = { session_id: step.sessionId ?? 's1', cwd: step.dir ? join(cwd, step.dir) : cwd, tool_name: step.tool ?? 'Bash', tool_input: step.input ?? { command: step.call }, tool_use_id: `t${(n += 1)}`, agent_id: step.agentId }
     const pre = await handle({ ...base, hook_event_name: 'PreToolUse' }, io)
     said.push(step.ends === 'deny' ? DENY : pre ? JSON.parse(pre).hookSpecificOutput.additionalContext : '')
-    if (step.ends === 'ok') await handle({ ...base, hook_event_name: 'PostToolUse' }, io)
+    const post = step.postDir ? { ...base, cwd: join(cwd, step.postDir) } : base
+    if (step.ends === 'ok') await handle({ ...post, hook_event_name: 'PostToolUse' }, io)
     if (step.ends === 'fail') await handle({ ...base, hook_event_name: 'PostToolUseFailure', error: 'Exit code 1\nboom' }, io)
     if (step.ends === 'deny') await handle({ ...base, hook_event_name: 'PermissionDenied', denial_reason: 'policy' }, io)
     if (step.ends === 'interrupt') await handle({ ...base, hook_event_name: 'PostToolUseFailure', is_interrupt: true }, io)
@@ -206,6 +211,10 @@ const MONO: Step[] = [
   { call: 'bun test', ends: 'ok', dir: 'packages/b' },
   { call: 'bun test', ends: 'fail', dir: 'packages/a' },
   { call: 'bun test', ends: 'fail' },
+  // The shell ends up in packages/a, but the call started at the root.
+  { call: 'cd packages/a && bun test', ends: 'fail' },
+  { touch: 'fix.txt' },
+  { call: 'cd packages/a && bun test', ends: 'ok', postDir: 'packages/a' },
 ]
 
 test('in a monorepo both front ends keep each package to itself', async () => {
@@ -229,8 +238,11 @@ test('in a monorepo both front ends keep each package to itself', async () => {
   expect(saidBinary[3]).toContain('`bun test` (in packages/b) failed once before')
   expect(saidBinary[4]).toContain('`bun test` (in packages/a) failed 2 times before')
   expect(saidBinary[5]).toBe('')
+  expect(saidBinary.slice(6)).toEqual(['', ''])
   const store = snapshot(join(tmp, 'home-binary'))
   expect(scrub(snapshot(join(tmp, 'home-mod')))).toEqual(scrub(store))
   const records = Object.entries(store).filter(([k]) => k.startsWith('P/records/')).map(([, v]) => JSON.parse(v) as { scope?: string })
   expect(records.map((r) => r.scope ?? '').sort()).toEqual(['', 'packages/a'])
+  expect(Object.values(store).some((v) => v.includes('cd packages/a'))).toBe(false)
+  for (const home of ['home-binary', 'home-mod']) expect(Object.keys(snapshot(join(tmp, home))).some((k) => k.startsWith('P/fixes/'))).toBe(true)
 })
