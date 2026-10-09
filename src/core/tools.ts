@@ -19,7 +19,7 @@ export const TOOL_PREFIX = OWN_TOOL_PREFIX
 export const QUERY_TOOL = {
   name: 'query',
   description: 'Ask whether a command already failed in this project and nothing has changed since, or with no command, list the calls that are known dead ends right now.',
-  inputSchema: { type: 'object', properties: { command: { type: 'string', description: 'a Bash command, exactly as it was run' } } },
+  inputSchema: { type: 'object', properties: { command: { type: 'string', description: 'a Bash command, exactly as it was run; looked up in the package you are in' } } },
 }
 
 /** What the model reads about `resolve`. */
@@ -29,8 +29,8 @@ export const RESOLVE_TOOL = {
   inputSchema: {
     type: 'object',
     properties: {
-      command: { type: 'string', description: 'a Bash command, exactly as it was run' },
-      id: { type: 'string', description: 'the 8-character id that query lists' },
+      command: { type: 'string', description: 'a Bash command, exactly as it was run; looked up in the package you are in' },
+      id: { type: 'string', description: 'the 8-character id that query lists; works from any directory' },
       reason: { type: 'string', description: 'what was fixed, and where' },
     },
     required: ['reason'],

@@ -184,6 +184,10 @@ answer only when asked, and Cassandra never records calls to its own tools.
   the sanitised reason, capped at 240 characters. If the call fails again it is remembered
   again, so a wrong claim costs one failure.
 
+In a monorepo, a lookup by `command` uses the package the agent is in, because a `Bash`
+record belongs to the package it ran in: `bun test` in `packages/a` is not `bun test` at
+the root. A lookup by `id` works from anywhere in the repository.
+
 These are mod-only. The classic binary cannot register tools.
 
 ## The freshness probe

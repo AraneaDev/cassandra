@@ -167,3 +167,10 @@ test('query and resolve by command use the current package', async () => {
   expect(await resolveFailure(io, `${root}/packages/b`, { command: 'bun test', reason: 'fixed' })).toContain('No remembered failure matches')
   expect(await resolveFailure(io, a, { command: 'bun test', reason: 'fixed' })).toContain('Forgot `bun test` (in packages/a) [')
 })
+
+test('the schemas say a command is looked up in the current package and an id from anywhere', () => {
+  const props = (t: { inputSchema: unknown }) => (t.inputSchema as { properties: Record<string, { description: string }> }).properties
+  expect(props(QUERY_TOOL).command!.description).toContain('package you are in')
+  expect(props(RESOLVE_TOOL).command!.description).toContain('package you are in')
+  expect(props(RESOLVE_TOOL).id!.description).toContain('any directory')
+})
