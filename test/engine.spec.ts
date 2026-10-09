@@ -103,3 +103,12 @@ test('a briefing lists the live failures and writes nothing until it is recorded
   const stats = await readStats(io, await pathsFor(io, cwd))
   expect(stats).toEqual([{ kind: 'briefed', boundary: 'subagent', hashes: b.hashes, t: io.clock.now }])
 })
+
+test('sanitiseExcerpt is the excerpt rule: control characters out, whitespace collapsed, capped', async () => {
+  const { sanitiseExcerpt } = await import('../src/core/engine.ts')
+  expect(sanitiseExcerpt(' a\u0007b\n\n c ')).toBe('a b c')
+  expect(sanitiseExcerpt(undefined)).toBe('')
+  const long = sanitiseExcerpt('x'.repeat(500))
+  expect(long).toHaveLength(240)
+  expect(long.endsWith('...')).toBe(true)
+})

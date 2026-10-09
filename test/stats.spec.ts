@@ -138,3 +138,11 @@ test('briefed lines round-trip, and a malformed one is skipped', async () => {
   expect(events).toHaveLength(1)
   expect(events[0]).toMatchObject({ kind: 'briefed', boundary: 'compaction', hashes: ['aa11bb22cc33dd44'] })
 })
+
+test('resolved lines round-trip; one without a reason is skipped', async () => {
+  await appendStat(nodeIo, paths, { kind: 'resolved', hash: 'aa11bb22cc33dd44', reason: 'installed jq globally' })
+  appendFileSync(paths.stats, '{"kind":"resolved","hash":"aa11bb22cc33dd44","t":"x"}\n')
+  const events = await readStats(nodeIo, paths)
+  expect(events).toHaveLength(1)
+  expect(events[0]).toMatchObject({ kind: 'resolved', hash: 'aa11bb22cc33dd44', reason: 'installed jq globally' })
+})

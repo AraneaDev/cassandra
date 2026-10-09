@@ -11,8 +11,10 @@ export type BriefBoundary = 'subagent' | 'compaction'
  * What a stats line records. `false_positive` means the warned call then succeeded,
  * so the freshness probe missed a real change. `confirmed` means it failed again.
  * `briefed` means a note listing live failures was handed over at a boundary.
+ * `resolved` means an agent said a remembered failure was fixed outside the repository,
+ * and it was forgotten.
  */
-type StatKind = 'warned' | 'false_positive' | 'confirmed' | 'briefed'
+type StatKind = 'warned' | 'false_positive' | 'confirmed' | 'briefed' | 'resolved'
 
 /** One line of the efficacy log. A briefing carries `hashes`; every other kind one `hash`. */
 export interface StatEvent {
@@ -21,6 +23,7 @@ export interface StatEvent {
   hash?: string
   hashes?: string[]
   boundary?: Boundary
+  reason?: string
 }
 
 /** Append one event. Never throws: losing a metric must not cost a session. */
@@ -48,6 +51,10 @@ export async function readStats(io: Io, paths: Paths): Promise<StatEvent[]> {
           const { kind, hash, hashes } = parsed
           if (kind === 'briefed') {
             if (!Array.isArray(hashes) || !hashes.every((h: unknown) => typeof h === 'string')) return null
+            return parsed as StatEvent
+          }
+          if (kind === 'resolved') {
+            if (typeof hash !== 'string' || typeof parsed.reason !== 'string') return null
             return parsed as StatEvent
           }
           if (typeof hash !== 'string') return null

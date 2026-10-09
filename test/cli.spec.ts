@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { run } from '../src/cli'
-import { pathsFor } from '../src/core/paths.ts'
+import { pathsFor, recordPath, type Paths } from '../src/core/paths.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { listRecords, upsertRecord } from '../src/core/record.ts'
 import { appendStat } from '../src/core/stats.ts'
@@ -17,6 +17,17 @@ const seed = {
   tool: 'Bash', display: 'bun test', kind: 'failure' as const,
   stateStamp: 'a3f1c8', stateKind: 'git' as const,
   sessionId: 's1', compactions: 0, errorExcerpt: '3 tests failing',
+}
+
+function line(paths: Paths, e: object): void {
+  mkdirSync(dirname(paths.stats), { recursive: true })
+  appendFileSync(paths.stats, `${JSON.stringify(e)}\n`)
+}
+
+function writeRecordAt(paths: Paths, hash: string, firstSeen: string): void {
+  const file = recordPath(paths, hash)
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify({ ...seed, count: 1, firstSeen, lastSeen: firstSeen }))
 }
 
 beforeEach(async () => {
@@ -229,4 +240,19 @@ test('a call warned before its briefing and never after is not counted as repeat
   line('2026-01-01T00:00:02Z', { kind: 'briefed', boundary: 'subagent', hashes: ['aa11bb22cc33dd44'] })
   expect(await run(['stats', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('repeated after briefing  0 of 1')
+})
+
+test('stats reports agent resolves and how many failed again afterwards (Review Focus 5)', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  // aa: resolved at t2, failed again (record re-created, firstSeen t3) -> counts
+  // bb: resolved at t2, its record still has firstSeen t1 (never deleted) -> does not count
+  // cc: resolved at t2, no record now -> does not count
+  line(paths, { kind: 'resolved', hash: 'aa11bb22cc33dd44', reason: 'r', t: '2026-01-01T00:00:02.000Z' })
+  line(paths, { kind: 'resolved', hash: 'bb11bb22cc33dd44', reason: 'r', t: '2026-01-01T00:00:02.000Z' })
+  line(paths, { kind: 'resolved', hash: 'cc11bb22cc33dd44', reason: 'r', t: '2026-01-01T00:00:02.000Z' })
+  writeRecordAt(paths, 'aa11bb22cc33dd44', '2026-01-01T00:00:03.000Z')
+  writeRecordAt(paths, 'bb11bb22cc33dd44', '2026-01-01T00:00:01.000Z')
+  expect(await run(['stats', '--cwd', cwd])).toBe(0)
+  expect(out.join('\n')).toContain('resolved by an agent  3, failed again 1')
+  expect(out.join('\n')).toStartWith('agent resolves\n\n  resolved by an agent')
 })

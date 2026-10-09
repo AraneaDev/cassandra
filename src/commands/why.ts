@@ -1,7 +1,7 @@
 import { readRecord } from '../core/record.ts'
 import type { Io } from '../core/io.ts'
 import { type Paths } from '../core/paths.ts'
-import { explainResolution, resolveHash } from './resolve.ts'
+import { explainResolution, resolveHash } from '../core/resolve.ts'
 
 /**
  * Print one record in full, including the error excerpt that produced it.
