@@ -39,7 +39,7 @@ const row = (id: string, stale = false) => ({ hash: id + 'ffffff', id, display: 
 const base: PaneModel = {
   rows: [row('aaaaaaaa'), row('bbbbbbbb', true)], more: 0, selected: 'aaaaaaaaffffff',
   detail: { reason: 'npm ERR! missing script: test', probe: 'git · nothing changed since', fix: 'use bun' },
-  stats: null, confirmAll: false, total: 2, notice: null, error: null,
+  stats: null, confirmAll: false, total: 2, hashes: ['aaaaaaaaffffff', 'bbbbbbbbffffff'], notice: null, error: null,
 }
 
 describe('drawPane', () => {
@@ -93,7 +93,7 @@ describe('drawPane', () => {
   })
 
   test('the confirm button counts one record in the singular', () => {
-    const b = nodes({ ...base, confirmAll: true, total: 1 }).filter((n) => n.type === 'Button')
+    const b = nodes({ ...base, confirmAll: true, total: 1, hashes: ['aaaaaaaaffffff'] }).filter((n) => n.type === 'Button')
     expect(text(b.find((x) => x.props.key === keys.KEY_CONFIRM)!)).toBe('Forget all 1 record')
   })
 
@@ -107,7 +107,7 @@ describe('drawPane', () => {
   })
 
   test('empty and error', () => {
-    const empty = { ...base, rows: [], detail: null, selected: null, total: 0 }
+    const empty = { ...base, rows: [], detail: null, selected: null, total: 0, hashes: [] }
     expect(lines(empty)).toContain('Nothing remembered in this project.')
     expect(nodes(empty).some((n) => n.props.key === keys.KEY_FORGET)).toBe(false)
     const err = nodes({ ...empty, error: 'Cassandra could not read this project\'s store.' })
@@ -158,16 +158,32 @@ describe('drawPane', () => {
 
   test('a short body drops the detail first, then the stats, and gives the room to rows', () => {
     const at = (bodyRows: number) => keys.paneLayout(bodyRows)
-    expect(at(30)).toEqual({ maxRows: 30 - keys.PANE_CHROME_LINES, detail: true, stats: true })
-    expect(at(keys.PANE_CHROME_LINES + 1)).toEqual({ maxRows: 1, detail: true, stats: true })
-    expect(at(keys.PANE_CHROME_LINES)).toEqual({ maxRows: 4, detail: false, stats: true })
-    expect(at(7)).toEqual({ maxRows: 1, detail: false, stats: true })
-    expect(at(6)).toEqual({ maxRows: 1, detail: false, stats: false })
-    expect(at(2)).toEqual({ maxRows: 1, detail: false, stats: false })
+    expect(at(30)).toEqual({ maxRows: 30 - keys.PANE_CHROME_LINES, detail: true, stats: true, tooShort: false })
+    expect(at(keys.PANE_CHROME_LINES + 1)).toEqual({ maxRows: 1, detail: true, stats: true, tooShort: false })
+    expect(at(keys.PANE_CHROME_LINES)).toEqual({ maxRows: 4, detail: false, stats: true, tooShort: false })
+    expect(at(7)).toEqual({ maxRows: 1, detail: false, stats: true, tooShort: false })
+    expect(at(6)).toEqual({ maxRows: 1, detail: false, stats: false, tooShort: false })
+    expect(at(5)).toEqual({ maxRows: 1, detail: false, stats: false, tooShort: true })
+    expect(at(2)).toEqual({ maxRows: 1, detail: false, stats: false, tooShort: true })
     const m = { ...base, stats: 'fp 1.0% · same_context 2.0%' }
-    const hidden = walk(drawPane(el, m, 100, { detail: false, stats: false })).filter((n) => n.type === 'Text').map(text)
+    const hidden = walk(drawPane(el, m, 100, { detail: false, stats: false, tooShort: false })).filter((n) => n.type === 'Text').map(text)
     expect(hidden.some((l) => /^(reason|probe|fix|fp) /.test(l))).toBe(false)
     expect(hidden.filter((l) => /^─+$/.test(l))).toHaveLength(2)
+  })
+
+  test('a body of 1 to 5 lines draws one line and no buttons; 6 draws one row and the action row', () => {
+    expect(keys.PANE_MIN_LINES).toBe(6)
+    for (let bodyRows = 1; bodyRows <= 5; bodyRows++) {
+      const all = walk(drawPane(el, base, 100, keys.paneLayout(bodyRows)))
+      expect(all.filter((n) => n.type === 'Text').map(text)).toEqual(['Pane too short; make the window taller.'])
+      expect(all.some((n) => n.type === 'Button')).toBe(false)
+    }
+    const six = walk(drawPane(el, base, 100, keys.paneLayout(6)))
+    expect(six.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:'))).toHaveLength(2)
+    expect(six.some((n) => n.props.key === 'action-row')).toBe(true)
+    // The line is clipped to the width, and an error still comes first.
+    expect(walk(drawPane(el, base, 10, keys.paneLayout(3))).filter((n) => n.type === 'Text').map(text)[0]!.length).toBe(10)
+    expect(walk(drawPane(el, { ...base, error: 'bad' }, 100, keys.paneLayout(3))).filter((n) => n.type === 'Text').map(text)).toEqual(['bad'])
   })
 
   test('the chrome around the rows is exactly PANE_CHROME_LINES lines when everything shows', () => {

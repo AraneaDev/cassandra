@@ -2,6 +2,7 @@ import { forget } from '../src/commands/forget.ts'
 import { runCommand, type CommandResult } from '../src/commands/run.ts'
 import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
+import { removeFix } from '../src/core/fixes.ts'
 import { paneModel, unreadableModel, type PaneModel, type PaneView } from '../src/core/pane.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { statusText } from '../src/core/status.ts'
@@ -274,11 +275,11 @@ const REV = { plugin: 'cassandra', key: 'rev' } as const
 /** The outcome of the last action, when it failed. */
 const NOTICE = { plugin: 'cassandra', key: 'notice' } as const
 
-/** What one surface last drew: the row it marked selected, every row it showed, and the record count it gave. */
+/** What one surface last drew: the row it marked selected, every row it showed, and every record it counted. */
 export interface DrawnPane {
   selected: string | null
   hashes: ReadonlySet<string>
-  total: number
+  counted: ReadonlySet<string>
 }
 
 /** What each surface last drew, by surface. Forget acts only on rows the person saw. */
@@ -368,7 +369,7 @@ async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRende
       model = unreadableModel()
     }
     // Not state: a render may not write it, and a press only needs this session's own drawing.
-    drawn.set(e.surface ?? '', { selected: model.selected, hashes: new Set(model.rows.map((r) => r.hash)), total: model.total })
+    drawn.set(e.surface ?? '', { selected: model.selected, hashes: new Set(model.rows.map((r) => r.hash)), counted: new Set(model.hashes) })
     return drawPane($.ui.resolve(e), model, columns, layout)
   } catch {
     return next(e)
@@ -429,41 +430,47 @@ async function forgetTarget($: ModEngine, io: Io, cwd: string, drawn: DrawnPane 
 /** The notice of a confirm that could not forget every record. */
 const FORGET_ALL_FAILED = 'Could not forget every record.'
 
-/** The notice of a confirm whose count no longer matches the store's: `count` records now. */
-function recountNotice(count: number): string {
-  return `The records changed; confirm again to forget all ${count} ${count === 1 ? 'record' : 'records'}.`
-}
-
 /**
- * Forget every record, but only the count this surface showed on its confirm button.
- * When the store holds another count, or nothing was drawn here, nothing is deleted: the
- * confirmation stays, a notice gives the new count, and the pane redraws. A store that
- * cannot be counted deletes nothing either, and says so. Rejects on a state failure.
+ * Forget exactly the records this surface counted on its confirm button, and no others.
+ * A newer record stays and is named in the notice; a counted record already gone is
+ * skipped. Nothing drawn here, or nothing counted left, deletes nothing: the confirmation
+ * drops and the pane redraws. A store that cannot be counted deletes nothing either, and
+ * says so. Rejects on a state failure.
  */
 async function confirmForgetAll($: ModEngine, io: Io, cwd: string, drawn: DrawnPane | undefined): Promise<void> {
-  let count: number
+  let stored: string[]
   try {
-    count = (await listRecords(io, await pathsFor(io, cwd))).length
+    stored = (await listRecords(io, await pathsFor(io, cwd))).map((r) => r.hash)
   } catch {
     await $.state.set(NOTICE, FORGET_ALL_FAILED)
     await bumpRev($)
     return
   }
-  if (count === 0) {
-    // Nothing left to confirm: drop the row and redraw the store as it is.
+  const targets = stored.filter((h) => drawn?.counted.has(h))
+  if (stored.length === 0 || targets.length === 0) {
+    // Nothing counted is left to confirm: drop the row and redraw the store as it is.
     await $.state.set(CONFIRM_ALL, false)
     await $.state.set(NOTICE, null)
     await bumpRev($)
     return
   }
-  if (drawn?.total !== count) {
-    await $.state.set(NOTICE, recountNotice(count))
-    await bumpRev($)
-    return
-  }
-  // The person's own gesture in the pane, so the guard on forget --all does not apply.
+  const kept = stored.length - targets.length
   await $.state.set(CONFIRM_ALL, false)
-  await paneForget($, io, async () => forget(io, await pathsFor(io, cwd), null, true), FORGET_ALL_FAILED)
+  let failed = false
+  const paths = await pathsFor(io, cwd)
+  for (const hash of targets) {
+    try {
+      if ((await forget(io, paths, hash, false)).code !== 0 || !(await removeFix(io, paths, hash))) failed = true
+    } catch {
+      failed = true
+    }
+  }
+  const n = targets.length
+  const notice = failed
+    ? FORGET_ALL_FAILED
+    : kept === 0 ? null : `Forgot ${n} ${n === 1 ? 'record' : 'records'}; ${kept} newer ${kept === 1 ? 'record was' : 'records were'} kept.`
+  await $.state.set(NOTICE, notice).catch(() => undefined)
+  await refreshStatus($, io)
 }
 
 async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: DrawnBySurface): Promise<void> {

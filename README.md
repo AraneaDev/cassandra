@@ -353,7 +353,10 @@ selected record in detail, and the same figures as `stats`. The selected row is 
 with a leading `▸`, and a stale row is dimmed and suffixed `stale`. Move with the arrow
 keys or Tab, and select with Enter or by focusing the row. `f` forgets the selected
 record. `a` asks for a second press, offering "Forget all N records" or Cancel, before it
-drops everything. Esc closes the pane. The pane needs a mod build and an interactive
+drops everything. Forget all forgets exactly the records counted on its button: a record
+written after the pane last drew is kept, and the notice says how many were forgotten and
+kept. A body too short to draw the pane (under 6 lines) shows a single line asking for a
+taller window. Esc closes the pane. The pane needs a mod build and an interactive
 session; with no interactive surface, as in `claude -p`, `/cassandra pane` answers "The
 pane needs an interactive session." and exits 1. Only your own command opens it: from
 a plugin or a schedule, `/cassandra pane` answers "The pane opens only from your own
