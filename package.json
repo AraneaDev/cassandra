@@ -22,6 +22,8 @@
     "fp": "bun run scripts/fp-harness.ts",
     "fp:mod": "bun run scripts/fp-harness.ts --io=mod",
     "fp:real": "bun run scripts/fp-harness.ts --real",
+    "test:mod": "claude plugin test .",
+    "validate:mod": "claude plugin validate .",
     "check": "bun run lint && bun run lint:docs && bun run typecheck && bun run knip && bun run test:coverage",
     "prepare": "git config core.hooksPath .githooks || true"
   },

@@ -33,11 +33,11 @@ earns its place at the boundaries where that transcript is gone: compaction, a n
 session, or a subagent spawned fresh with no idea the parent already burned several calls
 on this exact command. Outside those boundaries it deliberately stays quiet.
 
-> **Status:** pre-release. Cassandra installs from source and requires
-> [Bun](https://bun.sh/) 1.1 or newer on the machine running Claude Code. The first
-> session after install builds the hook binary and the plugin is active from the second
-> one, which [Install](#install) covers. Without Bun on `PATH` it stays inert for good and
-> says so once, at session start.
+> **Status:** pre-release. On Claude Code builds that load plugin mods, Cassandra runs in
+> process from the first session and needs no Bun. On older builds it falls back to the
+> compiled hook binary, which needs [Bun](https://bun.sh/) 1.1 or newer and is active from
+> the second session, which [Install](#install) covers. On those builds, without Bun on
+> `PATH` it stays inert and says so at session start.
 
 ---
 
@@ -87,9 +87,9 @@ claude plugin install cassandra@aranea
 ```
 <!-- aranea-install:end -->
 
-Hooks bind when a session starts, so the first session after install finds no hook binary
-yet, builds it in the background, and says so. Cassandra becomes active from the second
-session onward. The binary is around 79MB, because `bun build --compile` embeds the Bun
+On the classic path, hooks bind when a session starts, so the first session after install
+finds no hook binary yet, builds it in the background, and says so. Cassandra becomes
+active from the second session onward. Where the mod loads, none of this applies. The binary is around 79MB, because `bun build --compile` embeds the Bun
 runtime to produce it, which is why it is gitignored rather than committed and built on
 first use instead.
 
@@ -124,6 +124,9 @@ warning is worse than a missed one.
 A false-positive harness applies nine mutation shapes across both the git and mtime paths
 and currently detects 18 of 18, at a 0.0% false-positive rate. A separate check against a
 headless repository, one with no commits at all, passes 9 of 9.
+
+File times are compared at full precision, not truncated, so both front ends stamp a tree
+the same way where they can read the same times.
 
 One gap is inherent to a metadata-only probe rather than a bug in it: a file rewritten to
 different content of the same length, with its mtime restored afterward, is not detected
@@ -160,6 +163,42 @@ it warned about then went on to succeed. Remove the hook and the false-positive 
 `cassandra stats` stops existing, which is the number that tells you whether the freshness
 probe is working at all. You pay about 12ms on every successful call to keep the tool
 measurable, and that is the trade being made.
+
+## Two front ends
+
+- The mod (`mod/`) runs inside Claude Code as one `tool.call` hook. It sees the call and
+  its outcome together and attaches the warning as the tool result's `context`.
+- The binary (`src/hook.ts`) is the classic `PreToolUse`, `PostToolUse*`,
+  `PermissionDenied` and `PostCompact` path, unchanged in behaviour.
+- Both share `src/core/` and one data directory. Where the mod loads, it writes
+  `sessions/<id>.mod` under the data directory and the binary stands down for that
+  session. The session-start script leaves a pointer to the data directory in
+  `~/.cassandra/data-root`, because the mod cannot see `CLAUDE_PLUGIN_DATA`.
+- `mod/install.ts` reaches `$` only through a top-level `hostOf($)`, because the engine's
+  validator refuses `$` passed anywhere else.
+
+Known gaps and differences:
+
+- On a denied repeat, the mod records the warning but cannot show it to the model, since a
+  denied result carries no context. The binary shows it.
+- A call refused by a permission rule, or one whose approval was not granted, is not
+  recorded by either front end. The mod recognises these by the engine's error text.
+- The mod detects an interrupt by the dispatch's abort signal. This was verified with
+  SIGINT on a headless run, not with Esc in the interactive UI.
+- On the mtime path, outside git, a record is matched only by the front end that wrote it.
+  File times are compared at full precision, and the two runtimes may report them
+  differently.
+- The mod's file listing reports whole milliseconds, so on the mtime path a same-length
+  rewrite within the same millisecond as the previous stamp is not detected by the mod.
+  The binary detects it.
+- If a hot reload of the mod fails mid-session after it claimed the session, nothing
+  records for the rest of that session. That only affects development folders, not an
+  installed plugin.
+- The `/cassandra` slash command and the `cassandra` CLI still run on Bun
+  (`bun src/cli.ts`). On a machine with the mod and no Bun they do not work yet.
+- The engine smoke test (`mod/smoke.test.ts`) only proves the hook passes a call through
+  once, unchanged, because the test kit's `$` has no filesystem or process access.
+  Behaviour is covered by the bun suites against a node-backed stand-in for `$`.
 
 ## Commands
 
@@ -198,7 +237,7 @@ the changelog, not the reference page.
 
 ## Requirements
 
-Bun 1.1.0 or newer. Without it, the plugin is inert and says so once, at session start.
+Bun 1.1.0 or newer for the classic path, the CLI and the slash command. None for the mod.
 
 ## Development
 
@@ -207,6 +246,9 @@ bun install
 bun run check      # lint, lint:docs, typecheck, knip, then the full suite with coverage
 bun run fp         # synthetic freshness-probe harness
 bun run fp:real    # freshness probe against real repositories on this machine
+bun run fp:mod     # the same harness through the mod's I/O
+bun run validate:mod  # claude plugin validate (needs the claude CLI)
+bun run test:mod   # claude plugin test, the engine smoke test (needs the claude CLI)
 ```
 
 ## License
