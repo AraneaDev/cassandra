@@ -23,6 +23,9 @@ type On = Parameters<Parameters<typeof test>[1]>[1]
 /** The host calls answered here, as far as this test reads them. */
 interface HostCall { path: string; text: string; argv: readonly string[]; init?: { stdin?: string } }
 
+/** How many times the plugin asked to open a pane. */
+let opened = 0
+
 /** Answer the plugin's host calls from an in-memory filesystem. */
 function memoryHost(on: On): void {
   const files = new Map<string, string>([[`${CWD}/a.txt`, 'one']])
@@ -79,18 +82,25 @@ function memoryHost(on: On): void {
     // No git here: the freshness stamp falls back to the tree's mtimes.
     return done(128)
   })
-  h('ui.open', async () => ({ value: { isPlaced: true } }))
+  h('ui.open', async () => {
+    opened += 1
+    return { value: { isPlaced: true } }
+  })
   h('ui.panes', async () => ({ value: [] }))
   h('session.surfaces', async () => ({ value: ['terminal'] }))
 }
 
-test('the pane opens, draws the remembered failure, and asks before forgetting everything', async ($, on) => {
+test('the pane refuses a plugin origin, draws the remembered failure, forgets it, and asks before forgetting everything', async ($, on) => {
   memoryHost(on)
   on('tool.call', { tool: 'Bash' }, async () => ({ isError: true, result: 'Exit code 1', text: 'Exit code 1\nboom' }))
   await $.tool.call({ tool: 'Bash', command: 'false # cassandra pane' })
 
+  // A run from here carries a plugin origin, which may not open the pane; the person's
+  // own origins are covered by test/mod.spec.ts. The test mounts the pane itself instead.
+  opened = 0
   const r = await $.command.run({ command: 'cassandra', args: 'pane' })
-  expect(r.text).toBe('Opened the Cassandra pane.')
+  expect([r.text, r.exitCode]).toEqual(['The pane opens only from your own /cassandra command.', 1])
+  expect(opened).toBe(0)
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...PANE, surface, viewport })
