@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { tmpdir } from 'node:os'
 import { install, type ModEngine, type ToolCallEvent, type ToolCallOutcome } from '../mod/install.ts'
@@ -31,7 +31,16 @@ const SCRIPT: Step[] = [
   { call: 'bun test', ends: 'fail' },
 ]
 
-const scrub = (s: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.replace(/"stateStamp":"[0-9a-f]{16}"/, '"stateStamp":"S"')]))
+const scrub = (s: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.replace(/"stateStamp":"[0-9a-f]{16}"/g, '"stateStamp":"S"')]))
+
+
+function expectNonTrivial(said: string[], store: Record<string, string>): void {
+  const keys = Object.keys(store)
+  expect(keys.length).toBeGreaterThan(0)
+  expect(keys.some((k) => k.startsWith('P/records/'))).toBe(true)
+  expect(keys).toContain('P/stats.jsonl')
+  expect(said.some((s) => s.startsWith('cassandra: '))).toBe(true)
+}
 
 let tmp: string
 
@@ -39,7 +48,8 @@ beforeEach(() => { tmp = mkdtempSync(join(tmpdir(), 'cass-parity-')) })
 const realHome = process.env.HOME
 afterEach(() => {
   delete process.env.CASSANDRA_HOME
-  process.env.HOME = realHome
+  if (realHome === undefined) delete process.env.HOME
+  else process.env.HOME = realHome
   rmSync(tmp, { recursive: true, force: true })
 })
 
@@ -58,7 +68,7 @@ function snapshot(root: string): Record<string, string> {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, e.name)
       if (e.isDirectory()) walk(full)
-      else if (!e.name.endsWith('.mod') && !relative(root, full).includes('pending')) out[relative(root, full).replace(/^[^/]+-[0-9a-f]{8}\//, 'P/')] = readFileSync(full, 'utf8')
+      else if (!e.name.endsWith('.mod') && !relative(root, full).split('/').includes('pending')) out[relative(root, full).replace(/^[^/]+-[0-9a-f]{8}\//, 'P/')] = readFileSync(full, 'utf8')
     }
   }
   walk(root)
@@ -122,17 +132,24 @@ test('the binary and the mod say the same things and leave the same store (mtime
   expect(saidMod).toEqual(saidBinary)
   expect(saidBinary.filter(Boolean).length).toBeGreaterThan(0)
   expect(scrub(snapshot(join(tmp, 'home-mod')))).toEqual(scrub(snapshot(join(tmp, 'home-binary'))))
+  expectNonTrivial(saidBinary, snapshot(join(tmp, 'home-binary')))
+  expectNonTrivial(saidMod, snapshot(join(tmp, 'home-mod')))
 })
 
 test('the same holds on the git path', async () => {
   const init = (dir: string): string => {
     for (const a of [['init', '-q'], ['config', 'user.email', 't@e.com'], ['config', 'user.name', 'T'], ['add', '-A'], ['commit', '-qm', 'init', '--date', '2026-01-01T00:00:00Z']]) {
-      Bun.spawnSync(['git', '-C', dir, ...a], { stdout: 'ignore', stderr: 'ignore', env: { ...process.env, GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' } })
+      const r = Bun.spawnSync(['git', '-C', dir, ...a], { stdout: 'ignore', stderr: 'ignore', env: { ...process.env, GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' } })
+      expect(r.exitCode).toBe(0)
     }
+    expect(existsSync(join(dir, '.git'))).toBe(true)
+    expect(Bun.spawnSync(['git', '-C', dir, 'rev-parse', 'HEAD'], { stdout: 'ignore', stderr: 'ignore' }).exitCode).toBe(0)
     return dir
   }
   const saidBinary = await runBinary(init(repo('g1')))
   const saidMod = await runMod(init(repo('g2')))
   expect(saidMod).toEqual(saidBinary)
   expect(scrub(snapshot(join(tmp, 'home-mod')))).toEqual(scrub(snapshot(join(tmp, 'home-binary'))))
+  expectNonTrivial(saidBinary, snapshot(join(tmp, 'home-binary')))
+  expectNonTrivial(saidMod, snapshot(join(tmp, 'home-mod')))
 })

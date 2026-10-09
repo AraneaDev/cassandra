@@ -1,4 +1,5 @@
 [test]
+preload = ["./test/support/preload.ts"]
 root = "test"
 coverageSkipTestFiles = true
 coverageReporter = ["text"]

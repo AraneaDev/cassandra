@@ -17,7 +17,12 @@ import { nodeIo } from '../src/io/node.ts'
 import { modIo } from '../src/io/mod.ts'
 import { nodeHost } from '../test/support/node-host.ts'
 
-const io: Io = process.argv.includes('--io=mod') ? modIo(nodeHost()) : nodeIo
+const useMod = process.argv.includes('--io=mod')
+const io: Io = useMod ? modIo(nodeHost()) : nodeIo
+const ioName = useMod ? 'mod' : 'node'
+
+/** The mod's fs.list reports whole milliseconds; a real shell command never lands in the same one as the stamp before it. */
+const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 3))
 
 interface Mutation {
   name: string
@@ -65,6 +70,7 @@ function seed(dir: string, asRepo: boolean, opts: { headless?: boolean } = {}): 
 }
 
 async function runSynthetic(): Promise<number> {
+  console.error(`freshness FP harness: io=${ioName}`)
   const root = mkdtempSync(join(tmpdir(), 'cass-fp-'))
   let failures = 0
   let total = 0
@@ -75,6 +81,7 @@ async function runSynthetic(): Promise<number> {
       const dir = join(root, `${asRepo ? 'g' : 'm'}-${m.name.replace(/\W+/g, '-')}`)
       seed(dir, asRepo)
       const before = await stateStamp(io, dir)
+      await settle()
       m.apply(dir)
       const after = await stateStamp(io, dir)
       total += 1
@@ -87,7 +94,7 @@ async function runSynthetic(): Promise<number> {
   }
 
   const rate = ((failures / total) * 100).toFixed(1)
-  console.error(`\nfreshness FP harness (io=${process.argv.includes('--io=mod') ? 'mod' : 'node'}): ${total - failures}/${total} mutations detected, false-positive rate ${rate}%`)
+  console.error(`\nfreshness FP harness (io=${ioName}): ${total - failures}/${total} mutations detected, false-positive rate ${rate}%`)
 
   // Known blind spot, reported for the record rather than folded into the total
   // above. A same-length rewrite that also restores the file's original atime and
@@ -127,6 +134,7 @@ async function runSynthetic(): Promise<number> {
     const dir = join(root, `headless-${m.name.replace(/\W+/g, '-')}`)
     seed(dir, true, { headless: true })
     const before = await stateStamp(io, dir)
+    await settle()
     m.apply(dir)
     const after = await stateStamp(io, dir)
     headlessTotal += 1
@@ -220,6 +228,7 @@ async function runReal(): Promise<number> {
     .split(',').map((s) => s.trim()).filter((s) => s.length > 0 && existsSync(s))
 
   if (roots.length === 0) {
+    console.error(`fp:real: io=${ioName}`)
     console.error('fp:real: no candidate repositories found, set CASSANDRA_FP_ROOTS')
     return 0
   }
@@ -227,7 +236,7 @@ async function runReal(): Promise<number> {
   let unstable = 0
   let slow = 0
   let boundsHit = 0
-  console.error('fp:real: probing real repositories\n')
+  console.error(`fp:real: io=${ioName}, probing real repositories\n`)
 
   for (const root of roots) {
     const t0 = performance.now()
