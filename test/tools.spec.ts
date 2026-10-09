@@ -154,3 +154,23 @@ test('query without a command shows the fix sentence before the id', async () =>
   const text = await queryText(io, cwd, {})
   expect(text).toContain(`changed (2026-10-09). [${hash.slice(0, 8)}]`)
 })
+
+test('query and resolve by command use the current package', async () => {
+  const root = '/work/mono'
+  await io.writeText(`${root}/.git/HEAD`, 'ref: refs/heads/main\n')
+  await io.writeText(`${root}/packages/a/package.json`, '{}')
+  await io.writeText(`${root}/packages/b/package.json`, '{}')
+  const a = `${root}/packages/a`
+  await settle(io, { tool: 'Bash', input: { command: 'bun test' }, cwd: a, sessionId: 's1' }, { kind: 'failure', reason: 'Exit code 1 boom' }, null)
+  expect(await queryText(io, `${root}/packages/b`, { command: 'bun test' })).toBe('cassandra: No failure of this command is remembered in this project.')
+  expect(await queryText(io, a, { command: 'bun test' })).toContain('failed once')
+  expect(await resolveFailure(io, `${root}/packages/b`, { command: 'bun test', reason: 'fixed' })).toContain('No remembered failure matches')
+  expect(await resolveFailure(io, a, { command: 'bun test', reason: 'fixed' })).toContain('Forgot `bun test` (in packages/a) [')
+})
+
+test('the schemas say a command is looked up in the current package and an id from anywhere', () => {
+  const props = (t: { inputSchema: unknown }) => (t.inputSchema as { properties: Record<string, { description: string }> }).properties
+  expect(props(QUERY_TOOL).command!.description).toContain('package you are in')
+  expect(props(RESOLVE_TOOL).command!.description).toContain('package you are in')
+  expect(props(RESOLVE_TOOL).id!.description).toContain('any directory')
+})

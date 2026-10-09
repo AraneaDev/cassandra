@@ -25,6 +25,8 @@ export interface StateStamp {
 export interface FailureRecord {
   tool: string
   display: string
+  /** The monorepo package a Bash call ran in, relative to the repo root; absent at the root. */
+  scope?: string
   kind: RecordKind
   count: number
   stateStamp: string

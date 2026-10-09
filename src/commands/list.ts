@@ -1,3 +1,4 @@
+import { labelOf } from '../core/describe.ts'
 import { listRecords } from '../core/record.ts'
 import type { Io } from '../core/io.ts'
 import type { Paths } from '../core/paths.ts'
@@ -14,7 +15,7 @@ export async function list(io: Io, paths: Paths): Promise<CommandResult> {
   lines.push(`${all.length} remembered failure${all.length === 1 ? '' : 's'}:\n`)
   for (const { hash, record } of all) {
     const kind = record.kind === 'denial' ? 'denied' : 'failed'
-    lines.push(`  ${hash.slice(0, 8)}  ${kind} ${record.count}x  ${record.lastSeen.slice(0, 10)}  ${record.display}`)
+    lines.push(`  ${hash.slice(0, 8)}  ${kind} ${record.count}x  ${record.lastSeen.slice(0, 10)}  ${labelOf(record)}`)
   }
   return { code: 0, text: lines.join('\n') }
 }

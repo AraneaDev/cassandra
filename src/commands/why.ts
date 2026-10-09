@@ -1,4 +1,5 @@
 import { readRecord } from '../core/record.ts'
+import { labelOf } from '../core/describe.ts'
 import { fixSentence, readFix } from '../core/fixes.ts'
 import type { Io } from '../core/io.ts'
 import { type Paths } from '../core/paths.ts'
@@ -25,7 +26,7 @@ export async function why(io: Io, paths: Paths, hash: string): Promise<CommandRe
     lines.push(`No record for ${r.hash}.`)
     return { code: 1, text: lines.join('\n') }
   }
-  lines.push(`${record.display}\n`)
+  lines.push(`${labelOf(record)}\n`)
   lines.push(`  kind        ${record.kind}`)
   lines.push(`  seen        ${record.count} time${record.count === 1 ? '' : 's'}`)
   lines.push(`  first       ${record.firstSeen}`)

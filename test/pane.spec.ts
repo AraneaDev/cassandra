@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { settle } from '../src/core/engine.ts'
 import { fixSentence, writeFix } from '../src/core/fixes.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
 import { stateStamp } from '../src/core/freshness.ts'
@@ -120,4 +121,25 @@ test('an unreadable store gives the error model', async () => {
 
 test('warningRates is zero with no events', () => {
   expect(warningRates([])).toMatchObject({ warned: 0, fpRate: 0, sameContextRate: 0 })
+})
+
+test('a package record shows its package in the row', async () => {
+  const root = '/work/mono'
+  await io.writeText(`${root}/.git/HEAD`, 'ref: refs/heads/main\n')
+  await io.writeText(`${root}/packages/a/package.json`, '{}')
+  await settle(io, { tool: 'Bash', input: { command: 'bun test' }, cwd: `${root}/packages/a`, sessionId: 's1' }, { kind: 'failure', reason: 'x' }, null)
+  const m = await paneModel(io, root, view, 10)
+  expect(m.rows[0]!.display).toBe('bun test')
+  expect(m.rows[0]!.where).toBe(' (in packages/a)')
+})
+
+test('a root record has no suffix, and a hand-edited non-string scope reads as none', async () => {
+  const hash = await seed('bun test', '2026-01-01T00:00:01.000Z')
+  const paths = await pathsFor(io, cwd)
+  const file = `${paths.records}/${hash.slice(0, 2)}/${hash}.json`
+  expect((await paneModel(io, cwd, view, 10)).rows[0]!.where).toBe('')
+  await io.writeText(file, JSON.stringify({ ...JSON.parse((await io.readText(file))!), scope: 1 }))
+  const m = await paneModel(io, cwd, view, 10)
+  expect(m.error).toBeNull()
+  expect(m.rows[0]).toMatchObject({ display: 'bun test', where: '' })
 })

@@ -61,12 +61,15 @@ export function displayFor(toolName: string, toolInput: unknown): string {
 }
 
 /**
- * Stable 16-character fingerprint, or null when this call is not one Cassandra tracks.
- * sha256 rather than Bun.hash, which is not guaranteed stable across Bun versions and
- * would silently invalidate every stored record on an upgrade.
+ * The record id: the tool and its significant input, and for a Bash call made inside a
+ * monorepo package, that package (see `packageScope`). An empty scope hashes exactly as
+ * ids always have, so single-package repos keep every existing record. A normalized
+ * command holds no NUL, so a scoped id can never equal a root id. sha256 rather than
+ * Bun.hash, which is not guaranteed stable across Bun versions.
  */
-export async function fingerprint(io: Io, toolName: string, toolInput: unknown): Promise<string | null> {
+export async function fingerprint(io: Io, toolName: string, toolInput: unknown, scope = ''): Promise<string | null> {
   const sig = significant(toolName, toolInput)
   if (sig === null) return null
-  return (await io.sha256(`${toolName} ${sig}`)).slice(0, 16)
+  const text = scope === '' ? `${toolName} ${sig}` : `${toolName}\u0000${scope}\u0000${sig}`
+  return (await io.sha256(text)).slice(0, 16)
 }

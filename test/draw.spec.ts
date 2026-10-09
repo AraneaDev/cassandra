@@ -25,7 +25,7 @@ const text = (n: Node): string => n.children.map((c) => (typeof c === 'string' ?
 const nodes = (m: PaneModel, cols = 100) => walk(drawPane(el, m, cols))
 const lines = (m: PaneModel, cols = 100) => nodes(m, cols).filter((n) => n.type === 'Text').map(text)
 
-const row = (id: string, stale = false) => ({ hash: id + 'ffffff', id, display: `npm test ${id}`, kind: 'failed' as const, count: 2, day: '10-09', stale })
+const row = (id: string, stale = false) => ({ hash: id + 'ffffff', id, display: `npm test ${id}`, where: '', kind: 'failed' as const, count: 2, day: '10-09', stale })
 const base: PaneModel = {
   rows: [row('aaaaaaaa'), row('bbbbbbbb', true)], more: 0, selected: 'aaaaaaaaffffff',
   detail: { reason: 'npm ERR! missing script: test', probe: 'git · nothing changed since', fix: 'use bun' },
@@ -132,6 +132,18 @@ describe('drawPane', () => {
     const stale = nodes(narrow, 60).find((n) => n.props.key === 'row:bbbbbbbb')!
     expect(text(stale).length).toBe(60)
     expect(text(stale)).toEndWith('stale')
+  })
+
+  test('on a narrow pane the command is clipped and the package suffix stays', () => {
+    const m: PaneModel = { ...base, rows: [{ ...row('aaaaaaaa'), display: 'bun run test --coverage --watch', where: ' (in packages/a)' }] }
+    const r = text(nodes(m, 60).find((n) => n.props.key === 'row:aaaaaaaa')!)
+    expect(r.length).toBe(60)
+    expect(r).toContain('…')
+    expect(r).toContain('(in packages/a) failed 2× 10-09')
+    // With room for everything, nothing is clipped.
+    expect(text(nodes(m, 120).find((n) => n.props.key === 'row:aaaaaaaa')!)).toContain('bun run test --coverage --watch (in packages/a)')
+    // Too narrow even for the suffix: still never wider than the pane.
+    for (const cols of [40, 20]) expect(text(nodes(m, cols).find((n) => n.props.key === 'row:aaaaaaaa')!).length).toBeLessThanOrEqual(cols)
   })
 
   test('the chrome around the rows is exactly PANE_CHROME_LINES lines when everything shows', () => {

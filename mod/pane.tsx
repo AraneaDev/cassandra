@@ -40,15 +40,17 @@ function clip(s: string, max: number): string {
 const MIN_DISPLAY = 4
 
 /**
- * One row's label, never wider than `columns`: the display gives way first, so the
- * marker, the id and the tail (with `stale`) stay whole while they can.
+ * One row's label, never wider than `columns`: the command gives way first, so the
+ * marker, the id, the package suffix and the tail (with `stale`) stay whole while they
+ * can. Without room for the suffix too, the command and suffix are clipped together.
  */
 function rowLabel(r: PaneRow, selected: boolean, columns: number): string {
   const head = `${selected ? '▸' : ' '} ${r.id} `
   const tail = ` ${r.kind} ${r.count}× ${r.day}${r.stale ? ' stale' : ''}`
   const room = columns - head.length - tail.length
-  if (room >= MIN_DISPLAY) return `${head}${clip(r.display, room)}${tail}`
-  return clip(`${head}${r.display}${tail}`, columns)
+  if (room - r.where.length >= MIN_DISPLAY) return `${head}${clip(r.display, room - r.where.length)}${r.where}${tail}`
+  if (room >= MIN_DISPLAY) return `${head}${clip(`${r.display}${r.where}`, room)}${tail}`
+  return clip(`${head}${r.display}${r.where}${tail}`, columns)
 }
 
 /**

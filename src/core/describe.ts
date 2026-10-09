@@ -6,11 +6,24 @@ import type { FailureRecord, StateKind } from './types.ts'
  * stored tool output is fenced.
  */
 
+/**
+ * " (in packages/a)" for a record from a monorepo package, '' for a root record. One line.
+ * A scope that is not a string can only come from a hand-edited record; it reads as none.
+ */
+export function inScope(r: Pick<FailureRecord, 'scope'>): string {
+  return typeof r.scope === 'string' && r.scope ? ` (in ${oneLine(r.scope)})` : ''
+}
+
+/** The command and, for a package's record, where it ran: for plain-text lists. */
+export function labelOf(r: Pick<FailureRecord, 'display' | 'scope'>): string {
+  return `${r.display}${inScope(r)}`
+}
+
 /** The call, what happened to it, and how often: "`bun test` failed 3 times". */
 export function history(r: FailureRecord): string {
   const what = r.kind === 'denial' ? 'was denied' : 'failed'
   const times = r.count === 1 ? 'once' : `${r.count} times`
-  return `\`${r.display}\` ${what} ${times}`
+  return `\`${r.display}\`${inScope(r)} ${what} ${times}`
 }
 
 /**

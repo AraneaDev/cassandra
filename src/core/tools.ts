@@ -1,4 +1,4 @@
-import { history, reason, scopeOf } from './describe.ts'
+import { history, inScope, reason, scopeOf } from './describe.ts'
 import { digestText, liveRecords } from './digest.ts'
 import { sanitiseExcerpt } from './engine.ts'
 import { fingerprint } from './fingerprint.ts'
@@ -9,6 +9,7 @@ import { OWN_TOOL_PREFIX } from './own-tools.ts'
 import { pathsFor } from './paths.ts'
 import { deleteRecord, readRecord } from './record.ts'
 import { explainResolution, resolveHash } from './resolve.ts'
+import { packageScope } from './scope.ts'
 import { appendStat } from './stats.ts'
 
 /** How the engine lists this plugin's tools to the model (confirmed by the tools spike). */
@@ -18,7 +19,7 @@ export const TOOL_PREFIX = OWN_TOOL_PREFIX
 export const QUERY_TOOL = {
   name: 'query',
   description: 'Ask whether a command already failed in this project and nothing has changed since, or with no command, list the calls that are known dead ends right now.',
-  inputSchema: { type: 'object', properties: { command: { type: 'string', description: 'a Bash command, exactly as it was run' } } },
+  inputSchema: { type: 'object', properties: { command: { type: 'string', description: 'a Bash command, exactly as it was run; looked up in the package you are in' } } },
 }
 
 /** What the model reads about `resolve`. */
@@ -28,8 +29,8 @@ export const RESOLVE_TOOL = {
   inputSchema: {
     type: 'object',
     properties: {
-      command: { type: 'string', description: 'a Bash command, exactly as it was run' },
-      id: { type: 'string', description: 'the 8-character id that query lists' },
+      command: { type: 'string', description: 'a Bash command, exactly as it was run; looked up in the package you are in' },
+      id: { type: 'string', description: 'the 8-character id that query lists; works from any directory' },
       reason: { type: 'string', description: 'what was fixed, and where' },
     },
     required: ['reason'],
@@ -60,7 +61,7 @@ export async function queryText(io: Io, cwd: string, input: unknown): Promise<st
       if (more > 0) withIds.push(`…and ${more} more live ${more === 1 ? 'failure' : 'failures'}.`)
       return withIds.join('\n')
     }
-    const hash = await fingerprint(io, 'Bash', { command })
+    const hash = await fingerprint(io, 'Bash', { command }, await packageScope(io, cwd))
     const paths = await pathsFor(io, cwd)
     const record = hash ? await readRecord(io, paths, hash) : null
     if (!hash || !record) return say('No failure of this command is remembered in this project.')
@@ -96,7 +97,7 @@ export async function resolveFailure(io: Io, cwd: string, input: unknown): Promi
     const paths = await pathsFor(io, cwd)
     let hash: string | null
     if (typeof command === 'string') {
-      hash = await fingerprint(io, 'Bash', { command })
+      hash = await fingerprint(io, 'Bash', { command }, await packageScope(io, cwd))
       if (!hash || !(await readRecord(io, paths, hash))) return say(`No remembered failure matches \`${command}\`.`)
     } else {
       const r = await resolveHash(io, paths, id as string)
@@ -107,7 +108,7 @@ export async function resolveFailure(io: Io, cwd: string, input: unknown): Promi
     if (!record) return say(`No remembered failure matches ${typeof command === 'string' ? `\`${command}\`` : id}.`)
     await deleteRecord(io, paths, hash)
     await appendStat(io, paths, { kind: 'resolved', hash, reason: stated })
-    return say(`Forgot \`${record.display}\` [${hash.slice(0, 8)}]. If it fails again it will be remembered again.`)
+    return say(`Forgot \`${record.display}\`${inScope(record)} [${hash.slice(0, 8)}]. If it fails again it will be remembered again.`)
   } catch {
     return say('could not change what this project remembers.')
   }

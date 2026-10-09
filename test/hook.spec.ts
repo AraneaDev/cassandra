@@ -8,6 +8,7 @@ import { nodeIo } from '../src/io/node.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
 import { readRecord } from '../src/core/record.ts'
 import { readStats } from '../src/core/stats.ts'
+import { takePending } from '../src/core/pending.ts'
 
 let tmp: string
 let cwd: string
@@ -381,4 +382,60 @@ test('a session the mod claimed is never briefed by the binary (Review Focus 4)'
   await markModSession(nodeIo, 's1')
   expect(await handle(subagentStart())).toBeNull()
   expect(await handle(compacted())).toBeNull()
+})
+
+// The PostToolUse payload's cwd is the shell's directory after the command ran, so a
+// `cd` inside the command moves it. The record was keyed by the directory before.
+
+function monorepo(): void {
+  for (const p of ['', 'packages/a']) {
+    mkdirSync(join(cwd, p), { recursive: true })
+    writeFileSync(join(cwd, p, 'package.json'), '{}')
+  }
+}
+
+test('a success settles with the directory the call started in, not where the shell ended up', async () => {
+  monorepo()
+  const command = 'cd packages/a && bun test'
+  const at = (event: string, id: string, dir: string, extra: Record<string, unknown> = {}) => ({
+    hook_event_name: event, session_id: 's1', cwd: dir, tool_name: 'Bash', tool_input: { command }, tool_use_id: id, ...extra,
+  })
+  expect(await handle(at('PreToolUse', 'm1', cwd))).toBeNull()
+  await handle(at('PostToolUseFailure', 'm1', cwd, { error: 'Exit code 1' }))
+  const paths = await pathsFor(nodeIo, cwd)
+  const hash = (await fingerprint(nodeIo, 'Bash', { command }))!
+  expect(await readRecord(nodeIo, paths, hash)).not.toBeNull()
+
+  // A real edit, so the retry is not warned and settle must hash the call itself.
+  writeFileSync(join(cwd, 'a.txt'), 'fixed')
+  expect(await handle(at('PreToolUse', 'm2', cwd))).toBeNull()
+  await handle(at('PostToolUse', 'm2', join(cwd, 'packages/a')))
+
+  expect(await readRecord(nodeIo, paths, hash)).toBeNull()
+  expect(existsSync(pendingPath(paths, 'm2'))).toBe(false)
+  expect((await readStats(nodeIo, paths)).some((e) => e.kind === 'fixed')).toBe(true)
+})
+
+test('a marker in the old hash-only shape still names the warned record', async () => {
+  await handle(fail('bun test'))
+  const paths = await pathsFor(nodeIo, cwd)
+  const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
+  mkdirSync(paths.pending, { recursive: true })
+  writeFileSync(pendingPath(paths, 'old1'), hash)
+  // The input differs, so only the marker can lead settle to the record.
+  await handle({ hook_event_name: 'PostToolUse', session_id: 's1', cwd, tool_name: 'Bash', tool_input: { command: 'bun  test --x' }, tool_use_id: 'old1' })
+  expect(await readRecord(nodeIo, paths, hash)).toBeNull()
+  expect((await readStats(nodeIo, paths)).some((e) => e.kind === 'false_positive')).toBe(true)
+})
+
+test('takePending reads both marker shapes', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  mkdirSync(paths.pending, { recursive: true })
+  writeFileSync(pendingPath(paths, 'a'), 'aa11bb22cc33dd44')
+  writeFileSync(pendingPath(paths, 'b'), '\n/x/y')
+  writeFileSync(pendingPath(paths, 'c'), 'aa11bb22cc33dd44\n/x/y\n')
+  expect(await takePending(nodeIo, paths, 'a')).toEqual({ hash: 'aa11bb22cc33dd44', cwd: null })
+  expect(await takePending(nodeIo, paths, 'b')).toEqual({ hash: null, cwd: '/x/y' })
+  expect(await takePending(nodeIo, paths, 'c')).toEqual({ hash: 'aa11bb22cc33dd44', cwd: '/x/y' })
+  expect(await takePending(nodeIo, paths, 'a')).toEqual({ hash: null, cwd: null })
 })

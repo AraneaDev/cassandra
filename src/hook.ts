@@ -1,7 +1,7 @@
 import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome } from './core/engine.ts'
 import type { Io } from './core/io.ts'
 import { pathsFor } from './core/paths.ts'
-import { markPending, takePending } from './core/pending.ts'
+import { markPending, takePending, type Pending } from './core/pending.ts'
 import { bumpCompactions, isModSession } from './core/session.ts'
 import type { BriefBoundary } from './core/stats.ts'
 import type { HookPayload } from './core/types.ts'
@@ -13,21 +13,28 @@ function callOf(p: HookPayload): Call {
 
 async function onPreToolUse(io: Io, p: HookPayload): Promise<string | null> {
   const warning = await check(io, callOf(p))
+  // A Bash call's package comes from where it started; the outcome payload reports where
+  // the shell ended up. So every Bash call leaves its starting directory behind.
+  const keepCwd = p.tool_name === 'Bash'
+  if (p.tool_use_id && p.cwd && (warning || keepCwd)) {
+    await markPending(io, await pathsFor(io, p.cwd), p.tool_use_id, { hash: warning?.hash ?? null, cwd: keepCwd ? p.cwd : null })
+  }
   if (!warning) return null
-  if (p.tool_use_id && p.cwd) await markPending(io, await pathsFor(io, p.cwd), p.tool_use_id, warning.hash)
   return JSON.stringify({
     hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: warning.text },
   })
 }
 
-/** The hash this call was warned about, consumed so it resolves exactly once. */
-async function warnedFor(io: Io, p: HookPayload): Promise<string | null> {
-  if (!p.cwd || !p.tool_use_id) return null
+/** What PreToolUse left for this call, consumed so it resolves exactly once. */
+async function pendingFor(io: Io, p: HookPayload): Promise<Pending> {
+  if (!p.cwd || !p.tool_use_id) return { hash: null, cwd: null }
   return takePending(io, await pathsFor(io, p.cwd), p.tool_use_id)
 }
 
 async function onOutcome(io: Io, p: HookPayload, outcome: Outcome): Promise<null> {
-  await settle(io, callOf(p), outcome, await warnedFor(io, p))
+  const pending = await pendingFor(io, p)
+  const call = callOf(p)
+  await settle(io, pending.cwd ? { ...call, cwd: pending.cwd } : call, outcome, pending.hash)
   return null
 }
 
