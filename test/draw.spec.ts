@@ -1,5 +1,15 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import type { PaneModel } from '../src/core/pane.ts'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { writeFix } from '../src/core/fixes.ts'
+import { fingerprint } from '../src/core/fingerprint.ts'
+import { stateStamp } from '../src/core/freshness.ts'
+import { paneModel, type PaneModel } from '../src/core/pane.ts'
+import { pathsFor } from '../src/core/paths.ts'
+import { upsertRecord } from '../src/core/record.ts'
+import { nodeIo } from '../src/io/node.ts'
+import type { Io } from '../src/core/io.ts'
 
 interface Node { type: string; props: Record<string, any>; children: any[] }
 const g = globalThis as any
@@ -171,4 +181,53 @@ describe('drawPane', () => {
       expect(rows).toBe(m.rows.length)
     }
   })
+})
+
+describe('redraw cost', () => {
+  test('one full redraw of a store of 1,000 records stays well under the bound', async () => {
+    // A real store on disk: the in-memory double lists a directory by scanning every file,
+    // which no real filesystem does.
+    const tmp = mkdtempSync(join(tmpdir(), 'cass-redraw-'))
+    const cwd = join(tmp, 'proj')
+    mkdirSync(cwd)
+    writeFileSync(join(cwd, 'a.txt'), 'one')
+    let now = ''
+    const io: Io = { ...nodeIo, env: async (name) => (name === 'CASSANDRA_HOME' ? join(tmp, 'home') : nodeIo.env(name)), now: () => now }
+    try {
+      const paths = await pathsFor(io, cwd)
+      const stamp = await stateStamp(io, cwd)
+      const hashes: string[] = []
+      for (let i = 0; i < 1000; i++) {
+        const hash = (await fingerprint(io, 'Bash', { command: `false ${i}` }))!
+        now = new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString()
+        await upsertRecord(io, paths, hash, {
+          tool: 'Bash', display: `false ${i}`, kind: 'failure', stateStamp: stamp.value, stateKind: stamp.kind as 'mtime',
+          sessionId: 's1', compactions: 0, errorExcerpt: 'Exit code 1',
+        })
+        hashes.push(hash)
+      }
+      await writeFix(io, paths, hashes[997]!, { kind: 'elsewhere', at: '2026-10-09T00:00:00Z', files: [], more: 0 } as never)
+      const layout = keys.paneLayout(40)
+      // Moving between rows: each redraw selects another row.
+      const redraw = async (selected: string) => {
+        const m = await paneModel(io, cwd, { selected, confirmAll: false, notice: null }, layout.maxRows)
+        return walk(drawPane(el, m, 100, layout))
+      }
+      await redraw(hashes[999]!)
+      const runs: number[] = []
+      for (const h of hashes.slice(-5)) {
+        const t0 = performance.now()
+        const drawn = await redraw(h)
+        runs.push(performance.now() - t0)
+        const rows = drawn.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:'))
+        expect(rows).toHaveLength(layout.maxRows)
+        expect(rows.find((n) => text(n).startsWith('▸'))?.props.key).toBe(`row:${h.slice(0, 8)}`)
+      }
+      const ms = Math.max(...runs)
+      console.log(`pane redraw over 1,000 records: ${runs.map((r) => r.toFixed(1)).join(', ')} ms (max ${ms.toFixed(1)})`)
+      expect(ms).toBeLessThan(2000)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  }, 60_000)
 })
