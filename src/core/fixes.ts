@@ -1,6 +1,6 @@
 import { gitState, unquote } from './freshness.ts'
 import type { Entry, Io } from './io.ts'
-import { basename, dirname, join } from './path.ts'
+import { join } from './path.ts'
 import { findRepoRoot, isFingerprint, safeSegment, type Paths } from './paths.ts'
 import type { FailureRecord, FixNote } from './types.ts'
 
@@ -18,27 +18,44 @@ const HASHED_TEXT_MAX = 256 * 1024
 /** Directory listings for one pass over a set of paths, so a shared parent is listed once. */
 type Listings = Map<string, Promise<Entry[] | null>>
 
+/** A directory's entries through the per-pass cache; null when it cannot be listed. */
+function listed(io: Io, dir: string, listings: Listings): Promise<Entry[] | null> {
+  let listing = listings.get(dir)
+  if (!listing) {
+    listing = io.list(dir).then((l) => (l.ok ? l.entries : null), () => null)
+    listings.set(dir, listing)
+  }
+  return listing
+}
+
 /**
  * The first 16 hex characters of a repo-relative path's content hash, or null when it is
- * not a regular file (missing, a directory, a link, unlistable or unreadable) or its text
- * is longer than 256 KB. Never throws.
+ * not a regular file reached through real directories (missing, a directory, a link or
+ * under one, unlistable or unreadable) or its text is longer than 256K characters. One
+ * leading byte order mark is dropped first, since not every reader keeps it. Never throws.
  */
 async function contentHash(io: Io, root: string, path: string, listings: Listings): Promise<string | null> {
   try {
     if (!path || path.endsWith('/')) return null
     const full = join(root, path)
-    const parent = dirname(full)
-    let listing = listings.get(parent)
-    if (!listing) {
-      listing = io.list(parent).then((l) => (l.ok ? l.entries : null), () => null)
-      listings.set(parent, listing)
+    const prefix = root.endsWith('/') ? root : `${root}/`
+    const rel = full.slice(prefix.length)
+    if (!full.startsWith(prefix) || !rel) return null
+    // Every directory from the root down must list as a directory, never a link: reading
+    // through a linked directory would hash a file outside the repository.
+    const parts = rel.split('/')
+    let dir = root
+    for (const part of parts.slice(0, -1)) {
+      if ((await listed(io, dir, listings))?.find((e) => e.name === part)?.kind !== 'dir') return null
+      dir = join(dir, part)
     }
-    const name = basename(full)
-    const entry = (await listing)?.find((e) => e.name === name)
+    const entry = (await listed(io, dir, listings))?.find((e) => e.name === parts.at(-1))
     // UTF-8 spends at most 3 bytes per UTF-16 unit, so a file this large cannot be short enough.
     if (entry?.kind !== 'file' || entry.size > HASHED_TEXT_MAX * 3) return null
-    const text = await io.readText(full)
-    if (text === null || text.length > HASHED_TEXT_MAX) return null
+    const raw = await io.readText(full)
+    if (raw === null) return null
+    const text = raw.startsWith('\uFEFF') ? raw.slice(1) : raw
+    if (text.length > HASHED_TEXT_MAX) return null
     return (await io.sha256(text)).slice(0, 16)
   } catch {
     return null

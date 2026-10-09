@@ -251,6 +251,39 @@ describe('content hashes of already-dirty files', () => {
     }
   })
 
+  test('a path under a symlinked directory is never read: no hash at record time, changed in computeFix', async () => {
+    const dir = repo()
+    const outside = join(tmp, `out${Math.random().toString(36).slice(2)}`)
+    mkdirSync(outside); writeFileSync(join(outside, 'secret.txt'), 'outside')
+    mkdirSync(join(dir, 'cfg', 'deep'), { recursive: true }); writeFileSync(join(dir, 'cfg', 'deep', 'secret.txt'), 'inside')
+    const rec = await failedHashed(dir)
+    expect(rec.dirty).toContain('cfg/')
+    const hashed = await dirtyHashes(nodeIo, dir, ['cfg/deep/secret.txt'])
+    expect(Object.keys(hashed)).toEqual(['cfg/deep/secret.txt'])
+    rmSync(join(dir, 'cfg'), { recursive: true }); mkdirSync(join(dir, 'cfg'))
+    symlinkSync(outside, join(dir, 'cfg', 'deep'))
+    const read: string[] = []
+    const watching = { ...nodeIo, readText: async (p: string) => { read.push(p); return nodeIo.readText(p) } }
+    expect(await dirtyHashes(watching, dir, ['cfg/deep/secret.txt'])).toEqual({})
+    const fake = { ...rec, dirty: ['cfg/deep/secret.txt'], dirtyHashes: hashed }
+    const now = { ...watching, run: async (argv: readonly string[], cwd: string) => {
+      const r = await nodeIo.run(argv, cwd)
+      return argv.includes('status') && r ? { ...r, stdout: '?? cfg/deep/secret.txt\n' } : r
+    } }
+    expect((await computeFix(now, dir, fake))?.files).toEqual(['cfg/deep/secret.txt'])
+    expect(read.filter((p) => p.includes('secret'))).toEqual([])
+  })
+
+  test('one leading byte order mark is ignored, so both readers agree', async () => {
+    const dir = repo()
+    writeFileSync(join(dir, 'bom.txt'), '\uFEFFhello'); writeFileSync(join(dir, 'plain.txt'), 'hello')
+    const got = await dirtyHashes(nodeIo, dir, ['bom.txt', 'plain.txt'])
+    expect(got['bom.txt']).toBe((await nodeIo.sha256('hello')).slice(0, 16))
+    expect(got['plain.txt']).toBe(got['bom.txt'])
+    const stripping = { ...nodeIo, readText: async (p: string) => (await nodeIo.readText(p))?.replace(/^\uFEFF/, '') ?? null }
+    expect(await dirtyHashes(stripping, dir, ['bom.txt'])).toEqual({ 'bom.txt': got['bom.txt']! })
+  })
+
   test('a record without dirtyHashes behaves as before', async () => {
     const dir = repo()
     writeFileSync(join(dir, 'a.txt'), 'edited')
