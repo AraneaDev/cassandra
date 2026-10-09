@@ -17,6 +17,10 @@ export interface NodeHostOptions {
   registered?: Array<{ name: string; description: string }>
   /** Make `$.tool.register` reject, as an engine without tools or with a clashing name would. */
   registerRejects?: boolean
+  /** Commands the mod registered with `$.command.register`, by name, in order. */
+  commands?: string[]
+  /** Every value the mod pinned with `$.ui.status`, in order; undefined clears the line. */
+  statuses?: Array<string | undefined>
 }
 
 /** The slice of `$` the mod uses beyond `ModHost`. */
@@ -27,6 +31,8 @@ export type NodeHost = ModHost & {
     append(args: { message: { content: Array<{ text: string }> }; agentId?: string }): Promise<{ deny?: string }>
   }
   tool: { register(spec: { name: string; description: string }): Promise<unknown> }
+  command: { register(spec: { name: string; description?: string; argumentHint?: string }): Promise<unknown> }
+  ui: { status(text: string | undefined): void }
 }
 
 /**
@@ -97,6 +103,17 @@ export function nodeHost(opts: NodeHostOptions = {}): NodeHost {
         if (opts.registerRejects) throw new Error('cannot register')
         ;(opts.registered ??= []).push({ name: spec.name, description: spec.description })
         return {}
+      },
+    },
+    command: {
+      async register(spec: { name: string }) {
+        ;(opts.commands ??= []).push(spec.name)
+        return {}
+      },
+    },
+    ui: {
+      status(text: string | undefined) {
+        ;(opts.statuses ??= []).push(text)
       },
     },
   }

@@ -245,6 +245,12 @@ measurable, and that is the trade being made.
   outcome together and attaches the warning as the tool result's `context`. A spawn or a
   compaction owes the loop a note, which the `session.append` hook hands over at that
   loop's next qualifying row.
+- The mod also keeps a status line under the prompt, `cassandra: N live failures`. It is
+  cleared when none are live, and it is shown to you, not the model. It refreshes only when
+  a failure is recorded or forgotten (a recorded failure, a success that forgets one,
+  `resolve`, `/cassandra forget`), never on an ordinary call. The count is taken at the
+  last change to the store, so after you edit files it can overstate what is still live,
+  until the next recorded or forgotten failure.
 - The binary (`src/hook.ts`) is the classic `PreToolUse`, `PostToolUse*`,
   `PermissionDenied` and `PostCompact` path, plus `SubagentStart` and
   `SessionStart` (`source: compact`) for the briefings.
@@ -291,8 +297,10 @@ Known gaps and differences:
 - If a hot reload of the mod fails mid-session after it claimed the session, nothing
   records for the rest of that session. That only affects development folders, not an
   installed plugin.
-- The `/cassandra` slash command and the `cassandra` CLI still run on Bun
-  (`bun src/cli.ts`). On a machine with the mod and no Bun they do not work yet.
+- The shell CLI (`bun src/cli.ts`), and `/cassandra` on builds without mods, still need
+  Bun. On a mod build `/cassandra` does not.
+- The status line's interactive display was not checked by hand during development.
+  Headless runs confirmed it is harmless.
 - The engine smoke tests (`mod/smoke.test.ts`) prove routing. One checks that a tool call
   passes through once, unchanged. One checks that a `query` call reaches Cassandra's own
   tool hook and is answered without being passed on. Neither reaches a real store, because
@@ -311,8 +319,19 @@ Known gaps and differences:
 | `cassandra export` | the whole index as JSON |
 
 All of them accept an optional `--cwd <path>` to act on a project other than the current
-directory. A `/cassandra` slash command runs `list` inside a session, and switches to
-`why <hash>` or `stats` when you ask it to.
+directory.
+
+Inside a session, `/cassandra [list | why <id> | forget <id> | forget --all | stats]` does
+the same. That argument syntax is the mod's. On builds that load the mod, the mod answers
+it directly, with no Bun, no shell and no model round-trip. With no argument it lists. The
+text is the same as the CLI's, and a headless run such as `claude -p "/cassandra stats"`
+exits 0 or 1 like the CLI does. In a headless run, Claude Code labels the mod's command
+output with the prefix `cassandra:`. Options such as `--cwd` apply to the shell CLI only;
+the mod always acts on the session's working directory. From the mod, `forget --all` only
+runs when the person types it, or in a headless run; any other origin is refused and
+nothing is forgotten. On builds without mods, `/cassandra` is the plugin's markdown
+command, which takes your request in plain words and runs the CLI through Bun. On mod
+builds that command is still reachable as `/cassandra:cassandra`.
 
 ## What Cassandra does not do
 
@@ -341,7 +360,7 @@ the changelog, not the reference page.
 
 ## Requirements
 
-Bun 1.1.0 or newer for the classic path, the CLI and the slash command. None for the mod.
+Bun 1.1.0 or newer for the classic path, the shell CLI, and `/cassandra` on builds without mods. None for the mod.
 
 ## Development
 

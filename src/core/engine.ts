@@ -98,20 +98,21 @@ export async function check(io: Io, call: Call): Promise<Warning | null> {
  * warned about for this very call, if it did: a failure then confirms the warning.
  * Any success of a recorded call forgets the record and, in a git repository, keeps a
  * fix note of what changed since it failed. A success after a warning additionally
- * proves the freshness probe missed a change.
+ * proves the freshness probe missed a change. Resolves true only when the store changed:
+ * a record was written, or a recorded call's record was forgotten.
  */
-export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: string | null): Promise<void> {
+export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: string | null): Promise<boolean> {
   // An interrupt is not a failure of the command, and a call that never ran did not fail
   // either. Remembering either would warn about something that never actually failed, so
   // both are ignored outright.
-  if (outcome.kind === 'interrupt' || outcome.kind === 'not_run' || !call.cwd) return
+  if (outcome.kind === 'interrupt' || outcome.kind === 'not_run' || !call.cwd) return false
   const paths = await pathsFor(io, call.cwd)
   if (outcome.kind === 'success') {
     if (warnedHash) await appendStat(io, paths, { kind: 'false_positive', hash: warnedHash })
     const hash = warnedHash ?? (call.tool ? await fingerprint(io, call.tool, call.input) : null)
-    if (!hash) return
+    if (!hash) return false
     const found = await readRecord(io, paths, hash)
-    if (!found) return
+    if (!found) return false
     // The call works now. Keep what changed since it failed, then forget it as a dead end.
     const note = await computeFix(io, call.cwd, found)
     if (note) {
@@ -119,21 +120,21 @@ export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: s
       await appendStat(io, paths, { kind: 'fixed', hash, files: note.files.length + note.more })
     }
     await deleteRecord(io, paths, hash)
-    return
+    return true
   }
   // It failed again after we warned, so the warning was right and was disregarded.
   if (warnedHash) await appendStat(io, paths, { kind: 'confirmed', hash: warnedHash })
-  await record(io, call, outcome.kind, outcome.reason)
+  return record(io, call, outcome.kind, outcome.reason)
 }
 
-async function record(io: Io, call: Call, kind: RecordKind, reason: string | undefined): Promise<void> {
-  if (!call.tool) return
+async function record(io: Io, call: Call, kind: RecordKind, reason: string | undefined): Promise<boolean> {
+  if (!call.tool) return false
   const hash = await fingerprint(io, call.tool, call.input)
-  if (!hash) return
+  if (!hash) return false
   const paths = await pathsFor(io, call.cwd)
   const stamp = await stateStamp(io, call.cwd)
   // A state we cannot read is a record we could never safely act on, so do not store it.
-  if (stamp.kind === 'none') return
+  if (stamp.kind === 'none') return false
   await upsertRecord(io, paths, hash, {
     tool: call.tool,
     display: displayFor(call.tool, call.input),
@@ -152,6 +153,7 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
         }
       : {}),
   })
+  return true
 }
 
 /** A note listing the project's live failures, and the records it named. */
