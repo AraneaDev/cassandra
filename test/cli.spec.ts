@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { run } from '../src/cli'
 import { pathsFor } from '../src/core/paths.ts'
@@ -199,6 +199,7 @@ test('export without --cwd emits parseable JSON, not usage', async () => {
 
 test('stats reports briefings and how many briefed calls were repeated anyway', async () => {
   const paths = await pathsFor(nodeIo, cwd)
+  mkdirSync(dirname(paths.stats), { recursive: true })
   const line = (t: string, e: object) => appendFileSync(paths.stats, `${JSON.stringify({ ...e, t })}\n`)
   line('2026-01-01T00:00:01Z', { kind: 'warned', hash: 'aa11bb22cc33dd44', boundary: 'same_context' })
   line('2026-01-01T00:00:02Z', { kind: 'briefed', boundary: 'subagent', hashes: ['aa11bb22cc33dd44', 'bb11bb22cc33dd44'] })
@@ -221,6 +222,7 @@ test('stats with only briefings still reports them', async () => {
 
 test('a call warned before its briefing and never after is not counted as repeated', async () => {
   const paths = await pathsFor(nodeIo, cwd)
+  mkdirSync(dirname(paths.stats), { recursive: true })
   const line = (t: string, e: object) => appendFileSync(paths.stats, `${JSON.stringify({ ...e, t })}\n`)
   line('2026-01-01T00:00:01Z', { kind: 'warned', hash: 'aa11bb22cc33dd44', boundary: 'subagent' })
   line('2026-01-01T00:00:02Z', { kind: 'briefed', boundary: 'subagent', hashes: ['aa11bb22cc33dd44'] })
