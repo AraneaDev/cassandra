@@ -1,9 +1,5 @@
 import type { PaneModel, PaneRow } from '../src/core/pane.ts'
 
-// The engine's mod runtime supplies the JSX factory `h` as a global.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- used by the JSX transform
-declare function h(type: unknown, props: Record<string, unknown> | null, ...children: unknown[]): unknown
-
 /** Key prefix of a row Button; the id follows. */
 export const ROW_KEY_PREFIX = 'row:'
 /** Key of the Forget button. */
@@ -19,7 +15,7 @@ export const KEY_CANCEL = 'forget-all-cancel'
 type Tag = (props: Record<string, unknown>) => unknown
 
 /** The engine's elements, resolved from `$.ui.resolve`. */
-interface Elements { Box: unknown; Text: unknown; Button: unknown }
+export interface Elements { Box: unknown; Text: unknown; Button: unknown }
 
 // A press does nothing here: the real actions run in `ui.press` hooks keyed by element key.
 const noop = (): void => {}
@@ -54,7 +50,7 @@ export function drawPane(el: Elements, model: PaneModel, columns: number): unkno
     for (const r of model.rows) {
       const sel = r.hash === model.selected
       body.push(
-        <Button key={`${ROW_KEY_PREFIX}${r.id}`} plain onPress={noop} dimColor={r.stale || undefined} variant={sel ? 'primary' : undefined}>
+        <Button key={`${ROW_KEY_PREFIX}${r.id}`} plain onPress={noop} dimColor={r.stale || undefined}>
           {rowLabel(r, sel, max)}
         </Button>,
       )
