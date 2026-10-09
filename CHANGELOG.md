@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.20](https://github.com/AraneaDev/cassandra/compare/v0.0.19...v0.0.20) (2026-10-09)
+
+
+### Features
+
+* serve /cassandra from the mod and show live failures in the status line ([#45](https://github.com/AraneaDev/cassandra/issues/45)) ([0d2db9a](https://github.com/AraneaDev/cassandra/commit/0d2db9aac30cdbbb3a67ec8a4f41b972297ee868))
+
 ## [0.0.19](https://github.com/AraneaDev/cassandra/compare/v0.0.18...v0.0.19) (2026-10-09)
 
 
