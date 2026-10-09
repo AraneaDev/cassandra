@@ -11,6 +11,12 @@ export type StateKind = 'git' | 'mtime' | 'none'
 export interface StateStamp {
   kind: StateKind
   value: string
+  /**
+   * An `mtime` stamp computed with every file time cut to whole milliseconds, set only
+   * when some file time had a fraction, so it differs from `value`. A front end whose
+   * listing is whole-millisecond compares against this; see `unchanged`.
+   */
+  coarse?: string
   /** The raw git state behind a `git` stamp: what a fix note is computed from later. */
   git?: { head: string; dirty: string[] }
 }
@@ -23,6 +29,8 @@ export interface FailureRecord {
   count: number
   stateStamp: string
   stateKind: StateKind
+  /** The stamp's `coarse` hash, when it had one. */
+  stateCoarse?: string
   sessionId: string
   compactions: number
   firstSeen: string

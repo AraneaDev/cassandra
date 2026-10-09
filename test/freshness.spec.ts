@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { stateStamp, unchanged } from '../src/core/freshness.ts'
@@ -320,4 +320,60 @@ test("unquote decodes git's C-quoted escapes, octal UTF-8 bytes included", async
   expect(unquote('"back\\\\slash"')).toBe('back\\slash')
   expect(unquote('plain\\303')).toBe('plain\\303')
   expect(parsePorcelain('?? "caf\\303\\251.txt"\n')).toEqual(['café.txt'])
+})
+
+// Issue #50: the binary lists fractional file times, the mod whole milliseconds.
+test('mtime stamps compare exactly when both sides saw fractions, coarsely otherwise', async () => {
+  const precise = { kind: 'mtime' as const, value: 'fine-1', coarse: 'coarse' }
+  expect(unchanged('fine-1', 'mtime', precise, 'coarse')).toBe(true)
+  // A same-length rewrite within one millisecond: same coarse hash, different exact one.
+  expect(unchanged('fine-2', 'mtime', precise, 'coarse')).toBe(false)
+  // A record written by the mod (whole milliseconds) matches the binary's coarse hash.
+  expect(unchanged('coarse', 'mtime', precise)).toBe(true)
+  // A record written by the binary matches the mod's whole-millisecond stamp.
+  expect(unchanged('fine-1', 'mtime', { kind: 'mtime', value: 'coarse' }, 'coarse')).toBe(true)
+  expect(unchanged('fine-1', 'mtime', { kind: 'mtime', value: 'other' }, 'coarse')).toBe(false)
+  // Records from before the coarse hash existed keep comparing exactly.
+  expect(unchanged('fine-1', 'mtime', { kind: 'mtime', value: 'fine-1' })).toBe(true)
+})
+
+test('an mtime stamp carries a coarse hash only when a file time has a fraction', async () => {
+  const root = join(tmp, 'plain')
+  mkdirSync(root)
+  const file = join(root, 'a.txt')
+  writeFileSync(file, 'one')
+  utimesSync(file, 1_700_000_000, 1_700_000_000.123)
+  const whole = await stateStamp(nodeIo, root)
+  expect(whole.kind).toBe('mtime')
+  expect(whole.coarse).toBeUndefined()
+
+  utimesSync(file, 1_700_000_000, 1_700_000_000.1234567)
+  const fractional = await stateStamp(nodeIo, root)
+  if (fractional.coarse === undefined) return // this filesystem keeps whole milliseconds only
+  expect(fractional.coarse).toBe(whole.value)
+  expect(fractional.value).not.toBe(whole.value)
+})
+
+test('a stamp taken by one front end matches the other on an unchanged tree, and both see a later edit', async () => {
+  const root = join(tmp, 'cross')
+  mkdirSync(root)
+  const file = join(root, 'a.txt')
+  writeFileSync(file, 'one')
+  utimesSync(file, 1_700_000_000, 1_700_000_000.1234567)
+  // The mod's listing reports whole milliseconds.
+  const modIo: typeof nodeIo = {
+    ...nodeIo,
+    list: async (dir) => {
+      const listing = await nodeIo.list(dir)
+      return listing.ok ? { ...listing, entries: listing.entries.map((e) => ({ ...e, mtimeMs: Math.trunc(e.mtimeMs) })) } : listing
+    },
+  }
+  const binary = await stateStamp(nodeIo, root)
+  const mod = await stateStamp(modIo, root)
+  expect(unchanged(binary.value, 'mtime', mod, binary.coarse)).toBe(true)
+  expect(unchanged(mod.value, 'mtime', binary, mod.coarse)).toBe(true)
+
+  writeFileSync(file, 'two!')
+  expect(unchanged(binary.value, 'mtime', await stateStamp(modIo, root), binary.coarse)).toBe(false)
+  expect(unchanged(mod.value, 'mtime', await stateStamp(nodeIo, root), mod.coarse)).toBe(false)
 })

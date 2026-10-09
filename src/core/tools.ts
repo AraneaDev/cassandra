@@ -68,7 +68,7 @@ export async function queryText(io: Io, cwd: string, input: unknown): Promise<st
     let verdict = 'Cassandra cannot tell whether anything has changed since.'
     if (record.stateKind !== 'none' && stamp.kind !== 'none') {
       const scope = scopeOf(record.stateKind)
-      verdict = unchanged(record.stateStamp, record.stateKind, stamp)
+      verdict = unchanged(record.stateStamp, record.stateKind, stamp, record.stateCoarse)
         ? `Nothing in ${scope} has changed since.`
         : `Something in ${scope} has changed since, so a retry may be legitimate.`
     }

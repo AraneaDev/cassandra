@@ -76,7 +76,7 @@ export async function check(io: Io, call: Call): Promise<Warning | null> {
   if (!found) return null
 
   // Only now, on a hit, does the expensive probe run.
-  if (!unchanged(found.stateStamp, found.stateKind, await stateStamp(io, call.cwd))) return null
+  if (!unchanged(found.stateStamp, found.stateKind, await stateStamp(io, call.cwd), found.stateCoarse)) return null
 
   const boundary = attributeBoundary(
     { sessionId: found.sessionId, compactions: found.compactions, agentId: found.agentId },
@@ -141,6 +141,7 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
     kind,
     stateStamp: stamp.value,
     stateKind: stamp.kind,
+    ...(stamp.coarse ? { stateCoarse: stamp.coarse } : {}),
     sessionId: call.sessionId,
     compactions: await compactionCount(io, paths, call.sessionId),
     errorExcerpt: sanitiseExcerpt(reason),

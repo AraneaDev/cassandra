@@ -30,7 +30,7 @@ export async function liveRecords(io: Io, cwd: string, limit = DIGEST_LIMIT): Pr
   const stamp = await stateStamp(io, cwd)
   if (stamp.kind === 'none') return null
   const matching = all
-    .filter(({ record }) => unchanged(record.stateStamp, record.stateKind, stamp))
+    .filter(({ record }) => unchanged(record.stateStamp, record.stateKind, stamp, record.stateCoarse))
     .sort((a, b) => b.record.lastSeen.localeCompare(a.record.lastSeen))
   if (matching.length === 0) return null
   const records = await Promise.all(matching.slice(0, limit).map(async (r) => {
