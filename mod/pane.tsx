@@ -22,6 +22,24 @@ const CHROME = ['rule', 'more', 'detail rule', 'reason', 'probe', 'fix', 'foot r
 /** How many lines the pane draws besides its rows, at most. */
 export const PANE_CHROME_LINES = CHROME.length
 
+/** The lines of the detail block: what a short body drops first. */
+const DETAIL_LINES = (['detail rule', 'reason', 'probe', 'fix'] as const satisfies ReadonlyArray<typeof CHROME[number]>).length
+
+/** How the pane fits its body: the rows the list gets, and whether the detail and the stats show. */
+export interface PaneLayout { maxRows: number; detail: boolean; stats: boolean }
+
+/**
+ * Fit the pane to a body of `bodyRows` lines. A body too short for every line drops the
+ * detail block first and gives its room to rows; one still too short for a row drops the
+ * stats line too. The list always keeps one row, and the action row is always drawn.
+ */
+export function paneLayout(bodyRows: number): PaneLayout {
+  if (bodyRows > PANE_CHROME_LINES) return { maxRows: bodyRows - PANE_CHROME_LINES, detail: true, stats: true }
+  const chrome = PANE_CHROME_LINES - DETAIL_LINES
+  if (bodyRows > chrome) return { maxRows: bodyRows - chrome, detail: false, stats: true }
+  return { maxRows: Math.max(1, bodyRows - (chrome - 1)), detail: false, stats: false }
+}
+
 /** An engine element constructor, called through the JSX factory. */
 type Tag = (props: Record<string, unknown>) => unknown
 
@@ -56,8 +74,9 @@ function rowLabel(r: PaneRow, selected: boolean, columns: number): string {
 /**
  * Draws the pane as an element tree. Pure: no I/O. Buttons carry a no-op `onPress` and
  * are told apart by key; keyed text sits in a keyed Box, because Text drops its key.
+ * `show` hides the detail block or the stats line on a short body (see `paneLayout`).
  */
-export function drawPane(el: Elements, model: PaneModel, columns: number): unknown {
+export function drawPane(el: Elements, model: PaneModel, columns: number, show: Pick<PaneLayout, 'detail' | 'stats'> = { detail: true, stats: true }): unknown {
   const Box = el.Box as Tag
   const Text = el.Text as Tag
   const Button = el.Button as Tag
@@ -83,14 +102,14 @@ export function drawPane(el: Elements, model: PaneModel, columns: number): unkno
   }
 
   const detail: unknown[] = []
-  if (model.detail) {
+  if (model.detail && show.detail) {
     const reason = model.detail.reason === null ? 'reason (none captured)' : `reason (tool output) ${model.detail.reason}`
     detail.push(line(rule, true), line(reason), line(`probe ${model.detail.probe}`))
     if (model.detail.fix) detail.push(line(`fix ${model.detail.fix}`))
   }
 
   const foot: unknown[] = []
-  if (model.stats) foot.push(line(model.stats, true))
+  if (model.stats && show.stats) foot.push(line(model.stats, true))
   if (model.notice) foot.push(line(model.notice))
   if (model.rows.length > 0) {
     foot.push(

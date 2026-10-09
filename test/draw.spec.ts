@@ -146,6 +146,20 @@ describe('drawPane', () => {
     for (const cols of [40, 20]) expect(text(nodes(m, cols).find((n) => n.props.key === 'row:aaaaaaaa')!).length).toBeLessThanOrEqual(cols)
   })
 
+  test('a short body drops the detail first, then the stats, and gives the room to rows', () => {
+    const at = (bodyRows: number) => keys.paneLayout(bodyRows)
+    expect(at(30)).toEqual({ maxRows: 30 - keys.PANE_CHROME_LINES, detail: true, stats: true })
+    expect(at(keys.PANE_CHROME_LINES + 1)).toEqual({ maxRows: 1, detail: true, stats: true })
+    expect(at(keys.PANE_CHROME_LINES)).toEqual({ maxRows: 4, detail: false, stats: true })
+    expect(at(7)).toEqual({ maxRows: 1, detail: false, stats: true })
+    expect(at(6)).toEqual({ maxRows: 1, detail: false, stats: false })
+    expect(at(2)).toEqual({ maxRows: 1, detail: false, stats: false })
+    const m = { ...base, stats: 'fp 1.0% · same_context 2.0%' }
+    const hidden = walk(drawPane(el, m, 100, { detail: false, stats: false })).filter((n) => n.type === 'Text').map(text)
+    expect(hidden.some((l) => /^(reason|probe|fix|fp) /.test(l))).toBe(false)
+    expect(hidden.filter((l) => /^─+$/.test(l))).toHaveLength(2)
+  })
+
   test('the chrome around the rows is exactly PANE_CHROME_LINES lines when everything shows', () => {
     const full: PaneModel = { ...base, more: 5, stats: 'fp 1.0% · same_context 2.0%', notice: 'Could not forget the selected record.' }
     for (const m of [full, { ...full, confirmAll: true }]) {

@@ -1227,3 +1227,37 @@ test('a confirm whose store cannot be counted deletes nothing and says so; on an
   expect(state('notice')).toBeNull()
   expect(Number(state('rev'))).toBe(rev + 1)
 })
+
+// ---- short panes: the detail goes first, then the stats ----
+
+test('a pane shorter than the full chrome drops the detail, then the stats, and keeps rows and the action row', async () => {
+  const paths = await pathsFor(io(), cwd)
+  for (let i = 0; i < 12; i++) await seedFailure(`false ${i}`)
+  // A repeat warns, so the stats line shows.
+  await seedFailure('false 11')
+  const { writeFix } = await import('../src/core/fixes.ts')
+  for (const r of await remembered()) await writeFix(io(), paths, r.hash, { kind: 'elsewhere', at: '2026-10-09T00:00:00Z', files: [], more: 0 } as never)
+  opts.state = new Map<string, unknown>([['notice', 'Could not forget the selected record.']])
+  const textLines = (drawn: Drawn[]) => drawn.filter((n) => n.type === 'Text').map(textOf)
+  const tall = textLines(await sized(30))
+  expect(tall.some((l) => l.startsWith('fix '))).toBe(true)
+  expect(tall.some((l) => l.startsWith('fp '))).toBe(true)
+  const shown: Record<number, number> = {}
+  for (const bodyRows of [6, 8, 10]) {
+    const drawn = await sized(bodyRows)
+    expect(drawn.some((n) => n.props?.key === 'action-row')).toBe(true)
+    expect(shownRows(drawn).length).toBeGreaterThanOrEqual(1)
+    expect(drawnLines(drawn)).toBeLessThanOrEqual(bodyRows)
+    expect(textLines(drawn).some((l) => l.startsWith('reason ') || l.startsWith('probe ') || l.startsWith('fix '))).toBe(false)
+    shown[bodyRows] = shownRows(drawn).length
+  }
+  // The room the detail left goes to rows; the stats go only when even that is short.
+  expect(shown).toEqual({ 6: 1, 8: 2, 10: 4 })
+  expect(textLines(await sized(6)).some((l) => l.startsWith('fp '))).toBe(false)
+  expect(textLines(await sized(8)).some((l) => l.startsWith('fp '))).toBe(true)
+  // The confirm row stays on screen too.
+  opts.state.set('confirmAll', true)
+  const confirming = await sized(6)
+  expect(confirming.some((n) => n.props?.key === 'confirm-row')).toBe(true)
+  expect(drawnLines(confirming)).toBeLessThanOrEqual(6)
+})

@@ -11,7 +11,7 @@ import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from
 import { listRecords } from '../src/core/record.ts'
 import { resolveHash } from '../src/core/resolve.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
-import { KEY_CANCEL, KEY_CONFIRM, KEY_FORGET, KEY_FORGET_ALL, PANE_CHROME_LINES, ROW_KEY_PREFIX, drawPane, type Elements } from './pane.tsx'
+import { KEY_CANCEL, KEY_CONFIRM, KEY_FORGET, KEY_FORGET_ALL, ROW_KEY_PREFIX, drawPane, paneLayout, type Elements } from './pane.tsx'
 
 /** A user-role row a plugin appends: text blocks the model reads, in the named loop (main when absent). */
 export interface AppendArgs {
@@ -358,18 +358,18 @@ async function openPane($: ModEngine): Promise<{ text: string; exitCode: number 
 async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRenderEvent, unknown>, wrapIo: (io: Io) => Io, drawn: DrawnBySurface): Promise<unknown> {
   try {
     const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
-    const rows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24
+    const layout = paneLayout(e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24)
     let model: PaneModel
     try {
       // Read so that a bump of the revision draws the pane again.
       await $.state.get(REV)
-      model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), Math.max(1, rows - PANE_CHROME_LINES))
+      model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), layout.maxRows)
     } catch {
       model = unreadableModel()
     }
     // Not state: a render may not write it, and a press only needs this session's own drawing.
     drawn.set(e.surface ?? '', { selected: model.selected, hashes: new Set(model.rows.map((r) => r.hash)), total: model.total })
-    return drawPane($.ui.resolve(e), model, columns)
+    return drawPane($.ui.resolve(e), model, columns, layout)
   } catch {
     return next(e)
   }
