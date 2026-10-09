@@ -94,13 +94,13 @@ export function drawPane(el: Elements, model: PaneModel, columns: number): unkno
     foot.push(
       model.confirmAll ? (
         <Box key="confirm-row" gap={2}>
-          <Button key={KEY_CONFIRM} onPress={noop}>{`Forget all ${model.total} records`}</Button>
+          <Button key={KEY_CONFIRM} onPress={noop}>{`Forget all ${model.total} ${model.total === 1 ? 'record' : 'records'}`}</Button>
           <Button key={KEY_CANCEL} onPress={noop}>Cancel</Button>
         </Box>
       ) : (
         <Box key="action-row" gap={2}>
-          <Button key={KEY_FORGET} hotkey="f" onPress={noop}>[Forget]</Button>
-          <Button key={KEY_FORGET_ALL} hotkey="a" onPress={noop}>[Forget all]</Button>
+          <Button key={KEY_FORGET} hotkey="f" onPress={noop}>Forget</Button>
+          <Button key={KEY_FORGET_ALL} hotkey="a" onPress={noop}>Forget all</Button>
         </Box>
       ),
     )

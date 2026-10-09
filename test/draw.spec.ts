@@ -67,8 +67,8 @@ describe('drawPane', () => {
     const b = nodes(base).filter((n) => n.type === 'Button')
     const f = b.find((x) => x.props.key === keys.KEY_FORGET)!
     const a = b.find((x) => x.props.key === keys.KEY_FORGET_ALL)!
-    expect([text(f), f.props.hotkey]).toEqual(['[Forget]', 'f'])
-    expect([text(a), a.props.hotkey]).toEqual(['[Forget all]', 'a'])
+    expect([text(f), f.props.hotkey]).toEqual(['Forget', 'f'])
+    expect([text(a), a.props.hotkey]).toEqual(['Forget all', 'a'])
   })
 
   test('confirming swaps the buttons', () => {
@@ -80,6 +80,11 @@ describe('drawPane', () => {
     expect(keysSeen).not.toContain(keys.KEY_FORGET_ALL)
     expect(text(b.find((x) => x.props.key === keys.KEY_CONFIRM)!)).toBe('Forget all 2 records')
     expect(text(b.find((x) => x.props.key === keys.KEY_CANCEL)!)).toBe('Cancel')
+  })
+
+  test('the confirm button counts one record in the singular', () => {
+    const b = nodes({ ...base, confirmAll: true, total: 1 }).filter((n) => n.type === 'Button')
+    expect(text(b.find((x) => x.props.key === keys.KEY_CONFIRM)!)).toBe('Forget all 1 record')
   })
 
   test('stats are dimmed, more is a line, notice shows, keyed text sits in a Box', () => {

@@ -145,6 +145,8 @@ async function mtimeStamp(io: Io, root: string): Promise<StateStamp | null> {
     if (!top.ok) return null
 
     const parts: string[] = []
+    const coarse: string[] = []
+    let precise = false
     let seen = 0
     let poisoned = false
     const walk = async (dir: string, depth: number, given?: Awaited<ReturnType<Io['list']>>): Promise<void> => {
@@ -166,6 +168,8 @@ async function mtimeStamp(io: Io, root: string): Promise<StateStamp | null> {
         }
         if (entry.kind !== 'file') continue
         parts.push(`${full}:${entry.size}:${entry.mtimeMs}`)
+        coarse.push(`${full}:${entry.size}:${Math.trunc(entry.mtimeMs)}`)
+        if (!Number.isInteger(entry.mtimeMs)) precise = true
         seen += 1
       }
     }
@@ -177,7 +181,9 @@ async function mtimeStamp(io: Io, root: string): Promise<StateStamp | null> {
     // sentinel below does, so it can never collide with a genuine listing: an empty,
     // readable directory is a valid, stable state, not an unknown one.
     const payload = parts.length === 0 ? ' empty' : parts.join('\n')
-    return { kind: 'mtime', value: (await io.sha256(payload)).slice(0, 16) }
+    const value = (await io.sha256(payload)).slice(0, 16)
+    if (!precise) return { kind: 'mtime', value }
+    return { kind: 'mtime', value, coarse: (await io.sha256(coarse.join('\n'))).slice(0, 16) }
   } catch {
     return null
   }
@@ -207,9 +213,14 @@ export async function stateStamp(io: Io, cwd: string): Promise<StateStamp> {
  * between the two readings never matches. Every uncertain case resolves to
  * "something may have changed", which means silence.
  */
-export function unchanged(recorded: string, recordedKind: StateKind, current: StateStamp): boolean {
+export function unchanged(recorded: string, recordedKind: StateKind, current: StateStamp, recordedCoarse?: string): boolean {
   if (current.kind === 'none' || recordedKind === 'none') return false
   if (current.kind !== recordedKind) return false
   if (!recorded || !current.value) return false
-  return recorded === current.value
+  // Both sides saw fractional file times: compare exactly, so a same-length rewrite
+  // within one millisecond still counts as a change.
+  if (recordedCoarse && current.coarse) return recorded === current.value
+  // One side listed whole milliseconds (the mod, or a filesystem without fractions):
+  // compare at that precision, so a record matches whichever front end wrote it.
+  return (recordedCoarse ?? recorded) === (current.coarse ?? current.value)
 }

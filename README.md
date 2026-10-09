@@ -285,27 +285,22 @@ Known gaps and differences:
 - On a denied repeat, the mod records the warning but cannot show it to the model, since a
   denied result carries no context. The binary shows it.
 - A call refused by a permission rule, or one whose approval was not granted, is not
-  recorded by either front end. The mod recognises these by the engine's error text.
-- The mod detects an interrupt by the dispatch's abort signal. This was verified with
-  SIGINT on a headless run, not with Esc in the interactive UI.
-- On the mtime path, outside git, a record is matched only by the front end that wrote it.
-  The mod's listing is whole-millisecond and the binary's is fractional, so after
-  switching front ends the existing non-git records go silent.
-- The mod's file listing reports whole milliseconds, so on the mtime path a same-length
-  rewrite within the same millisecond as the previous stamp is not detected by the mod.
-  The binary detects it.
+  recorded by either front end. The mod recognises these by the engine's error text. It
+  also skips a Bash call the engine refused or a hook blocked before it ran; for other
+  tools that error text can mean a real failure, so it still records them.
+- The mod's file listing reports whole milliseconds. Outside git, a stamp the mod takes or
+  compares therefore works at that precision: a same-length rewrite within the same
+  millisecond is not detected there. Between two stamps the binary took, it is.
 - If a hot reload of the mod fails mid-session after it claimed the session, nothing
   records for the rest of that session. That only affects development folders, not an
   installed plugin.
 - The shell CLI (`bun src/cli.ts`), and `/cassandra` on builds without mods, still need
   Bun. On a mod build `/cassandra` does not.
-- The status line's interactive display was not checked by hand during development.
-  Headless runs confirmed it is harmless.
 - The pane (`/cassandra pane`) is covered by the engine test kit, which mounts it on
   terminal and desktop and presses its buttons by key. The kit cannot send hotkey
-  letters, so `f` and `a` are untested. Opening focused, the arrow and Tab focus walk,
-  focus events and Esc were checked by hand under tmux on a throwaway prototype pane,
-  not on this one.
+  letters, so `f`, `a`, Tab, Enter and Esc were checked by hand in an interactive
+  terminal session, as were the status line and Esc interrupting a running call. Desktop
+  was not checked by hand.
 - The engine smoke tests (`mod/smoke.test.ts`) prove routing. One checks that a tool call
   passes through once, unchanged. One checks that a `query` call reaches Cassandra's own
   tool hook and is answered without being passed on. Neither reaches a real store, because

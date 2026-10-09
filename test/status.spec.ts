@@ -19,13 +19,13 @@ test('undefined with no records', async () => {
 
 test('counts one live failure', async () => {
   await settle(io, call('bun test'), { kind: 'failure', reason: 'x' }, null)
-  expect(await statusText(io, cwd)).toBe('cassandra: 1 live failure')
+  expect(await statusText(io, cwd)).toBe('1 live failure')
 })
 
 test('counts two live failures', async () => {
   await settle(io, call('bun test'), { kind: 'failure', reason: 'x' }, null)
   await settle(io, call('bun lint'), { kind: 'failure', reason: 'y' }, null)
-  expect(await statusText(io, cwd)).toBe('cassandra: 2 live failures')
+  expect(await statusText(io, cwd)).toBe('2 live failures')
 })
 
 test('undefined again once the tree changes and every record is stale', async () => {

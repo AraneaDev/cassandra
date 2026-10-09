@@ -42,7 +42,8 @@ const SCRIPT: Step[] = [
   { call: 'lint check', ends: 'fail' },
 ]
 
-const scrub = (s: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.replace(/"stateStamp":"[0-9a-f]{16}"/g, '"stateStamp":"S"')]))
+// Stamps differ by design: the binary sees fractional file times and adds a coarse hash.
+const scrub = (s: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.replace(/"stateStamp":"[0-9a-f]{16}"/g, '"stateStamp":"S"').replace(/,"stateCoarse":"[0-9a-f]{16}"/g, '')]))
 
 
 function expectNonTrivial(said: string[], store: Record<string, string>): void {

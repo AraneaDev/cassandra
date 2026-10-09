@@ -56,7 +56,7 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
 
     const stamp = await stateStamp(io, cwd)
     const { sorted, shown, chosen } = windowOf(
-      all.map(({ hash, record }) => ({ hash, record, stale: !unchanged(record.stateStamp, record.stateKind, stamp) })),
+      all.map(({ hash, record }) => ({ hash, record, stale: !unchanged(record.stateStamp, record.stateKind, stamp, record.stateCoarse) })),
       view.selected,
       maxRows,
     )
