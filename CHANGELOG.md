@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.24](https://github.com/AraneaDev/cassandra/compare/v0.0.23...v0.0.24) (2026-10-09)
+
+
+### Fixes
+
+* pane polish from the [#47](https://github.com/AraneaDev/cassandra/issues/47) review ([#58](https://github.com/AraneaDev/cassandra/issues/58)) ([d2d3522](https://github.com/AraneaDev/cassandra/commit/d2d352262410d7c22567f8498495007aa58114a9))
+
 ## [0.0.23](https://github.com/AraneaDev/cassandra/compare/v0.0.22...v0.0.23) (2026-10-09)
 
 
