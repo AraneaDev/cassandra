@@ -33,7 +33,7 @@ async function seed(command: string, lastSeen: string, excerpt = '', kind: 'fail
 
 test('an empty project gives an empty model', async () => {
   const m = await paneModel(io, cwd, view, 10)
-  expect(m).toMatchObject({ rows: [], total: 0, selected: null, detail: null, error: null, stats: null })
+  expect(m).toMatchObject({ rows: [], total: 0, hashes: [], selected: null, detail: null, error: null, stats: null })
 })
 
 test('rows are newest first, then stale once the tree changes', async () => {
@@ -142,4 +142,16 @@ test('a root record has no suffix, and a hand-edited non-string scope reads as n
   const m = await paneModel(io, cwd, view, 10)
   expect(m.error).toBeNull()
   expect(m.rows[0]).toMatchObject({ display: 'bun test', where: '' })
+})
+
+test('hashes holds every counted record, not only the shown rows', async () => {
+  const hs = [
+    await seed('one', '2026-01-01T00:00:01.000Z'),
+    await seed('two', '2026-01-01T00:00:02.000Z'),
+    await seed('three', '2026-01-01T00:00:03.000Z'),
+  ]
+  const m = await paneModel(io, cwd, view, 1)
+  expect(m.rows).toHaveLength(1)
+  expect(m.more).toBe(2)
+  expect(m.hashes).toEqual([hs[2]!, hs[1]!, hs[0]!])
 })

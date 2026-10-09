@@ -25,20 +25,33 @@ export const PANE_CHROME_LINES = CHROME.length
 /** The lines of the detail block: what a short body drops first. */
 const DETAIL_LINES = (['detail rule', 'reason', 'probe', 'fix'] as const satisfies ReadonlyArray<typeof CHROME[number]>).length
 
-/** How the pane fits its body: the rows the list gets, and whether the detail and the stats show. */
-export interface PaneLayout { maxRows: number; detail: boolean; stats: boolean }
+/** The stats line: what the shortest body drops after the detail block. */
+const STATS_LINES = (['stats'] as const satisfies ReadonlyArray<typeof CHROME[number]>).length
+
+/** Rows the list always keeps. */
+const MIN_ROWS = 1
+
+/** The fewest lines that draw the pane whole: the chrome without the detail block and the stats line, plus one row. */
+export const PANE_MIN_LINES = PANE_CHROME_LINES - DETAIL_LINES - STATS_LINES + MIN_ROWS
+
+/** How the pane fits its body: the rows the list gets, whether the detail and the stats show, and whether the body is too short to draw the pane at all. */
+export interface PaneLayout { maxRows: number; detail: boolean; stats: boolean; tooShort: boolean }
 
 /**
  * Fit the pane to a body of `bodyRows` lines. A body too short for every line drops the
  * detail block first and gives its room to rows; one still too short for a row drops the
- * stats line too. The list always keeps one row, and the action row is always drawn.
+ * stats line too. Below `PANE_MIN_LINES` nothing fits whole, so `tooShort` asks for the
+ * one-line notice instead; otherwise the list keeps one row and the action row is drawn.
  */
 export function paneLayout(bodyRows: number): PaneLayout {
-  if (bodyRows > PANE_CHROME_LINES) return { maxRows: bodyRows - PANE_CHROME_LINES, detail: true, stats: true }
+  if (bodyRows > PANE_CHROME_LINES) return { maxRows: bodyRows - PANE_CHROME_LINES, detail: true, stats: true, tooShort: false }
   const chrome = PANE_CHROME_LINES - DETAIL_LINES
-  if (bodyRows > chrome) return { maxRows: bodyRows - chrome, detail: false, stats: true }
-  return { maxRows: Math.max(1, bodyRows - (chrome - 1)), detail: false, stats: false }
+  if (bodyRows > chrome) return { maxRows: bodyRows - chrome, detail: false, stats: true, tooShort: false }
+  return { maxRows: Math.max(1, bodyRows - (chrome - 1)), detail: false, stats: false, tooShort: bodyRows < PANE_MIN_LINES }
 }
+
+/** The one line a body too short for the pane shows. */
+const TOO_SHORT = 'Pane too short; make the window taller.'
 
 /** An engine element constructor, called through the JSX factory. */
 type Tag = (props: Record<string, unknown>) => unknown
@@ -74,9 +87,10 @@ function rowLabel(r: PaneRow, selected: boolean, columns: number): string {
 /**
  * Draws the pane as an element tree. Pure: no I/O. Buttons carry a no-op `onPress` and
  * are told apart by key; keyed text sits in a keyed Box, because Text drops its key.
- * `show` hides the detail block or the stats line on a short body (see `paneLayout`).
+ * `show` hides the detail block or the stats line on a short body, or the whole
+ * drawing but one line on a body too short for it (see `paneLayout`).
  */
-export function drawPane(el: Elements, model: PaneModel, columns: number, show: Pick<PaneLayout, 'detail' | 'stats'> = { detail: true, stats: true }): unknown {
+export function drawPane(el: Elements, model: PaneModel, columns: number, show: Pick<PaneLayout, 'detail' | 'stats' | 'tooShort'> = { detail: true, stats: true, tooShort: false }): unknown {
   const Box = el.Box as Tag
   const Text = el.Text as Tag
   const Button = el.Button as Tag
@@ -85,6 +99,7 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, show: 
   const line = (s: string, dim = false): unknown => <Text dimColor={dim || undefined}>{clip(s, columns)}</Text>
 
   if (model.error) return <Box flexDirection="column">{line(model.error)}</Box>
+  if (show.tooShort) return <Box flexDirection="column">{line(TOO_SHORT)}</Box>
 
   const body: unknown[] = []
   if (model.rows.length === 0) {

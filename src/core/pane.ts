@@ -21,6 +21,8 @@ export interface PaneModel {
   stats: string | null
   confirmAll: boolean
   total: number
+  /** Every record hash counted in `total`, hidden ones included: what a confirmed Forget all may delete. */
+  hashes: string[]
   notice: string | null
   error: string | null
 }
@@ -90,6 +92,7 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
       detail,
       stats,
       total: sorted.length,
+      hashes: sorted.map((r) => r.hash),
     }
   } catch {
     return unreadableModel(view)
@@ -99,7 +102,7 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
 function emptyModel(view: PaneView): PaneModel {
   return {
     rows: [], more: 0, selected: null, detail: null, stats: null,
-    confirmAll: view.confirmAll, total: 0, notice: view.notice, error: null,
+    confirmAll: view.confirmAll, total: 0, hashes: [], notice: view.notice, error: null,
   }
 }
 

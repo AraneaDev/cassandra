@@ -308,12 +308,12 @@ test('forget --all keeps today\'s text when there are no fix notes', async () =>
   expect(out.join('\n')).toBe('Forgot 1 record.')
 })
 
-test('forget <id> keeps the fix note', async () => {
+test('forget <id> drops the fix note', async () => {
   const paths = await pathsFor(nodeIo, cwd)
   await upsertRecord(nodeIo, paths, H1, seed)
   await writeFix(nodeIo, paths, H1, note)
   expect(await run(['forget', H1, '--cwd', cwd])).toBe(0)
-  expect(await readFix(nodeIo, paths, H1)).not.toBeNull()
+  expect(await readFix(nodeIo, paths, H1)).toBeNull()
 })
 
 test('stats counts fixes remembered and offered again', async () => {

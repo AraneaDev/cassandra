@@ -204,6 +204,16 @@ export async function removeAllFixes(io: Io, paths: Paths): Promise<FixCleanup> 
   return result
 }
 
+/** Remove the fix note of one record. A missing note is nothing to do; true unless it could not be removed. Never throws. */
+export async function removeFix(io: Io, paths: Paths, hash: string): Promise<boolean> {
+  try {
+    await io.remove(fixPath(paths, hash))
+    return true
+  } catch {
+    return false
+  }
+}
+
 function names(files: string[], more: number): string {
   const shown = files.slice(0, SENTENCE_NAMES).map((f) => `\`${cleanName(f)}\``)
   const rest = files.length - shown.length + more
