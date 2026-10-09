@@ -218,6 +218,7 @@ test('stats with only briefings still reports them', async () => {
   await appendStat(nodeIo, paths, { kind: 'briefed', boundary: 'subagent', hashes: ['aa11bb22cc33dd44'] })
   expect(await run(['stats', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('1 briefing sent')
+  expect(out.join('\n')).toStartWith('1 briefing sent')
 })
 
 test('a call warned before its briefing and never after is not counted as repeated', async () => {

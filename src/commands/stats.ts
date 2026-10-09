@@ -60,7 +60,8 @@ export async function stats(io: Io, paths: Paths): Promise<number> {
         return first !== undefined && e.t > first
       })
       .map((e) => e.hash))
-    console.log(`\n${briefed.length} ${briefed.length === 1 ? 'briefing' : 'briefings'} sent\n`)
+    // Set apart from the warnings above it; alone, the report starts on its first line.
+    console.log(`${warned.length > 0 ? '\n' : ''}${briefed.length} ${briefed.length === 1 ? 'briefing' : 'briefings'} sent\n`)
     for (const b of ['subagent', 'compaction'] as const) {
       console.log(`    ${b.padEnd(13)} ${String(briefed.filter((e) => e.boundary === b).length).padStart(4)}`)
     }
