@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.23](https://github.com/AraneaDev/cassandra/compare/v0.0.22...v0.0.23) (2026-10-09)
+
+
+### Features
+
+* remember Bash failures per monorepo package ([#56](https://github.com/AraneaDev/cassandra/issues/56)) ([5e437a0](https://github.com/AraneaDev/cassandra/commit/5e437a09f28c30aec0b13f24b3d9e397139f182b))
+
 ## [0.0.22](https://github.com/AraneaDev/cassandra/compare/v0.0.21...v0.0.22) (2026-10-09)
 
 
