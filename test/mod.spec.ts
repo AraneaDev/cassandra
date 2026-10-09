@@ -1261,3 +1261,41 @@ test('a pane shorter than the full chrome drops the detail, then the stats, and 
   expect(confirming.some((n) => n.props?.key === 'confirm-row')).toBe(true)
   expect(drawnLines(confirming)).toBeLessThanOrEqual(6)
 })
+
+// ---- Forget all, Cancel, Forget; and a hot reload ----
+
+test('forget all, cancel, then forget: the forget takes the selected drawn row and the confirmation is gone', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  await press(keys[1]!)
+  await press('forget-all')
+  expect((await render()).some((n) => n.props?.key === 'confirm-row')).toBe(true)
+  await press('forget-all-cancel')
+  expect(state('confirmAll')).toBe(false)
+  const drawn = await render()
+  expect(drawn.some((n) => n.props?.key === 'action-row')).toBe(true)
+  await press('forget')
+  expect(await idsLeft()).toEqual([keys[0]!])
+  expect(state('confirmAll')).toBe(false)
+})
+
+test('after a hot reload, a forget before any redraw does nothing; after a render it works', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  await press(keys[1]!)
+  // A hot reload: the module runs again with fresh module state; `$.state` is kept.
+  const reloaded = new Map<string, Hook>()
+  install(((event: string, a: unknown, b?: unknown) => {
+    const own = event === 'tool.call' && (a as { tool: RegExp }).tool.source.startsWith('^mcp__cassandra__')
+    reloaded.set(own ? 'tool.call:cassandra' : event, (b ?? a) as Hook)
+  }) as unknown as Parameters<typeof install>[0], (i) => wrap(i))
+  hooks = reloaded
+  expect(String(state('selected'))).toStartWith(keys[1]!.slice('row:'.length))
+  await press('forget')
+  expect(await remembered()).toHaveLength(2)
+  await render()
+  await press('forget')
+  expect(await idsLeft()).toEqual([keys[0]!])
+})
