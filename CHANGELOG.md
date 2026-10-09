@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.19](https://github.com/AraneaDev/cassandra/compare/v0.0.18...v0.0.19) (2026-10-09)
+
+
+### Features
+
+* remember what made a failed call start working ([#43](https://github.com/AraneaDev/cassandra/issues/43)) ([fcda911](https://github.com/AraneaDev/cassandra/commit/fcda911cc079d99cea6412e8f3e1a9fb267bb944))
+
 ## [0.0.18](https://github.com/AraneaDev/cassandra/compare/v0.0.17...v0.0.18) (2026-10-09)
 
 
