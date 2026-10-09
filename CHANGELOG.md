@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.18](https://github.com/AraneaDev/cassandra/compare/v0.0.17...v0.0.18) (2026-10-09)
+
+
+### Features
+
+* let agents query and resolve remembered failures ([#41](https://github.com/AraneaDev/cassandra/issues/41)) ([0f7bc0a](https://github.com/AraneaDev/cassandra/commit/0f7bc0ad51907050d40cacc040fa9e926941d395))
+
 ## [0.0.17](https://github.com/AraneaDev/cassandra/compare/v0.0.16...v0.0.17) (2026-10-09)
 
 
