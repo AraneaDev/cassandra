@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { bumpCompactions, compactionCount } from '../src/core/session.ts'
 import { nodeIo } from '../src/io/node.ts'
-import { dataRoot, findRepoRoot, isFingerprint, pathsFor, pendingPath, projectSlug, recordPath, safeSegment } from '../src/core/paths.ts'
+import { dataRoot, findRepoRoot, isFingerprint, pathsFor, pendingDir, pendingPath, projectSlug, recordPath, safeSegment } from '../src/core/paths.ts'
 
 let tmp: string
 let originalHome: string | undefined
@@ -88,9 +88,9 @@ test('recordPath shards on the first two hash characters', async () => {
 })
 
 test('pendingPath never escapes the pending directory', async () => {
-  const p = await pathsFor(nodeIo, tmp)
+  const dir = await pendingDir(nodeIo)
   for (const id of ['..', '.', '', '../../etc/passwd', 'toolu_01ABC']) {
-    expect(pendingPath(p, id).startsWith(p.pending + '/')).toBe(true)
+    expect(pendingPath(dir, id).startsWith(dir + '/')).toBe(true)
   }
 })
 
@@ -120,12 +120,12 @@ test('recordPath accepts only a real fingerprint and files everything else under
 })
 
 test('pendingPath keeps every hostile tool_use_id inside the pending directory', async () => {
-  const p = await pathsFor(nodeIo, tmp)
+  const dir = await pendingDir(nodeIo)
   for (const id of HOSTILE_SEGMENTS) {
-    const resolved = resolve(pendingPath(p, id))
-    expect(resolved.startsWith(resolve(p.pending) + '/')).toBe(true)
+    const resolved = resolve(pendingPath(dir, id))
+    expect(resolved.startsWith(resolve(dir) + '/')).toBe(true)
     // A direct child, so `resolve` had no `..` or separator left to act on.
-    expect(dirname(resolved)).toBe(resolve(p.pending))
+    expect(dirname(resolved)).toBe(resolve(dir))
   }
 })
 

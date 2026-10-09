@@ -126,9 +126,9 @@ async function runBinary(cwd: string, script: Step[] = SCRIPT): Promise<string[]
     said.push(step.ends === 'deny' ? DENY : pre ? JSON.parse(pre).hookSpecificOutput.additionalContext : '')
     const post = step.postDir ? { ...base, cwd: join(cwd, step.postDir) } : base
     if (step.ends === 'ok') await handle({ ...post, hook_event_name: 'PostToolUse' }, io)
-    if (step.ends === 'fail') await handle({ ...base, hook_event_name: 'PostToolUseFailure', error: 'Exit code 1\nboom' }, io)
-    if (step.ends === 'deny') await handle({ ...base, hook_event_name: 'PermissionDenied', denial_reason: 'policy' }, io)
-    if (step.ends === 'interrupt') await handle({ ...base, hook_event_name: 'PostToolUseFailure', is_interrupt: true }, io)
+    if (step.ends === 'fail') await handle({ ...post, hook_event_name: 'PostToolUseFailure', error: 'Exit code 1\nboom' }, io)
+    if (step.ends === 'deny') await handle({ ...post, hook_event_name: 'PermissionDenied', denial_reason: 'policy' }, io)
+    if (step.ends === 'interrupt') await handle({ ...post, hook_event_name: 'PostToolUseFailure', is_interrupt: true }, io)
   }
   return said
 }
@@ -277,4 +277,55 @@ test('in a monorepo both front ends keep each package to itself', async () => {
   expect(records.map((r) => r.scope ?? '').sort()).toEqual(['', 'packages/a'])
   expect(Object.values(store).some((v) => v.includes('cd packages/a'))).toBe(false)
   for (const home of ['home-binary', 'home-mod']) expect(Object.keys(snapshot(join(tmp, home))).some((k) => k.startsWith('P/fixes/'))).toBe(true)
+})
+
+/** Two sibling git repositories, as a user with several checkouts side by side has. */
+function pair(a: string, b: string): [string, string] {
+  return [a, b].map((name) => {
+    const dir = repo(name)
+    for (const x of [['init', '-q'], ['config', 'user.email', 't@e.com'], ['config', 'user.name', 'T'], ['add', '-A'], ['commit', '-qm', 'init', '--date', '2026-01-01T00:00:00Z']]) {
+      expect(Bun.spawnSync(['git', '-C', dir, ...x], { stdout: 'ignore', stderr: 'ignore', env: { ...process.env, GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' } }).exitCode).toBe(0)
+    }
+    return dir
+  }) as [string, string]
+}
+
+/** Project directories in a data root that hold at least one record, by slug. */
+function projectsWithRecords(home: string): string[] {
+  return readdirSync(home, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name !== 'pending' && existsSync(join(home, e.name, 'records')) && Object.keys(snapshot(join(home, e.name, 'records'))).length > 0)
+    .map((e) => e.name.replace(/-[0-9a-f]{8}$/, ''))
+}
+
+const CD_FAIL: Step[] = [{ call: 'cd ../b && make', ends: 'fail', postDir: '../b' }]
+// The second call is warned, then succeeds from the other repository.
+const CD_WARNED: Step[] = [
+  { call: 'cd ../b && make', ends: 'fail', postDir: '../b' },
+  { call: 'cd ../b && make', ends: 'ok', postDir: '../b' },
+]
+
+// The outcome payload reports the shell's directory after the command; a `cd` into a
+// sibling repository must not move the call there.
+test('a command that cd`s into another repository and fails is still recorded in the repo it started in', async () => {
+  const saidBinary = await runBinary(pair('one/a', 'one/b')[0], CD_FAIL)
+  const saidMod = await runMod(pair('two/a', 'two/b')[0], CD_FAIL)
+  expect(saidMod).toEqual(saidBinary)
+  for (const home of ['home-binary', 'home-mod']) {
+    expect(projectsWithRecords(join(tmp, home))).toEqual(['a'])
+    expect(readdirSync(join(tmp, home)).some((n) => n.startsWith('b-'))).toBe(false)
+  }
+  expect(scrub(snapshot(join(tmp, 'home-mod')))).toEqual(scrub(snapshot(join(tmp, 'home-binary'))))
+})
+
+test('a warned command that succeeds after a cd forgets the record in the repo it started in', async () => {
+  const saidBinary = await runBinary(pair('one/a', 'one/b')[0], CD_WARNED)
+  const saidMod = await runMod(pair('two/a', 'two/b')[0], CD_WARNED)
+  expect(saidMod).toEqual(saidBinary)
+  expect(saidBinary[1]).toContain('failed once before')
+  for (const home of ['home-binary', 'home-mod']) {
+    expect(projectsWithRecords(join(tmp, home))).toEqual([])
+    expect(readdirSync(join(tmp, home)).some((n) => n.startsWith('b-'))).toBe(false)
+    expect(Object.values(snapshot(join(tmp, home))).some((v) => v.includes('"kind":"false_positive"'))).toBe(true)
+  }
+  expect(scrub(snapshot(join(tmp, 'home-mod')))).toEqual(scrub(snapshot(join(tmp, 'home-binary'))))
 })

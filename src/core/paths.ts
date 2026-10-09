@@ -110,7 +110,6 @@ export async function projectSlug(io: Io, cwd: string): Promise<string> {
 export interface Paths {
   root: string
   records: string
-  pending: string
   stats: string
 }
 
@@ -120,7 +119,6 @@ export async function pathsFor(io: Io, cwd: string): Promise<Paths> {
   return {
     root,
     records: join(root, 'records'),
-    pending: join(root, 'pending'),
     stats: join(root, 'stats.jsonl'),
   }
 }
@@ -169,9 +167,21 @@ export function recordPath(paths: Paths, hash: string): string {
 }
 
 /**
- * Marker written when the read path warns, so the outcome can be attributed without re-hashing.
+ * Where in-flight call markers live: one directory per user, not per project.
+ *
+ * PreToolUse writes the marker from the directory the call started in, but the outcome
+ * payload reports the shell's directory after the command ran. A `cd ../other-repo`
+ * inside the command would therefore look in a different project's directory and miss
+ * it, so the lookup key can only be the `tool_use_id`, which both events share.
+ */
+export async function pendingDir(io: Io): Promise<string> {
+  return join(await dataRoot(io), 'pending')
+}
+
+/**
+ * Marker written before a call, so the outcome can be attributed without re-hashing.
  * Guards against path traversal through the shared sanitizer.
  */
-export function pendingPath(paths: Paths, toolUseId: string): string {
-  return join(paths.pending, safeSegment(toolUseId))
+export function pendingPath(dir: string, toolUseId: string): string {
+  return join(dir, safeSegment(toolUseId))
 }
