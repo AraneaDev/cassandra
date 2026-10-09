@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.28](https://github.com/AraneaDev/cassandra/compare/v0.0.27...v0.0.28) (2026-10-09)
+
+
+### Performance
+
+* reuse dirty-file hashes when size and mtime are unchanged ([#72](https://github.com/AraneaDev/cassandra/issues/72)) ([471cb86](https://github.com/AraneaDev/cassandra/commit/471cb86cfad31bfa366a13fccfdda073021de0dd))
+
 ## [0.0.27](https://github.com/AraneaDev/cassandra/compare/v0.0.26...v0.0.27) (2026-10-09)
 
 
