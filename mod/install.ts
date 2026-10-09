@@ -1,6 +1,8 @@
+import { runCommand } from '../src/commands/run.ts'
 import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
+import { statusText } from '../src/core/status.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
 import type { BriefBoundary } from '../src/core/stats.ts'
 import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from '../src/core/tools.ts'
@@ -22,6 +24,8 @@ export interface AppendResult {
 export type ModEngine = ModHost & {
   session: { id(): Promise<string>; cwd(): Promise<string>; append(args: AppendArgs): Promise<AppendResult> }
   tool: { register(spec: { name: string; description: string; inputSchema?: Record<string, unknown> }): Promise<unknown> }
+  command: { register(spec: { name: string; description?: string; argumentHint?: string }): Promise<unknown> }
+  ui: { status(text: string | undefined): void }
 }
 
 /** A `session.compact` input, as far as the mod reads it. */
@@ -86,6 +90,7 @@ export interface ModOn {
   (event: 'session.compact', hook: ($: ModEngine, e: CompactEvent, next: Next<CompactEvent, { skip?: string }>) => Promise<unknown>): unknown
   (event: 'session.append', hook: ($: ModEngine, e: AppendEvent, next: Next<AppendEvent, unknown>) => Promise<unknown>): unknown
   (event: 'agent.spawn', hook: ($: ModEngine, e: SpawnEvent, next: Next<SpawnEvent, SpawnResult>) => Promise<unknown>): unknown
+  (event: 'command.run', matcher: { command: string }, hook: ($: ModEngine, e: { command: string; args: string }, next: Next<{ command: string; args: string }, unknown>) => Promise<{ text?: string; exitCode?: number }>): unknown
   (event: 'tool.call', matcher: { tool: RegExp }, hook: ($: ModEngine, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>) => Promise<ToolCallOutcome>): unknown
 }
 
@@ -187,6 +192,27 @@ async function holdClaim($: ModEngine, wrapIo: (io: Io) => Io, claim: (io: Io, i
   }
 }
 
+/** Re-read the live count and pin it under the prompt. Never throws; a failure keeps the old line. */
+async function refreshStatus($: ModEngine, io: Io): Promise<void> {
+  try {
+    $.ui.status(await statusText(io, await $.session.cwd()))
+  } catch {
+    // The previous line stays until the next change.
+  }
+}
+
+/** Serve /cassandra with the CLI's own text. Never throws. */
+async function answerCommand($: ModEngine, io: Io, args: string): Promise<{ text: string; exitCode: number }> {
+  try {
+    const parts = args.split(/\s+/).filter(Boolean)
+    const r = await runCommand(io, await $.session.cwd(), parts)
+    if (parts[0] === 'forget') await refreshStatus($, io)
+    return { text: r.text, exitCode: r.code }
+  } catch {
+    return { text: 'cassandra: could not read what this project remembers.', exitCode: 1 }
+  }
+}
+
 /** The tool's own arguments, as the classic hook's `tool_input` carries them. */
 export function toolInput(e: ToolCallEvent): Record<string, unknown> {
   return Object.fromEntries(Object.entries(e).filter(([k]) => !RESERVED.has(k)))
@@ -198,7 +224,9 @@ async function answerTool($: ModEngine, wrapIo: (io: Io) => Io, e: ToolCallEvent
     const io = wrapIo(modIo(hostOf($)))
     const cwd = await $.session.cwd()
     const input = toolInput(e)
-    const text = e.tool === `${TOOL_PREFIX}${RESOLVE_TOOL.name}` ? await resolveFailure(io, cwd, input) : await queryText(io, cwd, input)
+    const resolving = e.tool === `${TOOL_PREFIX}${RESOLVE_TOOL.name}`
+    const text = resolving ? await resolveFailure(io, cwd, input) : await queryText(io, cwd, input)
+    if (resolving && text.startsWith('cassandra: Forgot')) await refreshStatus($, io)
     return { result: text }
   } catch {
     return { result: 'cassandra: could not answer.' }
@@ -275,8 +303,14 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     try {
       await $.tool.register(QUERY_TOOL)
       await $.tool.register(RESOLVE_TOOL)
+      await $.command.register({ name: 'cassandra', description: 'Show what Cassandra remembers failing in this project', argumentHint: '[list | why <id> | forget <id> | forget --all | stats]' })
     } catch {
       // The session goes on without Cassandra's tools.
+    }
+    try {
+      await refreshStatus($, wrapIo(modIo(hostOf($))))
+    } catch {
+      // No io to read with: the line stays empty until the store changes.
     }
     return started
   })
@@ -342,6 +376,16 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     return stored
   })
 
+  on('command.run', { command: 'cassandra' }, async ($, e) => {
+    let io: Io
+    try {
+      io = wrapIo(modIo(hostOf($)))
+    } catch {
+      return { text: 'cassandra: could not read what this project remembers.', exitCode: 1 }
+    }
+    return answerCommand($, io, e.args)
+  })
+
   on('tool.call', { tool: new RegExp(`^${TOOL_PREFIX}(?:${QUERY_TOOL.name}|${RESOLVE_TOOL.name})$`) }, async ($, e) => answerTool($, wrapIo, e))
 
   on('tool.call', { tool: TRACKED }, async ($, e, next) => {
@@ -362,7 +406,8 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     const result = await next(e)
 
     try {
-      await settle(io, call, outcomeOf(result, next.signal?.aborted === true), warning?.hash ?? null)
+      const changed = await settle(io, call, outcomeOf(result, next.signal?.aborted === true), warning?.hash ?? null)
+      if (changed) await refreshStatus($, io)
     } catch {
       // The call happened; only the bookkeeping is lost.
     }

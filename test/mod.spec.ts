@@ -636,3 +636,71 @@ test('a tool the core cannot serve is still answered, without next', async () =>
   expect(r.result).toBe('cassandra: could not answer.')
   expect(nextCalls).toBe(0)
 })
+
+type CommandHook = ($: ModEngine, e: { command: string; args: string }, n: () => Promise<unknown>) => Promise<{ text?: string; exitCode?: number }>
+const command = (args: string) => (hooks.get('command.run') as unknown as CommandHook)(host, { command: 'cassandra', args }, async () => ({}))
+const start = () => (hooks.get('session.start') as unknown as ($: ModEngine, e: unknown, n: () => Promise<unknown>) => Promise<unknown>)(host, {}, async () => ({}))
+
+test('session.start registers /cassandra and pins the live count', async () => {
+  await seedFailure()
+  opts.statuses = []
+  await start()
+  expect(opts.commands).toEqual(['cassandra'])
+  expect(opts.statuses.at(-1)).toBe('cassandra: 1 live failure')
+})
+
+test('/cassandra answers with the CLI text and exit code for each subcommand (Review Focus 1)', async () => {
+  await seedFailure()
+  const { runCommand } = await import('../src/commands/run.ts')
+  const cli = async (args: string[]) => {
+    const r = await runCommand(io(), cwd, args)
+    return { text: r.text, exitCode: r.code }
+  }
+  const listed = await cli([])
+  expect(listed.exitCode).toBe(0)
+  expect(await command('')).toEqual(listed)
+  const why = await cli(['why'])
+  expect(why.exitCode).toBe(1)
+  expect(await command('  why   ')).toEqual(why)
+  const forget = await cli(['forget'])
+  expect(forget.exitCode).toBe(1)
+  expect(await command('forget')).toEqual(forget)
+  const { USAGE } = await import('../src/commands/run.ts')
+  expect(await command('nope')).toEqual({ text: USAGE, exitCode: 1 })
+
+  opts.statuses = []
+  const all = await command('forget --all')
+  expect(opts.statuses).toStrictEqual([undefined])
+  await seedFailure()
+  expect(all).toEqual(await cli(['forget', '--all']))
+  expect(all.exitCode).toBe(0)
+})
+
+test('the status line refreshes only when the store changes (Review Focus 2)', async () => {
+  opts.statuses = []
+  await call('ls', ok())
+  expect(opts.statuses).toStrictEqual([])
+  await call('bun test', failed())
+  expect(opts.statuses).toStrictEqual(['cassandra: 1 live failure'])
+  await call('bun test', ok())
+  expect(opts.statuses).toStrictEqual(['cassandra: 1 live failure', undefined])
+})
+
+test('a resolve through the tools hook refreshes the status line', async () => {
+  await seedFailure()
+  opts.statuses = []
+  const r = await toolHook()(host, { tool: 'mcp__cassandra__resolve', tool_use_id: 'r1', command: 'bun test', reason: 'fixed' }, async () => ({}))
+  expect(String(r.result)).toStartWith('cassandra: Forgot')
+  expect(opts.statuses).toStrictEqual([undefined])
+})
+
+test('a command the core cannot serve answers with the fallback text and code 1', async () => {
+  await seedFailure()
+  wrap = (i) => ({ ...i, sha256: async () => { throw new Error('boom') } })
+  expect(await command('list')).toEqual({ text: 'cassandra: could not read what this project remembers.', exitCode: 1 })
+})
+
+test('a command whose io cannot be built still answers with the fallback text', async () => {
+  wrap = () => { throw new Error('boom') }
+  expect(await command('stats')).toEqual({ text: 'cassandra: could not read what this project remembers.', exitCode: 1 })
+})
