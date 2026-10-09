@@ -303,8 +303,9 @@ Known gaps and differences:
   Headless runs confirmed it is harmless.
 - The pane (`/cassandra pane`) is covered by the engine test kit, which mounts it on
   terminal and desktop and presses its buttons by key. The kit cannot send hotkey
-  letters, so `f` and `a`, the arrow and Tab focus walk and Esc were checked by hand in
-  an interactive session under tmux, not by an automated test.
+  letters, so `f` and `a` are untested. Opening focused, the arrow and Tab focus walk,
+  focus events and Esc were checked by hand under tmux on a throwaway prototype pane,
+  not on this one.
 - The engine smoke tests (`mod/smoke.test.ts`) prove routing. One checks that a tool call
   passes through once, unchanged. One checks that a `query` call reaches Cassandra's own
   tool hook and is answered without being passed on. Neither reaches a real store, because
@@ -337,7 +338,7 @@ nothing is forgotten. On builds without mods, `/cassandra` is the plugin's markd
 command, which takes your request in plain words and runs the CLI through Bun. On mod
 builds that command is still reachable as `/cassandra:cassandra`.
 
-`/cassandra pane` opens a pane over the prompt with the project's records: a list, the
+`/cassandra pane` opens a pane beside the conversation with the project's records: a list, the
 selected record in detail, and the same figures as `stats`. The selected row is marked
 with a leading `▸`, and a stale row is dimmed and suffixed `stale`. Move with the arrow
 keys or Tab, and select with Enter or by focusing the row. `f` forgets the selected
@@ -346,8 +347,8 @@ drops everything. Esc closes the pane. The pane needs a mod build and an interac
 session; with no interactive surface, as in `claude -p`, `/cassandra pane` answers "The
 pane needs an interactive session." and exits 1. The shell CLI does not know `pane`.
 
-The status line stays the only unprompted UI. A warning toast was tried and dropped on
-purpose.
+The status line stays the only unprompted UI. A warning toast was left out on purpose:
+it would speak unprompted.
 
 ## What Cassandra does not do
 
