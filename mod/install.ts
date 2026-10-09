@@ -1,11 +1,48 @@
-import { check, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
+import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
+import type { BriefBoundary } from '../src/core/stats.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
 
-/** The slice of `$` the hooks use: the core's, plus the session's identity. */
-export type ModEngine = ModHost & { session: { id(): Promise<string>; cwd(): Promise<string> } }
+/** A user-role row a plugin appends: text blocks the model reads, in the named loop (main when absent). */
+export interface AppendArgs {
+  message: { type: 'user'; content: Array<{ type: 'text'; text: string }> }
+  agentId?: string
+}
+
+/** The slice of `$` the hooks use: the core's, plus the session's identity and its append. */
+export type ModEngine = ModHost & {
+  session: { id(): Promise<string>; cwd(): Promise<string>; append(args: AppendArgs): Promise<unknown> }
+}
+
+/** A `session.append` input: one row a loop of the session keeps. */
+export interface AppendEvent {
+  message: unknown
+  door: string
+  origin: { kind: string; name?: string; [key: string]: unknown }
+  uuid: string
+  agentId?: string
+}
+
+/** An `agent.spawn` input, as far as the mod reads it. */
+export interface SpawnEvent {
+  subagentType: string
+  [key: string]: unknown
+}
+
+/** An `agent.spawn` result: the new loop's id, or the refusal. */
+export interface SpawnResult {
+  agentId?: string
+  deny?: string
+  [key: string]: unknown
+}
+
+/** A note owed to a loop: which boundary it crossed, and how many appends were refused. */
+export interface Owed {
+  boundary: BriefBoundary
+  attempts: number
+}
 
 /** A `tool.call` input: the tool, the engine's own keys, and the tool's arguments beside them. */
 export interface ToolCallEvent {
@@ -32,6 +69,8 @@ export interface ModOn {
   (event: 'session.start', hook: ($: ModEngine, e: unknown, next: Next<unknown, unknown>) => Promise<unknown>): unknown
   (event: 'session.end', hook: ($: ModEngine, e: { sessionId: string }, next: Next<{ sessionId: string }, unknown>) => Promise<unknown>): unknown
   (event: 'session.compact', hook: ($: ModEngine, e: { agentId?: string }, next: Next<{ agentId?: string }, { skip?: string }>) => Promise<unknown>): unknown
+  (event: 'session.append', hook: ($: ModEngine, e: AppendEvent, next: Next<AppendEvent, unknown>) => Promise<unknown>): unknown
+  (event: 'agent.spawn', hook: ($: ModEngine, e: SpawnEvent, next: Next<SpawnEvent, SpawnResult>) => Promise<unknown>): unknown
   (event: 'tool.call', matcher: { tool: RegExp }, hook: ($: ModEngine, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>) => Promise<ToolCallOutcome>): unknown
 }
 
@@ -71,6 +110,45 @@ function hostOf($: ModEngine): ModHost {
       },
     },
   }
+}
+
+/** This plugin's name, as the engine stamps it on the rows the plugin appends. */
+const PLUGIN_NAME = 'cassandra'
+
+/** Refused appends after which an owed note is dropped. */
+const MAX_ATTEMPTS = 5
+
+/**
+ * Hand the live failures to a loop whose transcript does not hold them: a new subagent's,
+ * or one just compacted. The note is appended as a row the model reads; the stat is
+ * written only once the append resolves, so an undelivered note leaves no trace. Resolves
+ * to the entry still owed when the append was refused (null when done or dropped), and
+ * never throws. Top-level because it takes `$`: the validator follows `$` nowhere else.
+ */
+async function handOver($: ModEngine, io: Io, owed: Owed, agentId: string | undefined): Promise<Owed | null> {
+  let cwd: string
+  let briefing: Awaited<ReturnType<typeof buildBriefing>>
+  try {
+    cwd = await $.session.cwd()
+    briefing = await buildBriefing(io, cwd)
+    if (!briefing) return null
+  } catch {
+    // A store that cannot be read: the boundary passes without a note.
+    return null
+  }
+  try {
+    await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: briefing.text }] }, agentId })
+  } catch {
+    // A loop not running yet (a subagent registers just after its spawn) or already ended.
+    const attempts = owed.attempts + 1
+    return attempts >= MAX_ATTEMPTS ? null : { boundary: owed.boundary, attempts }
+  }
+  try {
+    await recordBriefing(io, cwd, owed.boundary, briefing)
+  } catch {
+    // Delivered; only the stat is lost.
+  }
+  return null
 }
 
 /** The tool's own arguments, as the classic hook's `tool_input` carries them. */
@@ -113,6 +191,10 @@ export function outcomeOf(r: ToolCallOutcome, aborted: boolean): Outcome {
  */
 export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
   let claimed: { id: string; root: string; at: number } | null = null
+  // Notes owed to a loop ('main' or a subagent's id), handed over at that loop's next row:
+  // a new subagent's loop is not running when its spawn resolves, and a row appended when
+  // a compaction resolves lands before the boundary and is summarised away.
+  const owed = new Map<string, Owed>()
 
   // Claim the session before the call, because the classic PreToolUse hook runs beneath
   // this one and must already see the claim. Lazily, on every call, because a /clear
@@ -148,12 +230,15 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
       // Pruned after a day.
     }
     if (claimed?.id === e.sessionId) claimed = null
+    owed.clear()
     return next(e)
   })
 
   on('session.compact', async ($, e, next) => {
     const compacted = await next(e)
-    if (e.agentId !== undefined || compacted?.skip !== undefined) return compacted
+    if (compacted?.skip !== undefined) return compacted
+    owed.set(e.agentId ?? 'main', { boundary: 'compaction', attempts: 0 })
+    if (e.agentId !== undefined) return compacted
     try {
       const io = wrapIo(modIo(hostOf($)))
       await bumpCompactions(io, await pathsFor(io, await $.session.cwd()), await $.session.id())
@@ -161,6 +246,32 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
       // A missed count only blurs one boundary attribution.
     }
     return compacted
+  })
+
+  on('agent.spawn', async (_$, e, next) => {
+    const spawned = await next(e)
+    // A fork inherits the transcript and already sees the failures.
+    if (e.subagentType !== 'fork' && spawned?.deny === undefined && spawned?.agentId) {
+      owed.set(spawned.agentId, { boundary: 'subagent', attempts: 0 })
+    }
+    return spawned
+  })
+
+  on('session.append', async ($, e, next) => {
+    const stored = await next(e)
+    try {
+      const loop = e.agentId ?? 'main'
+      const entry = owed.get(loop)
+      // The compaction's own rows come before its boundary; a row of ours is our note.
+      if (!entry || e.door === 'compaction' || (e.origin?.kind === 'plugin' && e.origin.name === PLUGIN_NAME)) return stored
+      // Deleted first, so the note's own append never hands it over again.
+      owed.delete(loop)
+      const again = await handOver($, wrapIo(modIo(hostOf($))), entry, e.agentId)
+      if (again) owed.set(loop, again)
+    } catch {
+      // The row is stored; only the note is lost.
+    }
+    return stored
   })
 
   on('tool.call', { tool: TRACKED }, async ($, e, next) => {
