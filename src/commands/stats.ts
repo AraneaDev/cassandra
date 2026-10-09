@@ -1,4 +1,4 @@
-import { readStats, type Boundary } from '../core/stats.ts'
+import { readStats, warningRates, type Boundary } from '../core/stats.ts'
 import { readRecord } from '../core/record.ts'
 import type { Io } from '../core/io.ts'
 import type { Paths } from '../core/paths.ts'
@@ -27,10 +27,7 @@ export async function stats(io: Io, paths: Paths): Promise<CommandResult> {
   }
 
   if (warned.length > 0) {
-    const falsePositives = events.filter((e) => e.kind === 'false_positive').length
-    const confirmed = events.filter((e) => e.kind === 'confirmed').length
-    const resolved = falsePositives + confirmed
-    const fpRate = resolved === 0 ? 0 : (falsePositives / resolved) * 100
+    const { falsePositives, confirmed, fpRate } = warningRates(events)
 
     lines.push(`${warned.length} warnings issued\n`)
     lines.push(`  confirmed        ${confirmed}  (failed again, warning was right)`)

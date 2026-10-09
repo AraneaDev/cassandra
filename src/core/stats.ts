@@ -93,3 +93,30 @@ export function attributeBoundary(
   if (current.compactions > recorded.compactions) return 'compaction'
   return 'same_context'
 }
+
+/** The two numbers that say whether warnings earn their place, as percentages. */
+export interface WarningRates {
+  warned: number
+  confirmed: number
+  falsePositives: number
+  /** Share of resolved warnings that were false positives; 0 when none resolved. */
+  fpRate: number
+  /** Share of warnings the model could already see in its own transcript; 0 when none. */
+  sameContextRate: number
+}
+
+/** Count the warning outcomes in the log. Shared by `cassandra stats` and the pane. */
+export function warningRates(events: StatEvent[]): WarningRates {
+  const warned = events.filter((e) => e.kind === 'warned')
+  const falsePositives = events.filter((e) => e.kind === 'false_positive').length
+  const confirmed = events.filter((e) => e.kind === 'confirmed').length
+  const resolved = falsePositives + confirmed
+  const sameContext = warned.filter((e) => e.boundary === 'same_context').length
+  return {
+    warned: warned.length,
+    confirmed,
+    falsePositives,
+    fpRate: resolved === 0 ? 0 : (falsePositives / resolved) * 100,
+    sameContextRate: warned.length === 0 ? 0 : (sameContext / warned.length) * 100,
+  }
+}

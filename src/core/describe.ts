@@ -32,3 +32,8 @@ export function reason(r: FailureRecord): string {
 export function scopeOf(kind: Exclude<StateKind, 'none'>): string {
   return kind === 'git' ? 'this repository' : 'this directory tree'
 }
+
+/** Text fit for one display line: control characters and runs of whitespace become one space. */
+export function oneLine(text: string): string {
+  return text.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim()
+}
