@@ -28,13 +28,29 @@ function listed(io: Io, dir: string, listings: Listings): Promise<Entry[] | null
   return listing
 }
 
+/** What a dirty path held: the hash of its content and its "<size>:<mtime>" stat. */
+interface Seen {
+  hash: string
+  stat: string
+}
+
+/** What a failure record stored for a path, if both halves are strings. */
+function known(hashes: unknown, stats: unknown, path: string): Seen | null {
+  const own = (m: unknown): unknown => (m && typeof m === 'object' && Object.hasOwn(m, path) ? (m as Record<string, unknown>)[path] : undefined)
+  const hash = own(hashes)
+  const stat = own(stats)
+  return typeof hash === 'string' && typeof stat === 'string' ? { hash, stat } : null
+}
+
 /**
- * The first 16 hex characters of a repo-relative path's content hash, or null when it is
- * not a regular file reached through real directories (missing, a directory, a link or
- * under one, unlistable or unreadable) or its text is longer than 256K characters. One
- * leading byte order mark is dropped first, since not every reader keeps it. Never throws.
+ * A repo-relative path's stat and the first 16 hex characters of its content hash, or null
+ * when it is not a regular file reached through real directories (missing, a directory, a
+ * link or under one, unlistable or unreadable) or its text is longer than 256K characters.
+ * One leading byte order mark is dropped first, since not every reader keeps it. The stat
+ * is the size and whole-millisecond mtime from the directory listing; when `before` holds
+ * that same stat its hash is returned without reading the file. Never throws.
  */
-async function contentHash(io: Io, root: string, path: string, listings: Listings): Promise<string | null> {
+async function contentHash(io: Io, root: string, path: string, listings: Listings, before: Seen | null = null): Promise<Seen | null> {
   try {
     if (!path || path.endsWith('/')) return null
     const full = join(root, path)
@@ -52,26 +68,36 @@ async function contentHash(io: Io, root: string, path: string, listings: Listing
     const entry = (await listed(io, dir, listings))?.find((e) => e.name === parts.at(-1))
     // UTF-8 spends at most 3 bytes per UTF-16 unit, so a file this large cannot be short enough.
     if (entry?.kind !== 'file' || entry.size > HASHED_TEXT_MAX * 3) return null
+    const stat = `${entry.size}:${Math.trunc(entry.mtimeMs)}`
+    if (before?.stat === stat) return { hash: before.hash, stat }
     const raw = await io.readText(full)
     if (raw === null) return null
     const text = raw.startsWith('\uFEFF') ? raw.slice(1) : raw
     if (text.length > HASHED_TEXT_MAX) return null
-    return (await io.sha256(text)).slice(0, 16)
+    return { hash: (await io.sha256(text)).slice(0, 16), stat }
   } catch {
     return null
   }
 }
 
+/** The dirty files' content hashes and the stats they were taken at, by path. */
+export interface DirtyState {
+  hashes: Record<string, string>
+  stats: Record<string, string>
+}
+
 /**
- * Content hashes of the first 50 dirty paths, in git's order, for a failure record. A path
- * that cannot be hashed is left out silently. Reads files only; writes nothing to git.
+ * Content hashes of the first 50 dirty paths, in git's order, for a failure record, with the
+ * stat each was taken at. A path that cannot be hashed is left out silently. A path whose
+ * stat equals the one in `previous` (an earlier record of the same call) keeps its stored
+ * hash unread. Reads files only; writes nothing to git.
  */
-export async function dirtyHashes(io: Io, root: string, dirty: readonly string[]): Promise<Record<string, string>> {
-  const out: Record<string, string> = {}
+export async function dirtyHashes(io: Io, root: string, dirty: readonly string[], previous?: FailureRecord | null): Promise<DirtyState> {
+  const out: DirtyState = { hashes: {}, stats: {} }
   const listings: Listings = new Map()
   for (const path of dirty.slice(0, HASHED_MAX)) {
-    const h = await contentHash(io, root, path, listings)
-    if (h !== null) out[path] = h
+    const seen = await contentHash(io, root, path, listings, known(previous?.dirtyHashes, previous?.dirtyStats, path))
+    if (seen) { out.hashes[path] = seen.hash; out.stats[path] = seen.stat }
   }
   return out
 }
@@ -125,7 +151,9 @@ export async function computeFix(io: Io, cwd: string, record: FailureRecord): Pr
       for (const f of before) {
         const was = Object.hasOwn(hashes, f) ? hashes[f] : undefined
         if (typeof was !== 'string' || !after.has(f)) continue
-        if ((await contentHash(io, root, f, listings)) !== was) changed.add(f)
+        // A stat equal to the stored one is an untouched file: its hash is not read again.
+        const now = await contentHash(io, root, f, listings, known(hashes, record.dirtyStats, f))
+        if (now?.hash !== was) changed.add(f)
       }
     }
     const all = [...changed].map(cleanName).filter(Boolean).sort()
