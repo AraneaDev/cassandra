@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.21](https://github.com/AraneaDev/cassandra/compare/v0.0.20...v0.0.21) (2026-10-09)
+
+
+### Features
+
+* add the /cassandra pane ([#47](https://github.com/AraneaDev/cassandra/issues/47)) ([29367e0](https://github.com/AraneaDev/cassandra/commit/29367e07344d4c13b2a0b3229c8480087218c18f))
+
 ## [0.0.20](https://github.com/AraneaDev/cassandra/compare/v0.0.19...v0.0.20) (2026-10-09)
 
 
