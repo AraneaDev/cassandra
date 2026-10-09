@@ -1,8 +1,9 @@
-import { check, settle, type Call, type Outcome } from './core/engine.ts'
+import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome } from './core/engine.ts'
 import type { Io } from './core/io.ts'
 import { pathsFor } from './core/paths.ts'
 import { markPending, takePending } from './core/pending.ts'
 import { bumpCompactions, isModSession } from './core/session.ts'
+import type { BriefBoundary } from './core/stats.ts'
 import type { HookPayload } from './core/types.ts'
 import { nodeIo } from './io/node.ts'
 
@@ -30,6 +31,15 @@ async function onOutcome(io: Io, p: HookPayload, outcome: Outcome): Promise<null
   return null
 }
 
+/** A note for a boundary where the transcript is gone, as the classic hook's additional context. */
+async function onBoundary(io: Io, p: HookPayload, event: 'SubagentStart' | 'SessionStart', boundary: BriefBoundary): Promise<string | null> {
+  if (!p.cwd) return null
+  const briefing = await buildBriefing(io, p.cwd)
+  if (!briefing) return null
+  await recordBriefing(io, p.cwd, boundary, briefing)
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: briefing.text } })
+}
+
 /**
  * Route one hook payload. Returns the JSON line to print, or null for silence.
  * Separated from stdin handling so every branch is directly testable.
@@ -52,6 +62,12 @@ export async function handle(payload: HookPayload, io: Io = nodeIo): Promise<str
     case 'PostCompact':
       if (payload.cwd) await bumpCompactions(io, await pathsFor(io, payload.cwd), payload.session_id ?? '')
       return null
+    case 'SubagentStart':
+      // A fork inherits the transcript and already sees the failures.
+      if (payload.agent_type === 'fork') return null
+      return onBoundary(io, payload, 'SubagentStart', 'subagent')
+    case 'SessionStart':
+      return payload.source === 'compact' ? onBoundary(io, payload, 'SessionStart', 'compaction') : null
     default: return null
   }
 }

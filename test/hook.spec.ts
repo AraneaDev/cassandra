@@ -337,3 +337,46 @@ test('run never throws: garbage input is silence, a real payload is handled', as
   await handle(fail('bun test'))
   expect(await run(JSON.stringify(pre('bun test')))).not.toBeNull()
 })
+
+const subagentStart = (agentType = 'general-purpose') => ({
+  hook_event_name: 'SubagentStart', session_id: 's1', cwd, agent_id: 'sub-1', agent_type: agentType,
+})
+const compacted = () => ({ hook_event_name: 'SessionStart', session_id: 's1', cwd, source: 'compact' })
+
+test('a subagent start returns the live failures as additional context', async () => {
+  await handle(fail('bun test'))
+  const out = JSON.parse((await handle(subagentStart()))!)
+  expect(out.hookSpecificOutput.hookEventName).toBe('SubagentStart')
+  expect(out.hookSpecificOutput.additionalContext).toContain('`bun test` failed once')
+  expect((await readStats(nodeIo, await pathsFor(nodeIo, cwd))).at(-1)).toMatchObject({ kind: 'briefed', boundary: 'subagent' })
+})
+
+test('a fork subagent start is silent', async () => {
+  await handle(fail('bun test'))
+  expect(await handle(subagentStart('fork'))).toBeNull()
+})
+
+test('a session start after a compaction returns the live failures; any other source is silent', async () => {
+  await handle(fail('bun test'))
+  expect(await handle({ ...compacted(), source: 'startup' })).toBeNull()
+  const out = JSON.parse((await handle(compacted()))!)
+  expect(out.hookSpecificOutput).toMatchObject({ hookEventName: 'SessionStart' })
+  expect(out.hookSpecificOutput.additionalContext).toContain('cassandra: these calls failed')
+})
+
+test('no live failures: both boundaries are silent', async () => {
+  expect(await handle(subagentStart())).toBeNull()
+  expect(await handle(compacted())).toBeNull()
+})
+
+test('a boundary payload without a cwd is silent', async () => {
+  expect(await handle({ hook_event_name: 'SubagentStart', session_id: 's1' })).toBeNull()
+})
+
+test('a session the mod claimed is never briefed by the binary (Review Focus 4)', async () => {
+  await handle(fail('bun test'))
+  const { markModSession } = await import('../src/core/session.ts')
+  await markModSession(nodeIo, 's1')
+  expect(await handle(subagentStart())).toBeNull()
+  expect(await handle(compacted())).toBeNull()
+})
