@@ -1,5 +1,5 @@
 import { deleteRecord, listRecords } from '../core/record.ts'
-import { removeAllFixes } from '../core/fixes.ts'
+import { removeAllFixes, removeFix } from '../core/fixes.ts'
 import type { Io } from '../core/io.ts'
 import { type Paths } from '../core/paths.ts'
 import { join } from '../core/path.ts'
@@ -36,6 +36,10 @@ export async function forget(io: Io, paths: Paths, target: string | null, all: b
     return { code: 1, text: lines.join('\n') }
   }
   await deleteRecord(io, paths, r.hash)
+  if (!(await removeFix(io, paths, r.hash))) {
+    lines.push(`Forgot ${r.hash}. Could not remove its fix note; check the permissions under ${join(paths.root, 'fixes')}.`)
+    return { code: 1, text: lines.join('\n') }
+  }
   lines.push(`Forgot ${r.hash}.`)
   return { code: 0, text: lines.join('\n') }
 }

@@ -25,8 +25,14 @@ export const PANE_CHROME_LINES = CHROME.length
 /** The lines of the detail block: what a short body drops first. */
 const DETAIL_LINES = (['detail rule', 'reason', 'probe', 'fix'] as const satisfies ReadonlyArray<typeof CHROME[number]>).length
 
+/** The stats line: what the shortest body drops after the detail block. */
+const STATS_LINES = (['stats'] as const satisfies ReadonlyArray<typeof CHROME[number]>).length
+
+/** Rows the list always keeps. */
+const MIN_ROWS = 1
+
 /** The fewest lines that draw the pane whole: the chrome without the detail block and the stats line, plus one row. */
-export const PANE_MIN_LINES = PANE_CHROME_LINES - DETAIL_LINES - 1 + 1
+export const PANE_MIN_LINES = PANE_CHROME_LINES - DETAIL_LINES - STATS_LINES + MIN_ROWS
 
 /** How the pane fits its body: the rows the list gets, whether the detail and the stats show, and whether the body is too short to draw the pane at all. */
 export interface PaneLayout { maxRows: number; detail: boolean; stats: boolean; tooShort: boolean }

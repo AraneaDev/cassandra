@@ -958,17 +958,6 @@ test('a forget that fails sets the notice', async () => {
   expect(state('notice')).toBeNull()
 })
 
-test('a forget-all whose fix notes cannot all be removed says it could not forget every record', async () => {
-  await seedFailure()
-  const paths = await pathsFor(io(), cwd)
-  const { writeFix } = await import('../src/core/fixes.ts')
-  await writeFix(io(), paths, (await remembered())[0]!.hash, { kind: 'elsewhere', at: '2026-10-09T00:00:00Z', files: [], more: 0 } as never)
-  await render()
-  wrap = (i) => ({ ...i, remove: async (p) => { if (p.includes('fixes')) throw new Error('boom'); return i.remove(p) } })
-  await press('forget-all-confirm')
-  expect(state('notice')).toBe('Could not forget every record.')
-})
-
 test('a press whose state cannot be written is swallowed and still passes on', async () => {
   await seedFailure()
   opts.stateSetRejects = true
@@ -1242,7 +1231,7 @@ test('a counted record deleted elsewhere before the confirm: the rest are forgot
   expect(state('notice')).toBeNull()
 })
 
-test('a forget that fails gives the could-not-forget notice and still forgets the others', async () => {
+test('a fix note that cannot be removed gives the could-not-forget notice and still forgets the records', async () => {
   await seedFailure('bun test')
   await seedFailure('npm test')
   const { writeFix } = await import('../src/core/fixes.ts')
@@ -1256,6 +1245,27 @@ test('a forget that fails gives the could-not-forget notice and still forgets th
   expect(state('notice')).toBe('Could not forget every record.')
   expect(state('confirmAll')).toBe(false)
   expect(await remembered()).toHaveLength(0)
+})
+
+test('a record delete that fails quietly gives the could-not-forget notice', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  await press('forget-all')
+  await render()
+  wrap = (i) => ({ ...i, remove: async (p) => { if (p.includes('records')) throw new Error('boom'); return i.remove(p) } })
+  await press('forget-all-confirm')
+  wrap = (i) => i
+  expect(state('notice')).toBe('Could not forget every record.')
+  expect(await remembered()).toHaveLength(2)
+})
+
+test('a body under six lines draws the single too-short line', async () => {
+  await seedFailure()
+  for (const bodyRows of [1, 3, 5]) {
+    const drawn = await sized(bodyRows)
+    expect(drawn.filter((n) => n.type === 'Text').map(textOf)).toEqual(['Pane too short; make the window taller.'])
+    expect(drawn.some((n) => n.type === 'Button')).toBe(false)
+  }
 })
 
 test('a confirm on a surface that drew nothing deletes nothing and redraws', async () => {

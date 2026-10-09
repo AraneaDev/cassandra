@@ -10,6 +10,8 @@ import { runCommand, USAGE } from '../src/commands/run.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { pathsFor } from '../src/core/paths.ts'
 import { upsertRecord } from '../src/core/record.ts'
+import { readFix, writeFix } from '../src/core/fixes.ts'
+import { forget } from '../src/commands/forget.ts'
 
 let tmp: string; let cwd: string
 beforeEach(() => { tmp = mkdtempSync(join(tmpdir(), 'cass-cmd-')); process.env.CASSANDRA_HOME = join(tmp, 'home'); cwd = join(tmp, 'p'); mkdirSync(cwd) })
@@ -63,4 +65,18 @@ test('list and why name the package of a monorepo record', async () => {
   expect(listed.text).toContain('bun test (in packages/a)')
   const hash = listed.text.match(/ ([0-9a-f]{8}) /)![1]!
   expect((await why(nodeIo, paths, hash)).text.startsWith('bun test (in packages/a)\n')).toBe(true)
+})
+
+test('forget <hash> drops the record and its fix note; a note that cannot be removed gives code 1', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  const note = { kind: 'elsewhere', at: '2026-10-09T00:00:00Z', files: [], more: 0 } as never
+  await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', seed)
+  await writeFix(nodeIo, paths, 'aa11bb22cc33dd44', note)
+  expect((await runCommand(nodeIo, cwd, ['forget', 'aa11bb22'])).code).toBe(0)
+  expect(await readFix(nodeIo, paths, 'aa11bb22cc33dd44')).toBeNull()
+  await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', seed)
+  await writeFix(nodeIo, paths, 'aa11bb22cc33dd44', note)
+  const r = await forget({ ...nodeIo, remove: async (p) => { if (p.includes('fixes')) throw new Error('boom'); return nodeIo.remove(p) } }, paths, 'aa11bb22cc33dd44', false)
+  expect(r.code).toBe(1)
+  expect(r.text).toContain('Could not remove its fix note')
 })

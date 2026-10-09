@@ -178,9 +178,12 @@ describe('drawPane', () => {
       expect(all.filter((n) => n.type === 'Text').map(text)).toEqual(['Pane too short; make the window taller.'])
       expect(all.some((n) => n.type === 'Button')).toBe(false)
     }
-    const six = walk(drawPane(el, base, 100, keys.paneLayout(6)))
-    expect(six.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:'))).toHaveLength(2)
+    const oneRow: PaneModel = { ...base, rows: [base.rows[0]!], more: 1, total: 3, notice: 'n' }
+    const six = walk(drawPane(el, oneRow, 100, keys.paneLayout(6)))
+    expect(six.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:'))).toHaveLength(1)
     expect(six.some((n) => n.props.key === 'action-row')).toBe(true)
+    const sixLines = six.filter((n) => n.type === 'Text').length + six.filter((n) => n.props.key === 'action-row').length + 1
+    expect(sixLines).toBe(6)
     // The line is clipped to the width, and an error still comes first.
     expect(walk(drawPane(el, base, 10, keys.paneLayout(3))).filter((n) => n.type === 'Text').map(text)[0]!.length).toBe(10)
     expect(walk(drawPane(el, { ...base, error: 'bad' }, 100, keys.paneLayout(3))).filter((n) => n.type === 'Text').map(text)).toEqual(['bad'])

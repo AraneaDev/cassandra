@@ -2,7 +2,6 @@ import { forget } from '../src/commands/forget.ts'
 import { runCommand, type CommandResult } from '../src/commands/run.ts'
 import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
-import { removeFix } from '../src/core/fixes.ts'
 import { paneModel, unreadableModel, type PaneModel, type PaneView } from '../src/core/pane.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { statusText } from '../src/core/status.ts'
@@ -460,10 +459,17 @@ async function confirmForgetAll($: ModEngine, io: Io, cwd: string, drawn: DrawnP
   const paths = await pathsFor(io, cwd)
   for (const hash of targets) {
     try {
-      if ((await forget(io, paths, hash, false)).code !== 0 || !(await removeFix(io, paths, hash))) failed = true
+      if ((await forget(io, paths, hash, false)).code !== 0) failed = true
     } catch {
       failed = true
     }
+  }
+  // A delete that fails quietly leaves the record behind: count it as a failure.
+  try {
+    const left = new Set((await listRecords(io, paths)).map((r) => r.hash))
+    if (targets.some((h) => left.has(h))) failed = true
+  } catch {
+    failed = true
   }
   const n = targets.length
   const notice = failed
