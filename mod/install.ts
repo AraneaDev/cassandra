@@ -274,10 +274,11 @@ const REV = { plugin: 'cassandra', key: 'rev' } as const
 /** The outcome of the last action, when it failed. */
 const NOTICE = { plugin: 'cassandra', key: 'notice' } as const
 
-/** What one surface last drew: the row it marked selected, and every row it showed. */
+/** What one surface last drew: the row it marked selected, every row it showed, and the record count it gave. */
 export interface DrawnPane {
   selected: string | null
   hashes: ReadonlySet<string>
+  total: number
 }
 
 /** What each surface last drew, by surface. Forget acts only on rows the person saw. */
@@ -367,7 +368,7 @@ async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRende
       model = unreadableModel()
     }
     // Not state: a render may not write it, and a press only needs this session's own drawing.
-    drawn.set(e.surface ?? '', { selected: model.selected, hashes: new Set(model.rows.map((r) => r.hash)) })
+    drawn.set(e.surface ?? '', { selected: model.selected, hashes: new Set(model.rows.map((r) => r.hash)), total: model.total })
     return drawPane($.ui.resolve(e), model, columns)
   } catch {
     return next(e)
@@ -425,6 +426,46 @@ async function forgetTarget($: ModEngine, io: Io, cwd: string, drawn: DrawnPane 
   return stored.some((r) => r.hash === target) ? target : null
 }
 
+/** The notice of a confirm that could not forget every record. */
+const FORGET_ALL_FAILED = 'Could not forget every record.'
+
+/** The notice of a confirm whose count no longer matches the store's: `count` records now. */
+function recountNotice(count: number): string {
+  return `The records changed; confirm again to forget all ${count} ${count === 1 ? 'record' : 'records'}.`
+}
+
+/**
+ * Forget every record, but only the count this surface showed on its confirm button.
+ * When the store holds another count, or nothing was drawn here, nothing is deleted: the
+ * confirmation stays, a notice gives the new count, and the pane redraws. A store that
+ * cannot be counted deletes nothing either, and says so. Rejects on a state failure.
+ */
+async function confirmForgetAll($: ModEngine, io: Io, cwd: string, drawn: DrawnPane | undefined): Promise<void> {
+  let count: number
+  try {
+    count = (await listRecords(io, await pathsFor(io, cwd))).length
+  } catch {
+    await $.state.set(NOTICE, FORGET_ALL_FAILED)
+    await bumpRev($)
+    return
+  }
+  if (count === 0) {
+    // Nothing left to confirm: drop the row and redraw the store as it is.
+    await $.state.set(CONFIRM_ALL, false)
+    await $.state.set(NOTICE, null)
+    await bumpRev($)
+    return
+  }
+  if (drawn?.total !== count) {
+    await $.state.set(NOTICE, recountNotice(count))
+    await bumpRev($)
+    return
+  }
+  // The person's own gesture in the pane, so the guard on forget --all does not apply.
+  await $.state.set(CONFIRM_ALL, false)
+  await paneForget($, io, async () => forget(io, await pathsFor(io, cwd), null, true), FORGET_ALL_FAILED)
+}
+
 async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: DrawnBySurface): Promise<void> {
   try {
     const io = wrapIo(modIo(hostOf($)))
@@ -447,9 +488,7 @@ async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, 
         await $.state.set(CONFIRM_ALL, false)
         return
       case KEY_CONFIRM:
-        // The person's own gesture in the pane, so the guard on forget --all does not apply.
-        await $.state.set(CONFIRM_ALL, false)
-        await paneForget($, io, async () => forget(io, await pathsFor(io, cwd), null, true), 'Could not forget every record.')
+        await confirmForgetAll($, io, cwd, drawn.get(e.surface ?? ''))
         return
       default:
         await selectRow($, wrapIo, e.element).catch(() => undefined)
