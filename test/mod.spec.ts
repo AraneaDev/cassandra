@@ -315,10 +315,10 @@ test('a refused append leaves no stat and is retried on the next row of that loo
   await seedFailure()
   await spawn('general-purpose', { agentId: 'sub-1' })
   opts.appendRejects = true
-  await row('sub-1')
+  await row('sub-1', 'response')
   expect(await briefed()).toEqual([])
   opts.appendRejects = false
-  await row('sub-1')
+  await row('sub-1', 'response')
   expect(opts.appended).toEqual([{ agentId: 'sub-1', text: expect.stringContaining('cassandra:') }])
   expect(await briefed()).toHaveLength(1)
 })
@@ -327,9 +327,9 @@ test('after five refused appends the note is dropped', async () => {
   await seedFailure()
   await spawn('general-purpose', { agentId: 'sub-1' })
   opts.appendRejects = true
-  for (let i = 0; i < 5; i++) await row('sub-1')
+  for (let i = 0; i < 5; i++) await row('sub-1', 'response')
   opts.appendRejects = false
-  await row('sub-1')
+  await row('sub-1', 'response')
   expect(opts.appended ?? []).toEqual([])
   expect(await briefed()).toEqual([])
 })
@@ -384,4 +384,20 @@ test('a core error during the hand-over is swallowed and the row passes through'
   wrap = () => { throw new Error('boom') }
   await row('sub-1')
   expect(opts.appended ?? []).toEqual([])
+})
+
+test("a subagent's opening rows neither deliver its note nor cost an attempt; its first response row does", async () => {
+  await seedFailure()
+  await spawn('general-purpose', { agentId: 'sub-1' })
+  opts.appendRejects = true
+  for (let i = 0; i < 6; i++) {
+    await row('sub-1', 'prompt', { kind: 'sdk' })
+    await row('sub-1', 'attachment', { kind: 'engine' })
+  }
+  opts.appendRejects = false
+  await row('sub-1', 'prompt', { kind: 'sdk' })
+  await row('sub-1', 'attachment', { kind: 'engine' })
+  expect(opts.appended ?? []).toEqual([])
+  await row('sub-1', 'response')
+  expect(opts.appended).toEqual([{ agentId: 'sub-1', text: expect.stringContaining('cassandra:') }])
 })

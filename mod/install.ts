@@ -264,6 +264,10 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
       const entry = owed.get(loop)
       // The compaction's own rows come before its boundary; a row of ours is our note.
       if (!entry || e.door === 'compaction' || (e.origin?.kind === 'plugin' && e.origin.name === PLUGIN_NAME)) return stored
+      // A subagent's opening rows (its prompt, its attachments) arrive before its loop is
+      // registered, where the append is refused; its own model output means it is running.
+      // Those rows are passed over without costing an attempt.
+      if (entry.boundary === 'subagent' && e.door !== 'response') return stored
       // Deleted first, so the note's own append never hands it over again.
       owed.delete(loop)
       const again = await handOver($, wrapIo(modIo(hostOf($))), entry, e.agentId)
