@@ -14,6 +14,7 @@ const NOW = '2026-01-01T00:00:00.000Z'
 type Step =
   | { call: string; tool?: string; input?: Record<string, unknown>; ends: 'fail' | 'ok' | 'deny' | 'interrupt'; agentId?: string; sessionId?: string }
   | { compact: true }
+  | { spawn: string }
   | { touch: string }
 
 const SCRIPT: Step[] = [
@@ -29,6 +30,9 @@ const SCRIPT: Step[] = [
   { call: 'make', ends: 'ok' },
   { touch: 'b.txt' },
   { call: 'bun test', ends: 'fail' },
+  { spawn: 'general-purpose' },
+  { spawn: 'fork' },
+  { compact: true },
 ]
 
 const scrub = (s: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.replace(/"stateStamp":"[0-9a-f]{16}"/g, '"stateStamp":"S"')]))
@@ -40,6 +44,8 @@ function expectNonTrivial(said: string[], store: Record<string, string>): void {
   expect(keys.some((k) => k.startsWith('P/records/'))).toBe(true)
   expect(keys).toContain('P/stats.jsonl')
   expect(said.some((s) => s.startsWith('cassandra: '))).toBe(true)
+  expect(said.some((s) => s.startsWith('cassandra: these calls failed earlier in this project'))).toBe(true)
+  expect(store['P/stats.jsonl']).toContain('"kind":"briefed"')
 }
 
 let tmp: string
@@ -91,7 +97,17 @@ async function runBinary(cwd: string): Promise<string[]> {
   let n = 0
   for (const step of SCRIPT) {
     if ('touch' in step) { writeFileSync(join(cwd, step.touch), 'x'); continue }
-    if ('compact' in step) { await handle({ hook_event_name: 'PostCompact', session_id: 's1', cwd }, io); continue }
+    if ('compact' in step) {
+      await handle({ hook_event_name: 'PostCompact', session_id: 's1', cwd }, io)
+      const note = await handle({ hook_event_name: 'SessionStart', session_id: 's1', cwd, source: 'compact' }, io)
+      said.push(note ? JSON.parse(note).hookSpecificOutput.additionalContext : '')
+      continue
+    }
+    if ('spawn' in step) {
+      const note = await handle({ hook_event_name: 'SubagentStart', session_id: 's1', cwd, agent_id: 'sub-1', agent_type: step.spawn }, io)
+      said.push(note ? JSON.parse(note).hookSpecificOutput.additionalContext : '')
+      continue
+    }
     const base = { session_id: step.sessionId ?? 's1', cwd, tool_name: step.tool ?? 'Bash', tool_input: step.input ?? { command: step.call }, tool_use_id: `t${(n += 1)}`, agent_id: step.agentId }
     const pre = await handle({ ...base, hook_event_name: 'PreToolUse' }, io)
     said.push(step.ends === 'deny' ? DENY : pre ? JSON.parse(pre).hookSpecificOutput.additionalContext : '')
@@ -104,7 +120,7 @@ async function runBinary(cwd: string): Promise<string[]> {
 }
 
 async function runMod(cwd: string): Promise<string[]> {
-  const opts = { sessionId: 's1', cwd, env: { CASSANDRA_HOME: join(tmp, 'home-mod'), HOME: tmp } }
+  const opts: { sessionId: string; cwd: string; env: Record<string, string>; appended?: Array<{ agentId?: string; text: string }> } = { sessionId: 's1', cwd, env: { CASSANDRA_HOME: join(tmp, 'home-mod'), HOME: tmp } }
   const host = nodeHost(opts) as ModEngine
   const hooks = new Map<string, (...a: unknown[]) => Promise<unknown>>()
   install(((event: string, a: unknown, b?: unknown) => { hooks.set(event, (b ?? a) as never) }) as never, (io) => ({ ...io, now: () => NOW }))
@@ -112,7 +128,19 @@ async function runMod(cwd: string): Promise<string[]> {
   let n = 0
   for (const step of SCRIPT) {
     if ('touch' in step) { writeFileSync(join(cwd, step.touch), 'x'); continue }
-    if ('compact' in step) { await hooks.get('session.compact')!(host, {}, async () => ({ messages: [] })); continue }
+    if ('compact' in step || 'spawn' in step) {
+      const before = opts.appended?.length ?? 0
+      const flush = (row: Record<string, unknown>) => hooks.get('session.append')!(host, { ...row, uuid: `u-${(n += 1)}` }, async () => ({}))
+      if ('compact' in step) {
+        await hooks.get('session.compact')!(host, {}, async () => ({ messages: [] }))
+        await flush({ door: 'notice', origin: { kind: 'engine' }, message: { type: 'system', content: [] } })
+      } else {
+        await hooks.get('agent.spawn')!(host, { subagentType: step.spawn }, async () => ({ model: 'm', agentId: 'sub-1' }))
+        await flush({ door: 'response', origin: { kind: 'model' }, agentId: 'sub-1', message: { type: 'assistant', content: [] } })
+      }
+      said.push((opts.appended ?? []).slice(before).map((a) => a.text).join('\n'))
+      continue
+    }
     opts.sessionId = step.sessionId ?? 's1'
     const answer: ToolCallOutcome = step.ends === 'ok' ? { result: {}, text: '' }
       : step.ends === 'deny' ? { deny: 'policy' }
