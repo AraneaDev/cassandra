@@ -251,3 +251,27 @@ test('a warning without a fix note has no fixNote on its stat', async () => {
   const stats = await readStats(io, await pathsFor(io, cwd))
   expect('fixNote' in stats[0]!).toBe(false)
 })
+
+describe('settle reports whether the store changed', () => {
+  test('true for a recorded failure', async () => {
+    expect(await settle(io, call('bun test'), { kind: 'failure', reason: 'x' }, null)).toBe(true)
+  })
+
+  test('false for an interrupt and for not_run', async () => {
+    expect(await settle(io, call('bun test'), { kind: 'interrupt' }, null)).toBe(false)
+    expect(await settle(io, call('bun test'), { kind: 'not_run' }, null)).toBe(false)
+  })
+
+  test('false for a success with no record', async () => {
+    expect(await settle(io, call('bun test'), { kind: 'success' }, null)).toBe(false)
+  })
+
+  test('false for a failure whose state stamp is none', async () => {
+    expect(await settle(io, call('bun test', { cwd: '/nowhere/at/all' }), { kind: 'failure', reason: 'x' }, null)).toBe(false)
+  })
+
+  test('true for a success that forgot a record', async () => {
+    await settle(io, call('bun test'), { kind: 'failure', reason: 'x' }, null)
+    expect(await settle(io, call('bun test'), { kind: 'success' }, null)).toBe(true)
+  })
+})
