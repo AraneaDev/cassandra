@@ -933,6 +933,7 @@ test('forget-all-confirm forgets every record and the fix notes', async () => {
   const { readFix: before } = await import('../src/core/fixes.ts')
   expect(await before(io(), paths, fixed)).not.toBeNull()
   await press('forget-all')
+  await render()
   opts.statuses = []
   const rev = Number(state('rev') ?? 0)
   await press('forget-all-confirm')
@@ -962,6 +963,7 @@ test('a forget-all whose fix notes cannot all be removed sets the notice to its 
   const paths = await pathsFor(io(), cwd)
   const { writeFix } = await import('../src/core/fixes.ts')
   await writeFix(io(), paths, (await remembered())[0]!.hash, { kind: 'elsewhere', at: '2026-10-09T00:00:00Z', files: [], more: 0 } as never)
+  await render()
   wrap = (i) => ({ ...i, remove: async (p) => { if (p.includes('fixes')) throw new Error('boom'); return i.remove(p) } })
   await press('forget-all-confirm')
   expect(String(state('notice'))).toContain('Could not remove some fix notes')
@@ -1146,4 +1148,154 @@ test('a press before any draw forgets nothing and asks for a redraw', async () =
   expect(Number(state('rev'))).toBe(rev + 1)
   await press('forget', 'desktop')
   expect(await remembered()).toHaveLength(1)
+})
+
+test('a forget that finds nothing to forget clears an old notice as it asks for a redraw', async () => {
+  await seedFailure()
+  opts.state = new Map<string, unknown>([['notice', 'Could not forget the selected record.']])
+  // Nothing drawn on this surface yet.
+  await press('forget')
+  expect(state('notice')).toBeNull()
+  expect(await remembered()).toHaveLength(1)
+  // The drawn row is gone by the press.
+  await render()
+  opts.state.set('notice', 'Could not forget the selected record.')
+  expect((await command('forget --all')).exitCode).toBe(0)
+  const rev = Number(state('rev') ?? 0)
+  await press('forget')
+  expect(state('notice')).toBeNull()
+  expect(Number(state('rev'))).toBe(rev + 1)
+})
+
+// ---- the confirm acts only on the count it showed ----
+
+test('confirm with the count unchanged since the draw forgets every record', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  await press('forget-all')
+  await render()
+  await press('forget-all-confirm')
+  expect(await remembered()).toHaveLength(0)
+  expect(state('confirmAll')).toBe(false)
+  expect(state('notice')).toBeNull()
+})
+
+test('a record added between the draw and the confirm deletes nothing and asks again with the new count', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  await press('forget-all')
+  await render()
+  await seedFailure('make')
+  const rev = Number(state('rev') ?? 0)
+  await press('forget-all-confirm')
+  expect(await remembered()).toHaveLength(3)
+  expect(state('confirmAll')).toBe(true)
+  expect(state('notice')).toBe('The records changed; confirm again to forget all 3 records.')
+  expect(Number(state('rev'))).toBeGreaterThan(rev)
+  // The redraw shows the new count, and a confirm of it forgets all.
+  await render()
+  await press('forget-all-confirm')
+  expect(await remembered()).toHaveLength(0)
+  expect(state('notice')).toBeNull()
+})
+
+test('a confirm on a surface that drew nothing deletes nothing; one record is counted in the singular', async () => {
+  await seedFailure()
+  await press('forget-all')
+  await render({ bodyColumns: 100, scroll: { offset: 0, bodyRows: 30 } }, 'desktop')
+  await press('forget-all-confirm', 'terminal')
+  expect(await remembered()).toHaveLength(1)
+  expect(state('confirmAll')).toBe(true)
+  expect(state('notice')).toBe('The records changed; confirm again to forget all 1 record.')
+})
+
+test('a confirm whose store cannot be counted deletes nothing and says so; on an empty store it drops the row', async () => {
+  await seedFailure()
+  await press('forget-all')
+  await render()
+  wrap = (i) => ({ ...i, list: async () => { throw new Error('boom') } })
+  await press('forget-all-confirm')
+  expect(state('notice')).toBe('Could not forget every record.')
+  wrap = (i) => i
+  expect(await remembered()).toHaveLength(1)
+  expect((await command('forget --all')).exitCode).toBe(0)
+  // The store emptied another way; the confirm row was already up.
+  opts.state!.set('confirmAll', true)
+  const rev = Number(state('rev') ?? 0)
+  await press('forget-all-confirm')
+  expect(state('confirmAll')).toBe(false)
+  expect(state('notice')).toBeNull()
+  expect(Number(state('rev'))).toBe(rev + 1)
+})
+
+// ---- short panes: the detail goes first, then the stats ----
+
+test('a pane shorter than the full chrome drops the detail, then the stats, and keeps rows and the action row', async () => {
+  const paths = await pathsFor(io(), cwd)
+  for (let i = 0; i < 12; i++) await seedFailure(`false ${i}`)
+  // A repeat warns, so the stats line shows.
+  await seedFailure('false 11')
+  const { writeFix } = await import('../src/core/fixes.ts')
+  for (const r of await remembered()) await writeFix(io(), paths, r.hash, { kind: 'elsewhere', at: '2026-10-09T00:00:00Z', files: [], more: 0 } as never)
+  opts.state = new Map<string, unknown>([['notice', 'Could not forget the selected record.']])
+  const textLines = (drawn: Drawn[]) => drawn.filter((n) => n.type === 'Text').map(textOf)
+  const tall = textLines(await sized(30))
+  expect(tall.some((l) => l.startsWith('fix '))).toBe(true)
+  expect(tall.some((l) => l.startsWith('fp '))).toBe(true)
+  const shown: Record<number, number> = {}
+  for (const bodyRows of [6, 8, 10]) {
+    const drawn = await sized(bodyRows)
+    expect(drawn.some((n) => n.props?.key === 'action-row')).toBe(true)
+    expect(shownRows(drawn).length).toBeGreaterThanOrEqual(1)
+    expect(drawnLines(drawn)).toBeLessThanOrEqual(bodyRows)
+    expect(textLines(drawn).some((l) => l.startsWith('reason ') || l.startsWith('probe ') || l.startsWith('fix '))).toBe(false)
+    shown[bodyRows] = shownRows(drawn).length
+  }
+  // The room the detail left goes to rows; the stats go only when even that is short.
+  expect(shown).toEqual({ 6: 1, 8: 2, 10: 4 })
+  expect(textLines(await sized(6)).some((l) => l.startsWith('fp '))).toBe(false)
+  expect(textLines(await sized(8)).some((l) => l.startsWith('fp '))).toBe(true)
+  // The confirm row stays on screen too.
+  opts.state.set('confirmAll', true)
+  const confirming = await sized(6)
+  expect(confirming.some((n) => n.props?.key === 'confirm-row')).toBe(true)
+  expect(drawnLines(confirming)).toBeLessThanOrEqual(6)
+})
+
+// ---- Forget all, Cancel, Forget; and a hot reload ----
+
+test('forget all, cancel, then forget: the forget takes the selected drawn row and the confirmation is gone', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  await press(keys[1]!)
+  await press('forget-all')
+  expect((await render()).some((n) => n.props?.key === 'confirm-row')).toBe(true)
+  await press('forget-all-cancel')
+  expect(state('confirmAll')).toBe(false)
+  const drawn = await render()
+  expect(drawn.some((n) => n.props?.key === 'action-row')).toBe(true)
+  await press('forget')
+  expect(await idsLeft()).toEqual([keys[0]!])
+  expect(state('confirmAll')).toBe(false)
+})
+
+test('after a hot reload, a forget before any redraw does nothing; after a render it works', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  await press(keys[1]!)
+  // A hot reload: the module runs again with fresh module state; `$.state` is kept.
+  const reloaded = new Map<string, Hook>()
+  install(((event: string, a: unknown, b?: unknown) => {
+    const own = event === 'tool.call' && (a as { tool: RegExp }).tool.source.startsWith('^mcp__cassandra__')
+    reloaded.set(own ? 'tool.call:cassandra' : event, (b ?? a) as Hook)
+  }) as unknown as Parameters<typeof install>[0], (i) => wrap(i))
+  hooks = reloaded
+  expect(String(state('selected'))).toStartWith(keys[1]!.slice('row:'.length))
+  await press('forget')
+  expect(await remembered()).toHaveLength(2)
+  await render()
+  await press('forget')
+  expect(await idsLeft()).toEqual([keys[0]!])
 })
