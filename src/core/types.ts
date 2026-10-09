@@ -33,6 +33,8 @@ export interface FailureRecord {
   gitHead?: string
   /** Paths git reported as changed when the call failed, at most 200. */
   dirty?: string[]
+  /** True when `dirty` was cut at the cap, so a path missing from it may still have been dirty. */
+  dirtyTruncated?: boolean
 }
 
 /** The subset of a Claude Code hook payload Cassandra reads. All fields are optional by design. */

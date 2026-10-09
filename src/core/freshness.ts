@@ -27,6 +27,11 @@ async function gitStamp(io: Io, root: string): Promise<StateStamp | null> {
   }
 }
 
+/** Strip one pair of surrounding double quotes, as git adds to unusual names; escapes stay. */
+export function unquote(path: string): string {
+  return path.length >= 2 && path.startsWith('"') && path.endsWith('"') ? path.slice(1, -1) : path
+}
+
 /**
  * The paths in `git status --porcelain` output. A rename (`R  old -> new`) yields the new
  * path; a quoted path keeps its escapes and loses only the surrounding quotes. Never throws.
@@ -36,9 +41,19 @@ export function parsePorcelain(stdout: string): string[] {
   for (const line of stdout.split('\n')) {
     if (line.length < 4) continue
     let path = line.slice(3)
-    const arrow = path.indexOf(' -> ')
-    if (arrow !== -1) path = path.slice(arrow + 4)
-    if (path.startsWith('"') && path.endsWith('"') && path.length >= 2) path = path.slice(1, -1)
+    if (path.startsWith('"')) {
+      // A quoted old path may itself contain " -> ": find its closing quote first.
+      let close = -1
+      for (let i = 1; i < path.length; i++) {
+        if (path[i] === '\\') i += 1
+        else if (path[i] === '"') { close = i; break }
+      }
+      if (close !== -1 && path.startsWith(' -> ', close + 1)) path = path.slice(close + 5)
+    } else {
+      const arrow = path.indexOf(' -> ')
+      if (arrow !== -1) path = path.slice(arrow + 4)
+    }
+    path = unquote(path)
     if (path) out.push(path)
   }
   return out

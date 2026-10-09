@@ -304,3 +304,10 @@ test('a git stamp carries the head and dirty paths, and its value is unchanged',
   const status = Bun.spawnSync(['git', '-C', repo, 'status', '--porcelain']).stdout.toString()
   expect(s.value).toBe((await nodeIo.sha256(`${head} ${status}`)).slice(0, 16))
 })
+
+test('parsePorcelain splits a rename after a quoted old path', async () => {
+  const { parsePorcelain, unquote } = await import('../src/core/freshness.ts')
+  expect(parsePorcelain('R  "a -> b" -> c\nR  "x y" -> "z w"\n?? "p -> q"\n')).toEqual(['c', 'z w', 'p -> q'])
+  expect(unquote('"é"')).toBe('é')
+  expect(unquote('"')).toBe('"')
+})

@@ -94,7 +94,7 @@ test('sentences for each kind', () => {
   const at = '2026-10-09T10:00:00.000Z'
   expect(fixSentence({ kind: 'changed', files: ['package.json'], more: 0, at })).toBe('Last time this started working after `package.json` changed (2026-10-09).')
   expect(fixSentence({ kind: 'changed', files: ['a', 'b'], more: 0, at })).toBe('Last time this started working after `a` and `b` changed (2026-10-09).')
-  expect(fixSentence({ kind: 'elsewhere', files: [], more: 0, at })).toBe('Last time it started working with no change inside this repository; the fix was elsewhere (2026-10-09).')
+  expect(fixSentence({ kind: 'elsewhere', files: [], more: 0, at })).toBe('Last time it started working with no change git could see in this repository; the fix was elsewhere (2026-10-09).')
   expect(fixSentence({ kind: 'rewritten', files: [], more: 0, at })).toBe('Last time it started working after history was rewritten (2026-10-09).')
   expect(fixSentence({ kind: 'rewritten', files: ['x'], more: 0, at })).toBe('Last time it started working after history was rewritten; `x` also changed (2026-10-09).')
 })
@@ -141,4 +141,24 @@ test('a tampered note on disk is bounded when read', async () => {
 
 test('a backtick in a name cannot break out of its code span', () => {
   expect(fixSentence({ kind: 'changed', files: ['a`b'], more: 0, at: '2026-10-09T00:00:00.000Z' })).toBe("Last time this started working after `a'b` changed (2026-10-09).")
+})
+
+test('past the dirty cap only the exact direction is used', async () => {
+  const dir = repo()
+  for (let i = 0; i < 205; i++) writeFileSync(join(dir, `u${String(i).padStart(3, '0')}.txt`), 'x')
+  const rec = await failedAt(dir)
+  rec.dirty = rec.dirty?.slice(0, 200); rec.dirtyTruncated = true
+  unlinkSync(join(dir, 'u001.txt'))
+  const note = await computeFix(nodeIo, dir, rec)
+  expect(note?.files).toEqual(['u001.txt'])
+})
+
+test('a non-ASCII name dirty then committed is named once', async () => {
+  const dir = repo()
+  writeFileSync(join(dir, 'café.txt'), 'x')
+  const rec = await failedAt(dir)
+  expect(rec.dirty?.some((d) => d.includes('caf'))).toBe(true)
+  git(dir, 'add', '-A'); git(dir, 'commit', '-qm', 'c')
+  const note = await computeFix(nodeIo, dir, rec)
+  expect(note?.files.filter((f) => f.includes('caf'))).toHaveLength(1)
 })

@@ -144,7 +144,13 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
     compactions: await compactionCount(io, paths, call.sessionId),
     errorExcerpt: sanitiseExcerpt(reason),
     agentId: call.agentId,
-    ...(stamp.git ? { gitHead: stamp.git.head, dirty: stamp.git.dirty.slice(0, DIRTY_MAX) } : {}),
+    ...(stamp.git
+      ? {
+          gitHead: stamp.git.head,
+          dirty: stamp.git.dirty.slice(0, DIRTY_MAX),
+          ...(stamp.git.dirty.length > DIRTY_MAX ? { dirtyTruncated: true } : {}),
+        }
+      : {}),
   })
 }
 

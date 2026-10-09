@@ -1,4 +1,4 @@
-import { gitState } from './freshness.ts'
+import { gitState, unquote } from './freshness.ts'
 import type { Io } from './io.ts'
 import { join } from './path.ts'
 import { findRepoRoot, isFingerprint, safeSegment, type Paths } from './paths.ts'
@@ -44,12 +44,13 @@ export async function computeFix(io: Io, cwd: string, record: FailureRecord): Pr
       const from = record.gitHead === 'no-head' ? EMPTY_TREE : record.gitHead
       const diff = await io.run(['git', '-C', root, 'diff', '--name-only', '--end-of-options', from, now.head], root)
       if (!diff || diff.exitCode !== 0) rewritten = true
-      else for (const f of diff.stdout.split('\n')) if (f) changed.add(f)
+      else for (const f of diff.stdout.split('\n')) if (f) changed.add(unquote(f))
     }
     const before = new Set(record.dirty ?? [])
     const after = new Set(now.dirty)
     for (const f of before) if (!after.has(f)) changed.add(f)
-    for (const f of after) if (!before.has(f)) changed.add(f)
+    // A truncated list cannot say what was already dirty, so only the exact direction holds.
+    if (!record.dirtyTruncated) for (const f of after) if (!before.has(f)) changed.add(f)
     const all = [...changed].map(cleanName).filter(Boolean).sort()
     const kind = rewritten ? 'rewritten' : all.length > 0 ? 'changed' : 'elsewhere'
     return { kind, files: all.slice(0, NOTE_FILES_MAX), more: Math.max(0, all.length - NOTE_FILES_MAX), at: io.now() }
@@ -116,7 +117,7 @@ function names(files: string[], more: number): string {
 /** One sentence telling the model what made this call work last time. */
 export function fixSentence(note: FixNote): string {
   const day = note.at.slice(0, 10)
-  if (note.kind === 'elsewhere') return `Last time it started working with no change inside this repository; the fix was elsewhere (${day}).`
+  if (note.kind === 'elsewhere') return `Last time it started working with no change git could see in this repository; the fix was elsewhere (${day}).`
   if (note.kind === 'rewritten') {
     return note.files.length + note.more === 0
       ? `Last time it started working after history was rewritten (${day}).`
