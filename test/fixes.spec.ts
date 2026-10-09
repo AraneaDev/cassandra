@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { computeFix, fixPath, fixSentence, readFix, removeAllFixes, writeFix } from '../src/core/fixes.ts'
@@ -101,10 +101,44 @@ test('sentences for each kind', () => {
 
 test('notes round-trip, a hostile hash stays inside fixes/, and removeAllFixes clears them', async () => {
   const paths = await pathsFor(nodeIo, repo())
-  const note: FixNote = { kind: 'changed', files: ['a'], more: 0, at: 'x' }
+  const note: FixNote = { kind: 'changed', files: ['a'], more: 0, at: '2026-10-09T00:00:00.000Z' }
   await writeFix(nodeIo, paths, 'aa11bb22cc33dd44', note)
   expect(await readFix(nodeIo, paths, 'aa11bb22cc33dd44')).toEqual(note)
   expect(fixPath(paths, '../../evil')).toBe(join(paths.root, 'fixes', 'in', 'invalid.json'))
   expect(await removeAllFixes(nodeIo, paths)).toBe(1)
   expect(await readFix(nodeIo, paths, 'aa11bb22cc33dd44')).toBeNull()
+})
+
+test('a hostile gitHead is never handed to git', async () => {
+  const dir = repo(); const out = join(tmp, 'pwned')
+  const rec = { ...(await failedAt(dir)), gitHead: `--output=${out}` }
+  writeFileSync(join(dir, 'x.txt'), 'x')
+  expect(await computeFix(nodeIo, dir, rec)).toMatchObject({ kind: 'rewritten', files: ['x.txt'] })
+  expect(existsSync(out)).toBe(false)
+})
+
+test('a real failure HEAD with an unborn HEAD now is rewritten', async () => {
+  const dir = repo(); const rec = await failedAt(dir)
+  git(dir, 'checkout', '-q', '--orphan', 'x')
+  expect((await computeFix(nodeIo, dir, rec))?.kind).toBe('rewritten')
+})
+
+test('a tampered note on disk is bounded when read', async () => {
+  const paths = await pathsFor(nodeIo, repo())
+  const h = 'aa11bb22cc33dd44'
+  const put = (o: object) => nodeIo.writeText(fixPath(paths, h), JSON.stringify(o))
+  const files = ['', '\u0007\u0007', ...Array.from({ length: 500 }, (_, i) => `f${i}`)]
+  for (const more of [-3, 1e300, 'x', 2.5]) {
+    await put({ kind: 'changed', files, more, at: '2026-10-09T00:00:00.000Z' })
+    const n = (await readFix(nodeIo, paths, h))!
+    expect(n.files).toHaveLength(10)
+    expect(n.more).toBe(more === 1e300 ? 10000 : 0)
+    expect(fixSentence(n)).toContain('Last time')
+  }
+  await put({ kind: 'changed', files: ['a'], more: 0, at: 'yesterday' })
+  expect(await readFix(nodeIo, paths, h)).toBeNull()
+})
+
+test('a backtick in a name cannot break out of its code span', () => {
+  expect(fixSentence({ kind: 'changed', files: ['a`b'], more: 0, at: '2026-10-09T00:00:00.000Z' })).toBe("Last time this started working after `a'b` changed (2026-10-09).")
 })

@@ -19,7 +19,7 @@ export function fixPath(paths: Paths, hash: string): string {
 
 /** A file name fit to put in a sentence the model reads: no control characters, bounded. */
 function cleanName(name: string): string {
-  const t = name.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim()
+  const t = name.replace(/`/g, "'").replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim()
   return t.length > NAME_MAX ? `${t.slice(0, NAME_MAX - 3)}...` : t
 }
 
@@ -37,9 +37,12 @@ export async function computeFix(io: Io, cwd: string, record: FailureRecord): Pr
     if (!now) return null
     let rewritten = false
     const changed = new Set<string>()
-    if (now.head !== 'no-head') {
+    const validHead = record.gitHead === 'no-head' || /^[0-9a-f]{40,64}$/.test(record.gitHead)
+    if (!validHead) rewritten = true
+    else if (now.head === 'no-head') rewritten = record.gitHead !== 'no-head'
+    else {
       const from = record.gitHead === 'no-head' ? EMPTY_TREE : record.gitHead
-      const diff = await io.run(['git', '-C', root, 'diff', '--name-only', from, now.head], root)
+      const diff = await io.run(['git', '-C', root, 'diff', '--name-only', '--end-of-options', from, now.head], root)
       if (!diff || diff.exitCode !== 0) rewritten = true
       else for (const f of diff.stdout.split('\n')) if (f) changed.add(f)
     }
@@ -71,7 +74,10 @@ export async function readFix(io: Io, paths: Paths, hash: string): Promise<FixNo
     if (text === null) return null
     const n = JSON.parse(text) as FixNote
     if (!Array.isArray(n.files) || typeof n.at !== 'string' || !['changed', 'elsewhere', 'rewritten'].includes(n.kind)) return null
-    return { kind: n.kind, files: n.files.filter((f) => typeof f === 'string').map(cleanName), more: typeof n.more === 'number' ? n.more : 0, at: n.at }
+    if (!/^\d{4}-\d{2}-\d{2}/.test(n.at)) return null
+    const files = n.files.filter((f) => typeof f === 'string').map(cleanName).filter(Boolean).slice(0, NOTE_FILES_MAX)
+    const more = Number.isInteger(n.more) && n.more >= 0 ? Math.min(n.more, 10000) : 0
+    return { kind: n.kind, files, more, at: n.at }
   } catch {
     return null
   }
