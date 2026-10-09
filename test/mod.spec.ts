@@ -638,8 +638,8 @@ test('a tool the core cannot serve is still answered, without next', async () =>
   expect(nextCalls).toBe(0)
 })
 
-type CommandHook = ($: ModEngine, e: { command: string; args: string }, n: () => Promise<unknown>) => Promise<{ text?: string; exitCode?: number }>
-const command = (args: string | undefined) => (hooks.get('command.run') as unknown as CommandHook)(host, { command: 'cassandra', args: args as string }, async () => ({}))
+type CommandHook = ($: ModEngine, e: { command: string; args: string; origin?: { kind: string } }, n: () => Promise<unknown>) => Promise<{ text?: string; exitCode?: number }>
+const command = (args: string | undefined, ...given: Array<{ kind: string } | undefined>) => (hooks.get('command.run') as unknown as CommandHook)(host, { command: 'cassandra', args: args as string, origin: given.length ? given[0] : { kind: 'composer' } }, async () => ({}))
 const start = () => (hooks.get('session.start') as unknown as ($: ModEngine, e: unknown, n: () => Promise<unknown>) => Promise<unknown>)(host, {}, async () => ({}))
 
 test('session.start registers /cassandra and pins the live count', async () => {
@@ -719,4 +719,32 @@ test('a forget that forgets nothing leaves the status line alone', async () => {
   expect((await command('forget')).exitCode).toBe(1)
   expect((await command('forget deadbeef')).exitCode).toBe(1)
   expect(opts.statuses).toStrictEqual([])
+})
+
+test('forget --all wipes for a composer, a bridge and an sdk origin', async () => {
+  for (const kind of ['composer', 'bridge', 'sdk']) {
+    await seedFailure()
+    expect((await command('forget --all', { kind })).exitCode).toBe(0)
+    expect((await command('list')).text).not.toContain('bun test')
+  }
+})
+
+test('forget --all from a plugin or a schedule is refused and changes nothing', async () => {
+  await seedFailure()
+  const before = await command('list')
+  for (const kind of ['plugin', 'scheduled-trigger']) {
+    opts.statuses = []
+    expect(await command('forget --all', { kind })).toEqual({ text: 'forget --all only runs when you type it yourself; nothing was forgotten.', exitCode: 1 })
+    expect(opts.statuses).toStrictEqual([])
+    expect(await command('list')).toEqual(before)
+  }
+  expect(await command('forget --all', undefined)).toEqual({ text: 'forget --all only runs when you type it yourself; nothing was forgotten.', exitCode: 1 })
+})
+
+test('forget <id> still forgets one record from a plugin origin', async () => {
+  await seedFailure()
+  const id = /\b([0-9a-f]{8})\b/.exec((await command('list')).text ?? '')?.[1] ?? ''
+  const r = await command(`forget ${id}`, { kind: 'plugin' })
+  expect(r.text).toStartWith('Forgot')
+  expect(r.exitCode).toBe(0)
 })

@@ -248,7 +248,9 @@ measurable, and that is the trade being made.
 - The mod also keeps a status line under the prompt, `cassandra: N live failures`. It is
   cleared when none are live, and it is shown to you, not the model. It refreshes only when
   a failure is recorded or forgotten (a recorded failure, a success that forgets one,
-  `resolve`, `/cassandra forget`), never on an ordinary call.
+  `resolve`, `/cassandra forget`), never on an ordinary call. The count is taken at the
+  last change to the store, so after you edit files it can overstate what is still live,
+  until the next recorded or forgotten failure.
 - The binary (`src/hook.ts`) is the classic `PreToolUse`, `PostToolUse*`,
   `PermissionDenied` and `PostCompact` path, plus `SubagentStart` and
   `SessionStart` (`source: compact`) for the briefings.
@@ -320,11 +322,15 @@ All of them accept an optional `--cwd <path>` to act on a project other than the
 directory.
 
 Inside a session, `/cassandra [list | why <id> | forget <id> | forget --all | stats]` does
-the same. On builds that load the mod, the mod answers it directly, with no Bun, no shell
-and no model round-trip. With no argument it lists. The text is the same as the CLI's, and
-a headless run such as `claude -p "/cassandra stats"` exits 0 or 1 like the CLI does.
-Claude Code labels the output of plugin commands with the prefix `cassandra:`. On builds without
-mods, `/cassandra` is the plugin's markdown command, which runs the CLI through Bun. On mod
+the same. That argument syntax is the mod's. On builds that load the mod, the mod answers
+it directly, with no Bun, no shell and no model round-trip. With no argument it lists. The
+text is the same as the CLI's, and a headless run such as `claude -p "/cassandra stats"`
+exits 0 or 1 like the CLI does. In a headless run, Claude Code labels the mod's command
+output with the prefix `cassandra:`. Options such as `--cwd` apply to the shell CLI only;
+the mod always acts on the session's working directory. From the mod, `forget --all` only
+runs when the person types it, or in a headless run; any other origin is refused and
+nothing is forgotten. On builds without mods, `/cassandra` is the plugin's markdown
+command, which takes your request in plain words and runs the CLI through Bun. On mod
 builds that command is still reachable as `/cassandra:cassandra`.
 
 ## What Cassandra does not do

@@ -63,6 +63,14 @@ export interface Owed {
   attempts: number
 }
 
+/** A `command.run` input, as far as the mod reads it. */
+export interface CommandEvent {
+  command: string
+  args: string
+  /** Where the run came from: the person's Enter ('composer'), their remote client ('bridge'), a headless run ('sdk'), or something else. */
+  origin?: { kind: string; [key: string]: unknown }
+}
+
 /** A `tool.call` input: the tool, the engine's own keys, and the tool's arguments beside them. */
 export interface ToolCallEvent {
   tool: string
@@ -90,7 +98,7 @@ export interface ModOn {
   (event: 'session.compact', hook: ($: ModEngine, e: CompactEvent, next: Next<CompactEvent, { skip?: string }>) => Promise<unknown>): unknown
   (event: 'session.append', hook: ($: ModEngine, e: AppendEvent, next: Next<AppendEvent, unknown>) => Promise<unknown>): unknown
   (event: 'agent.spawn', hook: ($: ModEngine, e: SpawnEvent, next: Next<SpawnEvent, SpawnResult>) => Promise<unknown>): unknown
-  (event: 'command.run', matcher: { command: string }, hook: ($: ModEngine, e: { command: string; args: string }, next: Next<{ command: string; args: string }, unknown>) => Promise<{ text?: string; exitCode?: number }>): unknown
+  (event: 'command.run', matcher: { command: string }, hook: ($: ModEngine, e: CommandEvent, next: Next<CommandEvent, unknown>) => Promise<{ text?: string; exitCode?: number }>): unknown
   (event: 'tool.call', matcher: { tool: RegExp }, hook: ($: ModEngine, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>) => Promise<ToolCallOutcome>): unknown
 }
 
@@ -204,11 +212,21 @@ async function refreshStatus($: ModEngine, io: Io): Promise<void> {
 /** What /cassandra shows when it cannot answer; the engine already labels it "cassandra: ". */
 const COMMAND_FALLBACK = 'could not read what this project remembers.'
 
+/** Origins that are a person typing, or a headless run someone started on purpose. */
+const BULK_ORIGINS = new Set(['composer', 'bridge', 'sdk'])
+
+/** What /cassandra answers to a bulk forget that did not come from a person or a headless run. */
+const BULK_REFUSAL = 'forget --all only runs when you type it yourself; nothing was forgotten.'
+
 /** Serve /cassandra with the CLI's own text. Never throws. */
-async function answerCommand($: ModEngine, io: Io, args: string | undefined): Promise<{ text: string; exitCode: number }> {
+async function answerCommand($: ModEngine, io: Io, args: string | undefined, origin: CommandEvent['origin']): Promise<{ text: string; exitCode: number }> {
   try {
     // A bare /cassandra may arrive with no args at all.
     const parts = (args ?? '').split(/\s+/).filter(Boolean)
+    // Wiping every record is for a person or a headless run; a plugin, a schedule or a peer may not.
+    if (parts[0] === 'forget' && parts.includes('--all') && !BULK_ORIGINS.has(origin?.kind ?? '')) {
+      return { text: BULK_REFUSAL, exitCode: 1 }
+    }
     const r = await runCommand(io, await $.session.cwd(), parts)
     // Only a forget that forgot something changes the count (a partial --all still starts so).
     if (parts[0] === 'forget' && r.text.startsWith('Forgot')) await refreshStatus($, io)
@@ -393,7 +411,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     } catch {
       return { text: COMMAND_FALLBACK, exitCode: 1 }
     }
-    return answerCommand($, io, e.args)
+    return answerCommand($, io, e.args, e.origin)
   })
 
   on('tool.call', { tool: new RegExp(`^${TOOL_PREFIX}(?:${QUERY_TOOL.name}|${RESOLVE_TOOL.name})$`) }, async ($, e) => answerTool($, wrapIo, e))
