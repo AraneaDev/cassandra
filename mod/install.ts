@@ -3,6 +3,7 @@ import type { Io } from '../src/core/io.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
 import type { BriefBoundary } from '../src/core/stats.ts'
+import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from '../src/core/tools.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
 
 /** A user-role row a plugin appends: text blocks the model reads, in the named loop (main when absent). */
@@ -17,9 +18,10 @@ export interface AppendResult {
   [key: string]: unknown
 }
 
-/** The slice of `$` the hooks use: the core's, plus the session's identity and its append. */
+/** The slice of `$` the hooks use: the core's, the session's identity and its append, and tool registration. */
 export type ModEngine = ModHost & {
   session: { id(): Promise<string>; cwd(): Promise<string>; append(args: AppendArgs): Promise<AppendResult> }
+  tool: { register(spec: { name: string; description: string; inputSchema?: Record<string, unknown> }): Promise<unknown> }
 }
 
 /** A `session.compact` input, as far as the mod reads it. */
@@ -87,8 +89,11 @@ export interface ModOn {
   (event: 'tool.call', matcher: { tool: RegExp }, hook: ($: ModEngine, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>) => Promise<ToolCallOutcome>): unknown
 }
 
-/** The same calls the binary's hooks match: Bash and every MCP tool. */
-const TRACKED = /^(Bash|mcp__.*)$/
+/**
+ * The same calls the binary's hooks match: Bash and every MCP tool, except Cassandra's own.
+ * `classify()` ignores those already; the matcher keeps the hook from being dispatched for them.
+ */
+export const TRACKED = /^(?:Bash|mcp__(?!cassandra__).+)$/
 
 /** Keys the engine puts on a `tool.call` input that are not the tool's arguments. */
 const RESERVED = new Set(['tool', 'tool_use_id', 'consent', 'agentId'])
@@ -187,6 +192,19 @@ export function toolInput(e: ToolCallEvent): Record<string, unknown> {
   return Object.fromEntries(Object.entries(e).filter(([k]) => !RESERVED.has(k)))
 }
 
+/** Serve one of Cassandra's own tools. Never calls `next`: nothing beneath serves them. */
+async function answerTool($: ModEngine, wrapIo: (io: Io) => Io, e: ToolCallEvent): Promise<ToolCallOutcome> {
+  try {
+    const io = wrapIo(modIo(hostOf($)))
+    const cwd = await $.session.cwd()
+    const input = toolInput(e)
+    const text = e.tool === `${TOOL_PREFIX}${RESOLVE_TOOL.name}` ? await resolveFailure(io, cwd, input) : await queryText(io, cwd, input)
+    return { result: text }
+  } catch {
+    return { result: 'cassandra: could not answer.' }
+  }
+}
+
 /**
  * The text of an errored result that means the call never ran. A permission rule or an
  * ungranted approval does not come back as `{ deny }` from the engine: it is an errored,
@@ -247,6 +265,8 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     try {
+      await $.tool.register(QUERY_TOOL)
+      await $.tool.register(RESOLVE_TOOL)
       const io = wrapIo(modIo(hostOf($)))
       await pruneModMarkers(io)
       await claim(io, await $.session.id())
@@ -316,6 +336,8 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     }
     return stored
   })
+
+  on('tool.call', { tool: new RegExp(`^${TOOL_PREFIX}(?:${QUERY_TOOL.name}|${RESOLVE_TOOL.name})$`) }, async ($, e) => answerTool($, wrapIo, e))
 
   on('tool.call', { tool: TRACKED }, async ($, e, next) => {
     let io: Io

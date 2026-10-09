@@ -13,6 +13,8 @@ export interface NodeHostOptions {
   appendRejects?: boolean
   /** Make `$.session.append` resolve `{ deny }` with this reason, as when a plugin above refuses the row. */
   appendDenies?: string
+  /** Tools the mod registered with `$.tool.register`, recorded in order. */
+  registered?: Array<{ name: string; description: string }>
 }
 
 /** The slice of `$` the mod uses beyond `ModHost`. */
@@ -22,6 +24,7 @@ export type NodeHost = ModHost & {
     cwd(): Promise<string>
     append(args: { message: { content: Array<{ text: string }> }; agentId?: string }): Promise<{ deny?: string }>
   }
+  tool: { register(spec: { name: string; description: string }): Promise<unknown> }
 }
 
 /**
@@ -84,6 +87,12 @@ export function nodeHost(opts: NodeHostOptions = {}): NodeHost {
         if (opts.appendRejects) throw new Error('no running loop')
         if (opts.appendDenies !== undefined) return { deny: opts.appendDenies }
         ;(opts.appended ??= []).push({ agentId: args.agentId, text: args.message.content.map((c) => c.text).join('') })
+        return {}
+      },
+    },
+    tool: {
+      async register(spec: { name: string; description: string }) {
+        ;(opts.registered ??= []).push({ name: spec.name, description: spec.description })
         return {}
       },
     },

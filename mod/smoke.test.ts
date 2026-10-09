@@ -20,3 +20,8 @@ test('the mod loads and passes a failing Bash call through untouched', async ($,
     expect(ran).toBe(i)
   }
 })
+
+test('the query tool is answered through the real engine', async ($) => {
+  const r = await $.tool.call({ tool: 'mcp__cassandra__query' })
+  expect(typeof r.result === 'string' || typeof r.text === 'string').toBe(true)
+})

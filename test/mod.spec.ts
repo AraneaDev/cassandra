@@ -32,7 +32,8 @@ beforeEach(() => {
   hooks = new Map()
   wrap = (i) => i
   const on = ((event: string, a: unknown, b?: unknown) => {
-    hooks.set(event, (b ?? a) as Hook)
+    const own = event === 'tool.call' && (a as { tool: RegExp }).tool.source.startsWith('^mcp__cassandra__')
+    hooks.set(own ? 'tool.call:cassandra' : event, (b ?? a) as Hook)
   }) as unknown as Parameters<typeof install>[0]
   install(on, (i) => wrap(i))
 })
@@ -559,4 +560,46 @@ test('a refused append does not overwrite a newer note owed to the same loop mea
   await row('sub-1', 'attachment', { kind: 'engine' })
   expect(opts.appended).toEqual([{ agentId: 'sub-1', text: expect.stringContaining('cassandra:') }])
   expect((await briefed()).at(-1)).toMatchObject({ kind: 'briefed', boundary: 'compaction' })
+})
+
+type ToolHook = ($: ModEngine, e: ToolCallEvent, n: () => Promise<unknown>) => Promise<{ result: unknown }>
+const toolHook = () => hooks.get('tool.call:cassandra') as unknown as ToolHook
+
+test('session.start registers both tools', async () => {
+  await (hooks.get('session.start') as unknown as ($: ModEngine, e: unknown, n: () => Promise<unknown>) => Promise<unknown>)(host, {}, async () => ({}))
+  expect((opts.registered ?? []).map((t) => t.name)).toEqual(['query', 'resolve'])
+})
+
+test('the tools are answered without next, and calling them records nothing (Review Focus 4)', async () => {
+  await seedFailure()
+  let nextCalls = 0
+  const next = async () => { nextCalls += 1; return {} }
+  const q = await toolHook()(host, { tool: 'mcp__cassandra__query', tool_use_id: 'q1', command: 'bun test' }, next)
+  expect(String(q.result)).toContain('`bun test` failed once')
+  const r = await toolHook()(host, { tool: 'mcp__cassandra__resolve', tool_use_id: 'r1', command: 'bun test', reason: 'fixed globally' }, next)
+  expect(String(r.result)).toStartWith('cassandra: Forgot `bun test`')
+  const bad = await toolHook()(host, { tool: 'mcp__cassandra__resolve', tool_use_id: 'r2', reason: 'x' }, next)
+  expect(String(bad.result)).toStartWith('cassandra: ')
+  expect(nextCalls).toBe(0)
+  const stats = await readStats(io(), await pathsFor(io(), cwd))
+  expect(stats.filter((s) => s.kind !== 'resolved')).toEqual([])
+  const own = await fingerprint(io(), 'mcp__cassandra__query', { command: 'bun test' })
+  expect(own).toBeNull()
+})
+
+test("the tracking matcher excludes Cassandra's own tools and nothing else", async () => {
+  const { TRACKED } = await import('../mod/install.ts')
+  expect(TRACKED.test('mcp__cassandra__query')).toBe(false)
+  expect(TRACKED.test('mcp__cassandra__resolve')).toBe(false)
+  expect(TRACKED.test('mcp__srv__do')).toBe(true)
+  expect(TRACKED.test('Bash')).toBe(true)
+  expect(TRACKED.test('Read')).toBe(false)
+})
+
+test('a tool the core cannot serve is still answered, without next', async () => {
+  wrap = () => { throw new Error('boom') }
+  let nextCalls = 0
+  const r = await toolHook()(host, { tool: 'mcp__cassandra__query' }, async () => { nextCalls += 1; return {} })
+  expect(r.result).toBe('cassandra: could not answer.')
+  expect(nextCalls).toBe(0)
 })
