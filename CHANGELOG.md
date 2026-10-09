@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.27](https://github.com/AraneaDev/cassandra/compare/v0.0.26...v0.0.27) (2026-10-09)
+
+
+### Fixes
+
+* the binary finds its pending marker wherever the command ends up ([#69](https://github.com/AraneaDev/cassandra/issues/69)) ([97242ec](https://github.com/AraneaDev/cassandra/commit/97242ec9fc2308a6243c071731fa94020626c880))
+
 ## [0.0.26](https://github.com/AraneaDev/cassandra/compare/v0.0.25...v0.0.26) (2026-10-09)
 
 
