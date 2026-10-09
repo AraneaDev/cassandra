@@ -12,7 +12,7 @@ const EXPORTED_DECLARATIONS = [
 ]
 
 export default tseslint.config(
-  { ignores: ['node_modules/**', 'dist/**', 'coverage/**', 'docs/**'] },
+  { ignores: ['node_modules/**', 'dist/**', 'coverage/**', 'docs/**', '.claude-plugin/types/**'] },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,
