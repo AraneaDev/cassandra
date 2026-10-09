@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.16](https://github.com/AraneaDev/cassandra/compare/v0.0.15...v0.0.16) (2026-10-09)
+
+
+### Features
+
+* run Cassandra as an in-process Claude Code mod ([#34](https://github.com/AraneaDev/cassandra/issues/34)) ([66394a5](https://github.com/AraneaDev/cassandra/commit/66394a559f02005da0424a2587582d13496233c5))
+
 ## [0.0.15](https://github.com/AraneaDev/cassandra/compare/v0.0.14...v0.0.15) (2026-09-16)
 
 
