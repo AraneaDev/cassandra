@@ -9,6 +9,7 @@ import { OWN_TOOL_PREFIX } from './own-tools.ts'
 import { pathsFor } from './paths.ts'
 import { deleteRecord, readRecord } from './record.ts'
 import { explainResolution, resolveHash } from './resolve.ts'
+import { packageScope } from './scope.ts'
 import { appendStat } from './stats.ts'
 
 /** How the engine lists this plugin's tools to the model (confirmed by the tools spike). */
@@ -60,7 +61,7 @@ export async function queryText(io: Io, cwd: string, input: unknown): Promise<st
       if (more > 0) withIds.push(`…and ${more} more live ${more === 1 ? 'failure' : 'failures'}.`)
       return withIds.join('\n')
     }
-    const hash = await fingerprint(io, 'Bash', { command })
+    const hash = await fingerprint(io, 'Bash', { command }, await packageScope(io, cwd))
     const paths = await pathsFor(io, cwd)
     const record = hash ? await readRecord(io, paths, hash) : null
     if (!hash || !record) return say('No failure of this command is remembered in this project.')
@@ -96,7 +97,7 @@ export async function resolveFailure(io: Io, cwd: string, input: unknown): Promi
     const paths = await pathsFor(io, cwd)
     let hash: string | null
     if (typeof command === 'string') {
-      hash = await fingerprint(io, 'Bash', { command })
+      hash = await fingerprint(io, 'Bash', { command }, await packageScope(io, cwd))
       if (!hash || !(await readRecord(io, paths, hash))) return say(`No remembered failure matches \`${command}\`.`)
     } else {
       const r = await resolveHash(io, paths, id as string)

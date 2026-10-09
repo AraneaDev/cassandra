@@ -6,6 +6,7 @@ import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
 import { pathsFor } from './paths.ts'
 import { deleteRecord, readRecord, upsertRecord } from './record.ts'
+import { packageScope } from './scope.ts'
 import { compactionCount } from './session.ts'
 import { appendStat, attributeBoundary, type BriefBoundary } from './stats.ts'
 import type { RecordKind } from './types.ts'
@@ -68,7 +69,7 @@ export interface Warning {
  */
 export async function check(io: Io, call: Call): Promise<Warning | null> {
   if (!call.tool || !call.cwd) return null
-  const hash = await fingerprint(io, call.tool, call.input)
+  const hash = await fingerprint(io, call.tool, call.input, await callScope(io, call))
   if (!hash) return null
 
   const paths = await pathsFor(io, call.cwd)
@@ -109,7 +110,7 @@ export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: s
   const paths = await pathsFor(io, call.cwd)
   if (outcome.kind === 'success') {
     if (warnedHash) await appendStat(io, paths, { kind: 'false_positive', hash: warnedHash })
-    const hash = warnedHash ?? (call.tool ? await fingerprint(io, call.tool, call.input) : null)
+    const hash = warnedHash ?? (call.tool ? await fingerprint(io, call.tool, call.input, await callScope(io, call)) : null)
     if (!hash) return false
     const found = await readRecord(io, paths, hash)
     if (!found) return false
@@ -127,9 +128,15 @@ export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: s
   return record(io, call, outcome.kind, outcome.reason)
 }
 
+/** The package a Bash call ran in; '' at the repo root and for every other tool. */
+async function callScope(io: Io, call: Call): Promise<string> {
+  return call.tool === 'Bash' && call.cwd ? packageScope(io, call.cwd) : ''
+}
+
 async function record(io: Io, call: Call, kind: RecordKind, reason: string | undefined): Promise<boolean> {
   if (!call.tool) return false
-  const hash = await fingerprint(io, call.tool, call.input)
+  const scope = await callScope(io, call)
+  const hash = await fingerprint(io, call.tool, call.input, scope)
   if (!hash) return false
   const paths = await pathsFor(io, call.cwd)
   const stamp = await stateStamp(io, call.cwd)
@@ -138,6 +145,7 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
   await upsertRecord(io, paths, hash, {
     tool: call.tool,
     display: displayFor(call.tool, call.input),
+    ...(scope ? { scope } : {}),
     kind,
     stateStamp: stamp.value,
     stateKind: stamp.kind,

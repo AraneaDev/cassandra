@@ -88,3 +88,16 @@ test("Cassandra's own tools are never tracked", () => {
   expect(classify('mcp__cassandra__select')).toBe('mcp')
   expect(classify('mcp__cassandra__queryx')).toBe('mcp')
 })
+
+test('an empty scope keeps the id byte-identical to before', async () => {
+  expect(await fingerprint(nodeIo, 'Bash', { command: 'bun test' })).toBe('ab6e15a9a6af15b5')
+  expect(await fingerprint(nodeIo, 'Bash', { command: 'bun test' }, '')).toBe('ab6e15a9a6af15b5')
+})
+
+test('a scoped id differs from the root id and from a command that spells the scope', async () => {
+  const scoped = await fingerprint(nodeIo, 'Bash', { command: 'bun test' }, 'packages/a')
+  expect(scoped).not.toBe('ab6e15a9a6af15b5')
+  expect(scoped).not.toBe(await fingerprint(nodeIo, 'Bash', { command: 'packages/a bun test' }))
+  expect(scoped).toBe(await fingerprint(nodeIo, 'Bash', { command: 'bun test' }, 'packages/a'))
+  expect(scoped).not.toBe(await fingerprint(nodeIo, 'Bash', { command: 'bun test' }, 'packages/b'))
+})

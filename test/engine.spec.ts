@@ -275,3 +275,61 @@ describe('settle reports whether the store changed', () => {
     expect(await settle(io, call('bun test'), { kind: 'success' }, null)).toBe(true)
   })
 })
+
+describe('package scope', () => {
+  const root = '/work/mono'
+  const at = (dir: string, command = 'bun test'): Call => ({ tool: 'Bash', input: { command }, cwd: dir, sessionId: 's1' })
+  const a = `${root}/packages/a`
+  const b = `${root}/packages/b`
+
+  beforeEach(async () => {
+    await io.writeText(`${root}/.git/HEAD`, 'ref: refs/heads/main\n')
+    await io.writeText(`${root}/package.json`, '{}')
+    await io.writeText(`${a}/package.json`, '{}')
+    await io.writeText(`${b}/package.json`, '{}')
+  })
+
+  test('a failure in one package does not warn in another, and does in its own', async () => {
+    await settle(io, at(a), { kind: 'failure', reason: 'x' }, null)
+    expect(await check(io, at(b))).toBeNull()
+    expect(await check(io, at(a))).not.toBeNull()
+  })
+
+  test('a success in another package does not forget the failure', async () => {
+    await settle(io, at(a), { kind: 'failure', reason: 'x' }, null)
+    expect(await settle(io, at(b), { kind: 'success' }, null)).toBe(false)
+    const hash = (await fingerprint(io, 'Bash', { command: 'bun test' }, 'packages/a'))!
+    expect(await readRecord(io, await pathsFor(io, a), hash)).not.toBeNull()
+  })
+
+  test('a success in the same package forgets it', async () => {
+    await io.writeText(`${a}/src/index.ts`, '')
+    await settle(io, at(`${a}/src`), { kind: 'failure', reason: 'x' }, null)
+    expect(await settle(io, at(a), { kind: 'success' }, null)).toBe(true)
+    expect(await check(io, at(a))).toBeNull()
+  })
+
+  test('the record keeps its scope, and a root record has none', async () => {
+    await settle(io, at(a), { kind: 'failure', reason: 'x' }, null)
+    await settle(io, at(root), { kind: 'failure', reason: 'x' }, null)
+    const paths = await pathsFor(io, root)
+    const scoped = await readRecord(io, paths, (await fingerprint(io, 'Bash', { command: 'bun test' }, 'packages/a'))!)
+    const plain = await readRecord(io, paths, 'ab6e15a9a6af15b5')
+    expect(scoped?.scope).toBe('packages/a')
+    expect(plain).not.toBeNull()
+    expect(plain && 'scope' in plain).toBe(false)
+  })
+
+  test('a record with no scope, as old records are, matches only at the root', async () => {
+    await settle(io, at(root), { kind: 'failure', reason: 'x' }, null)
+    expect(await check(io, at(root))).not.toBeNull()
+    expect(await check(io, at(a))).toBeNull()
+  })
+
+  test('other tools ignore the package', async () => {
+    const mcp: Call = { tool: 'mcp__srv__do', input: { a: 1 }, cwd: a, sessionId: 's1' }
+    await settle(io, mcp, { kind: 'failure', reason: 'x' }, null)
+    expect(await readRecord(io, await pathsFor(io, a), '7de9474754ac3aa7')).not.toBeNull()
+    expect(await check(io, { ...mcp, cwd: b })).not.toBeNull()
+  })
+})
