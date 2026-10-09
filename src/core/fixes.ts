@@ -1,6 +1,6 @@
 import { gitState, unquote } from './freshness.ts'
-import type { Io } from './io.ts'
-import { join } from './path.ts'
+import type { Entry, Io } from './io.ts'
+import { basename, dirname, join } from './path.ts'
 import { findRepoRoot, isFingerprint, safeSegment, type Paths } from './paths.ts'
 import type { FailureRecord, FixNote } from './types.ts'
 
@@ -9,6 +9,55 @@ const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 const NOTE_FILES_MAX = 10
 const NAME_MAX = 120
 const SENTENCE_NAMES = 3
+
+/** Most dirty paths whose content a failure record hashes. */
+const HASHED_MAX = 50
+/** Longest text, in string length, that is hashed; a longer file has no hash. */
+const HASHED_TEXT_MAX = 256 * 1024
+
+/** Directory listings for one pass over a set of paths, so a shared parent is listed once. */
+type Listings = Map<string, Promise<Entry[] | null>>
+
+/**
+ * The first 16 hex characters of a repo-relative path's content hash, or null when it is
+ * not a regular file (missing, a directory, a link, unlistable or unreadable) or its text
+ * is longer than 256 KB. Never throws.
+ */
+async function contentHash(io: Io, root: string, path: string, listings: Listings): Promise<string | null> {
+  try {
+    if (!path || path.endsWith('/')) return null
+    const full = join(root, path)
+    const parent = dirname(full)
+    let listing = listings.get(parent)
+    if (!listing) {
+      listing = io.list(parent).then((l) => (l.ok ? l.entries : null), () => null)
+      listings.set(parent, listing)
+    }
+    const name = basename(full)
+    const entry = (await listing)?.find((e) => e.name === name)
+    // UTF-8 spends at most 3 bytes per UTF-16 unit, so a file this large cannot be short enough.
+    if (entry?.kind !== 'file' || entry.size > HASHED_TEXT_MAX * 3) return null
+    const text = await io.readText(full)
+    if (text === null || text.length > HASHED_TEXT_MAX) return null
+    return (await io.sha256(text)).slice(0, 16)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Content hashes of the first 50 dirty paths, in git's order, for a failure record. A path
+ * that cannot be hashed is left out silently. Reads files only; writes nothing to git.
+ */
+export async function dirtyHashes(io: Io, root: string, dirty: readonly string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {}
+  const listings: Listings = new Map()
+  for (const path of dirty.slice(0, HASHED_MAX)) {
+    const h = await contentHash(io, root, path, listings)
+    if (h !== null) out[path] = h
+  }
+  return out
+}
 
 /** Where one call's fix note lives: sharded like records, never outside `fixes/`. */
 export function fixPath(paths: Paths, hash: string): string {
@@ -25,9 +74,10 @@ function cleanName(name: string): string {
 
 /**
  * What changed between a recorded failure and now, by file name: committed changes since
- * the failure's HEAD, plus paths whose dirty status flipped. A path dirty at both moments
- * cannot be told apart by name and is left out. Null when the record predates this or was
- * not in git, or when git cannot answer now.
+ * the failure's HEAD, plus paths whose dirty status flipped, plus paths dirty at both
+ * moments whose content hash moved. A path dirty at both moments with no stored hash cannot
+ * be told apart by name and is left out. Null when the record predates this or was not in
+ * git, or when git cannot answer now.
  */
 export async function computeFix(io: Io, cwd: string, record: FailureRecord): Promise<FixNote | null> {
   if (record.gitHead === undefined) return null
@@ -51,6 +101,16 @@ export async function computeFix(io: Io, cwd: string, record: FailureRecord): Pr
     for (const f of before) if (!after.has(f)) changed.add(f)
     // A truncated list cannot say what was already dirty, so only the exact direction holds.
     if (!record.dirtyTruncated) for (const f of after) if (!before.has(f)) changed.add(f)
+    // Dirty both times: named when its content moved. A file now unhashable has changed too.
+    const hashes = record.dirtyHashes
+    if (hashes && typeof hashes === 'object') {
+      const listings: Listings = new Map()
+      for (const f of before) {
+        const was = Object.hasOwn(hashes, f) ? hashes[f] : undefined
+        if (typeof was !== 'string' || !after.has(f)) continue
+        if ((await contentHash(io, root, f, listings)) !== was) changed.add(f)
+      }
+    }
     const all = [...changed].map(cleanName).filter(Boolean).sort()
     const kind = rewritten ? 'rewritten' : all.length > 0 ? 'changed' : 'elsewhere'
     return { kind, files: all.slice(0, NOTE_FILES_MAX), more: Math.max(0, all.length - NOTE_FILES_MAX), at: io.now() }

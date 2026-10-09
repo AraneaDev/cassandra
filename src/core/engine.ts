@@ -1,10 +1,10 @@
 import { digestText, liveRecords } from './digest.ts'
 import { history, reason, scopeOf } from './describe.ts'
-import { computeFix, fixSentence, readFix, writeFix } from './fixes.ts'
+import { computeFix, dirtyHashes, fixSentence, readFix, writeFix } from './fixes.ts'
 import { displayFor, fingerprint } from './fingerprint.ts'
 import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
-import { pathsFor } from './paths.ts'
+import { findRepoRoot, pathsFor } from './paths.ts'
 import { deleteRecord, readRecord, upsertRecord } from './record.ts'
 import { packageScope } from './scope.ts'
 import { compactionCount } from './session.ts'
@@ -142,6 +142,7 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
   const stamp = await stateStamp(io, call.cwd)
   // A state we cannot read is a record we could never safely act on, so do not store it.
   if (stamp.kind === 'none') return false
+  const hashes = stamp.git ? await dirtyHashes(io, await findRepoRoot(io, call.cwd), stamp.git.dirty) : {}
   await upsertRecord(io, paths, hash, {
     tool: call.tool,
     display: displayFor(call.tool, call.input),
@@ -159,6 +160,7 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
           gitHead: stamp.git.head,
           dirty: stamp.git.dirty.slice(0, DIRTY_MAX),
           ...(stamp.git.dirty.length > DIRTY_MAX ? { dirtyTruncated: true } : {}),
+          ...(Object.keys(hashes).length > 0 ? { dirtyHashes: hashes } : {}),
         }
       : {}),
   })
