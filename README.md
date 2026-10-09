@@ -345,7 +345,12 @@ keys or Tab, and select with Enter or by focusing the row. `f` forgets the selec
 record. `a` asks for a second press, offering "Forget all N records" or Cancel, before it
 drops everything. Esc closes the pane. The pane needs a mod build and an interactive
 session; with no interactive surface, as in `claude -p`, `/cassandra pane` answers "The
-pane needs an interactive session." and exits 1. The shell CLI does not know `pane`.
+pane needs an interactive session." and exits 1. Only your own command opens it: from
+a plugin or a schedule, `/cassandra pane` answers "The pane opens only from your own
+/cassandra command." and exits 1. The shell CLI does not know `pane`.
+
+The pane is not live. Records written by other sessions show up at its next redraw: this
+session's next status-line refresh, or when you move focus to another row.
 
 The status line stays the only unprompted UI. A warning toast was left out on purpose:
 it would speak unprompted.
