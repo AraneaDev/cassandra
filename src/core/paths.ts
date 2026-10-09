@@ -179,7 +179,7 @@ export async function pendingDir(io: Io): Promise<string> {
 }
 
 /**
- * Marker written when the read path warns, so the outcome can be attributed without re-hashing.
+ * Marker written before a call, so the outcome can be attributed without re-hashing.
  * Guards against path traversal through the shared sanitizer.
  */
 export function pendingPath(dir: string, toolUseId: string): string {

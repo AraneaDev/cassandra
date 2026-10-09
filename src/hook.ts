@@ -14,10 +14,11 @@ function callOf(p: HookPayload): Call {
 async function onPreToolUse(io: Io, p: HookPayload): Promise<string | null> {
   const warning = await check(io, callOf(p))
   // A Bash call's package comes from where it started; the outcome payload reports where
-  // the shell ended up. So every Bash call leaves its starting directory behind.
+  // the shell ended up. So every Bash call leaves a marker, and every marker names the
+  // starting directory so a warned hash is never settled against another project.
   const keepCwd = p.tool_name === 'Bash'
   if (p.tool_use_id && p.cwd && (warning || keepCwd)) {
-    await markPending(io, await pendingDir(io), p.tool_use_id, { hash: warning?.hash ?? null, cwd: keepCwd ? p.cwd : null })
+    await markPending(io, await pendingDir(io), p.tool_use_id, { hash: warning?.hash ?? null, cwd: p.cwd })
   }
   if (!warning) return null
   return JSON.stringify({
@@ -61,9 +62,12 @@ export async function handle(payload: HookPayload, io: Io = nodeIo): Promise<str
     case 'PreToolUse': return onPreToolUse(io, payload)
     case 'PostToolUse': return onOutcome(io, payload, { kind: 'success' })
     case 'PostToolUseFailure':
-      // An interrupt is not a failure of the command; settle ignores it. The marker
-      // stays and is pruned after a day, as before.
-      if (payload.is_interrupt) return null
+      // An interrupt is not a failure of the command; settle ignores it. The marker has
+      // no further use, so it is consumed rather than left for the prune.
+      if (payload.is_interrupt) {
+        await pendingFor(io, payload)
+        return null
+      }
       return onOutcome(io, payload, { kind: 'failure', reason: payload.error ?? payload.error_message })
     case 'PermissionDenied':
       return onOutcome(io, payload, { kind: 'denial', reason: payload.denial_reason ?? payload.reason })

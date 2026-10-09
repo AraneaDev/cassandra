@@ -8,6 +8,7 @@ import { nodeIo } from '../src/io/node.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
 import { readRecord } from '../src/core/record.ts'
 import { readStats } from '../src/core/stats.ts'
+import type { HookPayload } from '../src/core/types.ts'
 import { takePending } from '../src/core/pending.ts'
 
 let tmp: string
@@ -441,15 +442,43 @@ test('takePending reads both marker shapes', async () => {
   expect(await takePending(nodeIo, dir, 'a')).toEqual({ hash: null, cwd: null })
 })
 
-test('markers live in one per-user directory, and a marker left in the old per-project one is ignored', async () => {
-  const paths = await pathsFor(nodeIo, cwd)
+test('markers live in one per-user directory', async () => {
+  expect(await pendingDir(nodeIo)).toBe(join(tmp, 'home', 'pending'))
+})
+
+test('a marker left in the old per-project directory is ignored', async () => {
   await handle(fail('bun test'))
+  const paths = await pathsFor(nodeIo, cwd)
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
   const old = join(paths.root, 'pending')
   mkdirSync(old, { recursive: true })
   writeFileSync(join(old, 'legacy'), `${hash}\n${cwd}`)
-  expect(existsSync(join(await pendingDir(nodeIo), 'legacy'))).toBe(false)
-  expect(await takePending(nodeIo, await pendingDir(nodeIo), 'legacy')).toEqual({ hash: null, cwd: null })
+  // The input differs, so only the marker could lead settle to the record.
+  await handle({ hook_event_name: 'PostToolUse', session_id: 's1', cwd, tool_name: 'Bash', tool_input: { command: 'bun  test --x' }, tool_use_id: 'legacy' })
+  expect(await readRecord(nodeIo, paths, hash)).not.toBeNull()
+  expect((await readStats(nodeIo, paths)).some((e) => e.kind === 'false_positive')).toBe(false)
   expect(existsSync(join(old, 'legacy'))).toBe(true)
-  expect(await pendingDir(nodeIo)).toBe(join(tmp, 'home', 'pending'))
+})
+
+test('a warned non-Bash call settles in the project it started in, whatever cwd the outcome reports', async () => {
+  const other = join(tmp, 'other')
+  mkdirSync(other, { recursive: true })
+  writeFileSync(join(other, 'a.txt'), 'x')
+  const input = { q: 1 }
+  const call = (event: string, id: string, at: string): HookPayload => ({ hook_event_name: event, session_id: 's1', cwd: at, tool_name: 'mcp__srv__do', tool_input: input, tool_use_id: id })
+  await handle({ ...call('PostToolUseFailure', 'k1', cwd), error: 'boom' })
+  expect(await handle(call('PreToolUse', 'k2', cwd))).toBeString()
+  await handle(call('PostToolUse', 'k2', other))
+  const hash = (await fingerprint(nodeIo, 'mcp__srv__do', input))!
+  expect(await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash)).toBeNull()
+  expect((await readStats(nodeIo, await pathsFor(nodeIo, cwd))).some((e) => e.kind === 'false_positive')).toBe(true)
+  expect((await readStats(nodeIo, await pathsFor(nodeIo, other))).some((e) => e.kind === 'false_positive')).toBe(false)
+})
+
+test('an interrupted call consumes its marker', async () => {
+  await handle({ hook_event_name: 'PreToolUse', session_id: 's1', cwd, tool_name: 'Bash', tool_input: { command: 'sleep 600' }, tool_use_id: 'i1' })
+  const file = pendingPath(await pendingDir(nodeIo), 'i1')
+  expect(existsSync(file)).toBe(true)
+  await handle({ hook_event_name: 'PostToolUseFailure', session_id: 's1', cwd, tool_name: 'Bash', tool_input: { command: 'sleep 600' }, tool_use_id: 'i1', is_interrupt: true })
+  expect(existsSync(file)).toBe(false)
 })
