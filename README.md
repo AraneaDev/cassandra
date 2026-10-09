@@ -151,31 +151,29 @@ was a `node_modules` directory. The full numbers are in
 As a mod, Cassandra's own work costs p50 0.15ms on a miss and 22.77ms on a hit (p95
 0.28ms and 24.77ms), measured with `bun run bench:mod` over a node-backed stand-in for
 the engine's `$`, 500 calls each. The engine's own `$` dispatch is extra and is not
-included in these numbers, so treat them as a floor. There is no process spawn per call
-for Cassandra itself. A hit is expensive because the freshness probe runs `git` to see
-whether the tree changed; the stand-in spawns it the way the engine would. For comparison,
-timed on the same machine with `hyperfine` (50 runs, warm, `-N`) against a temporary data
-directory and an unchanged repo, the binary's hit path is p50 48.20ms (p95 54.41ms) and
-its miss path p50 31.47ms (p95 33.75ms). Those are higher than the 12ms and 17ms figures
-below, which were taken on a different day and machine state; the mod's hit path is the
-faster of the two here, but the two sets of figures should not be mixed with the older ones.
+included, so treat these as a floor. A miss spawns no process. A hit runs `git` for the
+freshness probe, which is where its time goes.
 
-The figures below are for the binary.
+For comparison, the binary was timed with `hyperfine` (`-N`, 50 warm runs) against a
+temporary data directory and an unchanged repo: a hit is p50 48.20ms (p95 54.41ms) and a
+miss p50 31.47ms (p95 33.75ms). On this machine the mod's hit path is faster than the
+binary's. Timing the same miss payload with 60 runs, `main`'s binary measured
+31.6 ± 2.3ms and this branch's 33.8 ± 2.6ms, so the mod port did not cause the binary's
+figure.
 
-Roughly 12ms per hook invocation on an idle machine, 17ms under load, against a 20ms
-design budget. That cost is paid on every `Bash` and `mcp__*` call, whether or not
-Cassandra ever has anything to say.
+The binary does not meet the 20ms per-invocation design budget here. Earlier
+measurements of roughly 12ms per invocation (17ms under load, 12.9ms before a call and
+12.2ms after it) were not reproduced on this machine and should be read as unconfirmed.
 
 A tool call is not one invocation. `PreToolUse` and `PostToolUse` are wired to the same
-matcher, so a call that succeeds spawns the binary twice: about 12.9ms before the call and
-12.2ms after it, roughly 25ms in total. Measured against a per-invocation budget of 20ms
-each invocation fits; measured per successful call, it does not.
+matcher, so a call that succeeds spawns the binary twice. At the measured miss cost of
+about 31ms each, that is roughly 63ms per successful call.
 
 That second invocation is deliberate and worth being plain about. `PostToolUse` is what
 resolves the pending marker, and the marker is the only way Cassandra can tell that a call
 it warned about then went on to succeed. Remove the hook and the false-positive rate in
 `cassandra stats` stops existing, which is the number that tells you whether the freshness
-probe is working at all. You pay about 12ms on every successful call to keep the tool
+probe is working at all. You pay about 31ms on every successful call to keep the tool
 measurable, and that is the trade being made.
 
 ## Two front ends

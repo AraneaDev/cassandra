@@ -42,9 +42,14 @@ async function time(label: string, command: string, n: typeof next | typeof ok):
   console.log(`${label.padEnd(6)} p50 ${p(0.5)}ms  p95 ${p(0.95)}ms`)
 }
 
-await time('miss', 'echo miss #', ok)
-await call('seed', 'false', next)
-const probe = await call('probe', 'false', next)
-if (!probe.context?.length) throw new Error('the hit loop would miss: the seeded failure did not warn')
-await time('hit', 'false', next)
-rmSync(tmp, { recursive: true, force: true })
+try {
+  await time('miss', 'echo miss #', ok)
+  await call('seed', 'false', next)
+  const probe = await call('probe', 'false', next)
+  if (!probe.context?.length) throw new Error('the hit loop would miss: the seeded failure did not warn')
+  await time('hit', 'false', next)
+  const last = await call('last', 'false', next)
+  if (!last.context?.length) throw new Error('the hit loop stopped warning during timing')
+} finally {
+  rmSync(tmp, { recursive: true, force: true })
+}
