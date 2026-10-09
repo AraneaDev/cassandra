@@ -44,11 +44,12 @@ export async function readRecord(io: Io, paths: Paths, hash: string): Promise<Fa
 /**
  * Create a record, or increment an existing one and refresh its mutable fields.
  * The write is atomic: see `Io.writeText`. An unwritable index must not break a
- * session, so a failed write loses the record and nothing else.
+ * session, so a failed write loses the record and nothing else. A caller that already
+ * read the record passes it as `read` (null for none) to spare a second read.
  */
-export async function upsertRecord(io: Io, paths: Paths, hash: string, seed: RecordSeed): Promise<void> {
+export async function upsertRecord(io: Io, paths: Paths, hash: string, seed: RecordSeed, read?: FailureRecord | null): Promise<void> {
   const now = io.now()
-  const existing = await readRecord(io, paths, hash)
+  const existing = read === undefined ? await readRecord(io, paths, hash) : read
   const next: FailureRecord = {
     ...seed,
     count: (existing?.count ?? 0) + 1,

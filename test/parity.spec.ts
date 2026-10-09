@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { tmpdir } from 'node:os'
 import { install, type ModEngine, type ToolCallEvent, type ToolCallOutcome } from '../mod/install.ts'
@@ -9,6 +9,15 @@ import { nodeIo } from '../src/io/node.ts'
 import { nodeHost } from './support/node-host.ts'
 
 const NOW = '2026-01-01T00:00:00.000Z'
+/** A fixed mtime (years before NOW, so the stat is stored) with a fraction of a millisecond, so two repos written at different moments store the same dirtyStats. */
+const MTIME = 1_700_000_000.4567
+
+/** Write a step's file and pin its mtime. */
+function touch(cwd: string, step: { touch: string; text?: string }, index: number): void {
+  writeFileSync(join(cwd, step.touch), step.text ?? 'x')
+  // Distinct per step, so a rewrite is seen by its mtime as well as its size.
+  utimesSync(join(cwd, step.touch), MTIME + index, MTIME + index)
+}
 
 /**
  * One scripted step: a call and how it ended, or a compaction. `postDir` is where the
@@ -107,8 +116,8 @@ async function runBinary(cwd: string, script: Step[] = SCRIPT): Promise<string[]
   const io: Io = { ...nodeIo, now: () => NOW }
   const said: string[] = []
   let n = 0
-  for (const step of script) {
-    if ('touch' in step) { writeFileSync(join(cwd, step.touch), step.text ?? 'x'); continue }
+  for (const [index, step] of script.entries()) {
+    if ('touch' in step) { touch(cwd, step, index); continue }
     if ('remove' in step) { rmSync(join(cwd, step.remove), { force: true }); continue }
     if ('compact' in step) {
       await handle({ hook_event_name: 'PostCompact', session_id: 's1', cwd }, io)
@@ -140,8 +149,8 @@ async function runMod(cwd: string, script: Step[] = SCRIPT): Promise<string[]> {
   install(((event: string, a: unknown, b?: unknown) => { hooks.set(event, (b ?? a) as never) }) as never, (io) => ({ ...io, now: () => NOW }))
   const said: string[] = []
   let n = 0
-  for (const step of script) {
-    if ('touch' in step) { writeFileSync(join(cwd, step.touch), step.text ?? 'x'); continue }
+  for (const [index, step] of script.entries()) {
+    if ('touch' in step) { touch(cwd, step, index); continue }
     if ('remove' in step) { rmSync(join(cwd, step.remove), { force: true }); continue }
     if ('compact' in step || 'spawn' in step) {
       opts.cwd = cwd
@@ -226,10 +235,12 @@ test('on the git path both front ends store the same dirtyHashes, and name an ed
   expect(saidMod).toEqual(saidBinary)
   expect(saidBinary.at(-1)).toContain('Last time this started working after `d.txt` changed')
   const want = { 'd.txt': (await nodeIo.sha256('after')).slice(0, 16) }
+  const wantStats = { 'd.txt': `5:${Math.trunc(statSync(join(tmp, 'h1', 'd.txt')).mtimeMs)}` }
   for (const home of ['home-binary', 'home-mod']) {
     const store = snapshot(join(tmp, home))
-    const records = Object.entries(store).filter(([k]) => k.startsWith('P/records/')).map(([, v]) => JSON.parse(v) as { dirtyHashes?: Record<string, string> })
+    const records = Object.entries(store).filter(([k]) => k.startsWith('P/records/')).map(([, v]) => JSON.parse(v) as { dirtyHashes?: Record<string, string>; dirtyStats?: Record<string, string> })
     expect(records.map((r) => r.dirtyHashes)).toEqual([want])
+    expect(records.map((r) => r.dirtyStats)).toEqual([wantStats])
     // The scrub masks stamps only, so a dirtyHashes difference would still fail the comparison below.
     expect(Object.values(scrub(store)).some((v) => v.includes(`"dirtyHashes":{"d.txt":"${want['d.txt']}"}`))).toBe(true)
   }

@@ -51,6 +51,11 @@ export interface FailureRecord {
    * to a file that was dirty both when the call failed and when it worked.
    */
   dirtyHashes?: Record<string, string>
+  /**
+   * For each path in `dirtyHashes`, "<size>:<mtime>" (mtime in whole milliseconds) of the file
+   * when it was hashed. A later read that finds the same stat reuses the hash unread.
+   */
+  dirtyStats?: Record<string, string>
 }
 
 /** The subset of a Claude Code hook payload Cassandra reads. All fields are optional by design. */

@@ -142,7 +142,8 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
   const stamp = await stateStamp(io, call.cwd)
   // A state we cannot read is a record we could never safely act on, so do not store it.
   if (stamp.kind === 'none') return false
-  const hashes = stamp.git ? await dirtyHashes(io, await findRepoRoot(io, call.cwd), stamp.git.dirty) : {}
+  const earlier = await readRecord(io, paths, hash)
+  const { hashes, stats } = stamp.git ? await dirtyHashes(io, await findRepoRoot(io, call.cwd), stamp.git.dirty, earlier) : { hashes: {}, stats: {} }
   await upsertRecord(io, paths, hash, {
     tool: call.tool,
     display: displayFor(call.tool, call.input),
@@ -160,10 +161,10 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
           gitHead: stamp.git.head,
           dirty: stamp.git.dirty.slice(0, DIRTY_MAX),
           ...(stamp.git.dirty.length > DIRTY_MAX ? { dirtyTruncated: true } : {}),
-          ...(Object.keys(hashes).length > 0 ? { dirtyHashes: hashes } : {}),
+          ...(Object.keys(hashes).length > 0 ? { dirtyHashes: hashes, ...(Object.keys(stats).length > 0 ? { dirtyStats: stats } : {}) } : {}),
         }
       : {}),
-  })
+  }, earlier)
   return true
 }
 

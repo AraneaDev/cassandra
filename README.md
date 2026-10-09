@@ -285,6 +285,12 @@ Known gaps and differences:
 - A fix note names an edit to a file that already had uncommitted changes when the call
   failed, unless that file held over 256K characters of text, sat under a symlinked
   directory, or was beyond the first 50 dirty files at the time.
+- To spare re-reading unchanged files, a dirty file whose size and mtime (in whole
+  milliseconds) match what the failure record stored is taken as unchanged without being
+  read. A rewrite to the same size within the same file-timestamp tick as that stored
+  mtime (one millisecond on most local disks, up to seconds on FAT, HFS+ or some network
+  shares) is therefore not named in a fix note. Files modified within 2 s of the failure
+  are always re-hashed. Warnings are unaffected.
 - A user MCP server named `cassandra` that itself exposes a `query` or `resolve` tool
   would clash with Cassandra's own tools. Its other tools are tracked as usual.
 - Mod timing: the mod hands a new subagent its note after the subagent's first tool
