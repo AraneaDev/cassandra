@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { list } from '../src/commands/list.ts'
+import { why } from '../src/commands/why.ts'
+import { settle } from '../src/core/engine.ts'
 import { run } from '../src/cli.ts'
 import { runCommand, USAGE } from '../src/commands/run.ts'
 import { nodeIo } from '../src/io/node.ts'
@@ -49,4 +52,15 @@ test('the CLI passes empty-string arguments through as given', async () => {
   } finally {
     console.log = original
   }
+})
+
+test('list and why name the package of a monorepo record', async () => {
+  mkdirSync(join(cwd, '.git')); writeFileSync(join(cwd, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+  mkdirSync(join(cwd, 'packages', 'a'), { recursive: true }); writeFileSync(join(cwd, 'packages', 'a', 'package.json'), '{}')
+  await settle(nodeIo, { tool: 'Bash', input: { command: 'bun test' }, cwd: join(cwd, 'packages', 'a'), sessionId: 's' }, { kind: 'failure', reason: 'boom' }, null)
+  const paths = await pathsFor(nodeIo, cwd)
+  const listed = await list(nodeIo, paths)
+  expect(listed.text).toContain('bun test (in packages/a)')
+  const hash = listed.text.match(/ ([0-9a-f]{8}) /)![1]!
+  expect((await why(nodeIo, paths, hash)).text.startsWith('bun test (in packages/a)\n')).toBe(true)
 })

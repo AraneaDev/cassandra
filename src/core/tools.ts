@@ -1,4 +1,4 @@
-import { history, reason, scopeOf } from './describe.ts'
+import { history, inScope, reason, scopeOf } from './describe.ts'
 import { digestText, liveRecords } from './digest.ts'
 import { sanitiseExcerpt } from './engine.ts'
 import { fingerprint } from './fingerprint.ts'
@@ -108,7 +108,7 @@ export async function resolveFailure(io: Io, cwd: string, input: unknown): Promi
     if (!record) return say(`No remembered failure matches ${typeof command === 'string' ? `\`${command}\`` : id}.`)
     await deleteRecord(io, paths, hash)
     await appendStat(io, paths, { kind: 'resolved', hash, reason: stated })
-    return say(`Forgot \`${record.display}\` [${hash.slice(0, 8)}]. If it fails again it will be remembered again.`)
+    return say(`Forgot \`${record.display}\`${inScope(record)} [${hash.slice(0, 8)}]. If it fails again it will be remembered again.`)
   } catch {
     return say('could not change what this project remembers.')
   }

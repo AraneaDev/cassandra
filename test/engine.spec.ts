@@ -295,6 +295,11 @@ describe('package scope', () => {
     expect(await check(io, at(a))).not.toBeNull()
   })
 
+  test('the warning names the package', async () => {
+    await settle(io, at(a), { kind: 'failure', reason: 'boom' }, null)
+    expect((await check(io, at(a)))?.text).toStartWith('cassandra: `bun test` (in packages/a) failed once before')
+  })
+
   test('a success in another package does not forget the failure', async () => {
     await settle(io, at(a), { kind: 'failure', reason: 'x' }, null)
     expect(await settle(io, at(b), { kind: 'success' }, null)).toBe(false)

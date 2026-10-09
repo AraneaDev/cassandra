@@ -1,4 +1,4 @@
-import { oneLine } from './describe.ts'
+import { labelOf, oneLine } from './describe.ts'
 import { fixSentence, readFix } from './fixes.ts'
 import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
@@ -63,7 +63,7 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
     const rows: PaneRow[] = shown.map(({ hash, record, stale }) => ({
       hash,
       id: hash.slice(0, 8),
-      display: oneLine(record.display),
+      display: oneLine(labelOf(record)),
       kind: record.kind === 'denial' ? 'denied' : 'failed',
       count: record.count,
       day: record.lastSeen.slice(5, 10),

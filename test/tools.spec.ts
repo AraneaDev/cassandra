@@ -165,5 +165,5 @@ test('query and resolve by command use the current package', async () => {
   expect(await queryText(io, `${root}/packages/b`, { command: 'bun test' })).toBe('cassandra: No failure of this command is remembered in this project.')
   expect(await queryText(io, a, { command: 'bun test' })).toContain('failed once')
   expect(await resolveFailure(io, `${root}/packages/b`, { command: 'bun test', reason: 'fixed' })).toContain('No remembered failure matches')
-  expect(await resolveFailure(io, a, { command: 'bun test', reason: 'fixed' })).toContain('Forgot')
+  expect(await resolveFailure(io, a, { command: 'bun test', reason: 'fixed' })).toContain('Forgot `bun test` (in packages/a) [')
 })
