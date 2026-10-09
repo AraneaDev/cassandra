@@ -24,7 +24,7 @@ Options:
 
 /** Route a subcommand to its implementation; the text the CLI prints and the mod returns. */
 export async function runCommand(io: Io, cwd: string, args: string[]): Promise<CommandResult> {
-  const [command = 'list', ...rest] = args.filter((a) => a !== '')
+  const [command = 'list', ...rest] = args
   const paths = await pathsFor(io, cwd)
   switch (command) {
     case 'list': return list(io, paths)

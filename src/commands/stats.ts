@@ -2,9 +2,9 @@ import { readStats, type Boundary } from '../core/stats.ts'
 import { readRecord } from '../core/record.ts'
 import type { Io } from '../core/io.ts'
 import type { Paths } from '../core/paths.ts'
+import type { CommandResult } from './run.ts'
 
 const BOUNDARIES: Boundary[] = ['compaction', 'session', 'subagent', 'same_context']
-import type { CommandResult } from './run.ts'
 
 /**
  * Report whether Cassandra is earning its place.

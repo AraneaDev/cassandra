@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { run } from '../src/cli.ts'
 import { runCommand, USAGE } from '../src/commands/run.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { pathsFor } from '../src/core/paths.ts'
@@ -31,4 +32,21 @@ test('commands return their text and code without printing (Review Focus 4)', as
     console.log = original
   }
   expect(printed).toEqual([])
+})
+
+test('the CLI passes empty-string arguments through as given', async () => {
+  await upsertRecord(nodeIo, await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  const printed: string[] = []
+  const original = console.log
+  console.log = (...a: unknown[]) => { printed.push(a.join(' ')) }
+  try {
+    expect(await run(['forget', '', 'aa11bb22cc33dd44', '--cwd', cwd])).toBe(1)
+    expect(printed).toEqual(['Pass a hash, or --all to clear the project index.'])
+    expect((await runCommand(nodeIo, cwd, ['list'])).text).toContain('aa11bb22')
+    printed.length = 0
+    expect(await run([''])).toBe(1)
+    expect(printed).toEqual([USAGE])
+  } finally {
+    console.log = original
+  }
 })

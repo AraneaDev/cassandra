@@ -82,7 +82,7 @@ export default tseslint.config(
 
   {
     // The CLI writes to stdout: that is its output, not a stray debug print.
-    files: ['src/cli.ts', 'src/commands/**/*.ts', 'src/hook.ts'],
+    files: ['src/cli.ts', 'src/hook.ts'],
     rules: { 'no-console': 'off' },
   },
   {
