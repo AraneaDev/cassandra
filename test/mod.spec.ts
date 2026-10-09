@@ -194,6 +194,20 @@ test('a result that requires approval records nothing', async () => {
   expect(await readRecord(io(), await pathsFor(io(), cwd), hash)).toBeNull()
 })
 
+test('a Bash call a hook blocked before it ran records nothing', async () => {
+  await call('sleep 40 && false', failed('<tool_use_error>Blocked: sleep 40 followed by: false.</tool_use_error>'))
+  const hash = (await fingerprint(io(), 'Bash', { command: 'sleep 40 && false' }))!
+  expect(await readRecord(io(), await pathsFor(io(), cwd), hash)).toBeNull()
+})
+
+test('the tool-use-error wrapper means never-run for Bash only', async () => {
+  const { outcomeOf } = await import('../mod/install.ts')
+  const wrapped = { isError: true, text: '<tool_use_error>server said no</tool_use_error>' }
+  expect(outcomeOf(wrapped, false, 'Bash')).toEqual({ kind: 'not_run' })
+  expect(outcomeOf(wrapped, false, 'mcp__s__t')).toEqual({ kind: 'failure', reason: wrapped.text })
+  expect(outcomeOf({ isError: true, text: 'Exit code 2\nls: cannot access' }, false, 'Bash').kind).toBe('failure')
+})
+
 test('session.start claims the session without waiting for a tool call', async () => {
   const start = hooks.get('session.start') as unknown as ($: ModEngine, e: unknown, n: () => Promise<unknown>) => Promise<unknown>
   const started = { ok: true }
@@ -647,7 +661,7 @@ test('session.start registers /cassandra and pins the live count', async () => {
   opts.statuses = []
   await start()
   expect(opts.commands).toEqual(['cassandra'])
-  expect(opts.statuses.at(-1)).toBe('cassandra: 1 live failure')
+  expect(opts.statuses.at(-1)).toBe('1 live failure')
 })
 
 test('/cassandra answers with the CLI text and exit code for each subcommand (Review Focus 1)', async () => {
@@ -682,9 +696,9 @@ test('the status line refreshes only when the store changes (Review Focus 2)', a
   await call('ls', ok())
   expect(opts.statuses).toStrictEqual([])
   await call('bun test', failed())
-  expect(opts.statuses).toStrictEqual(['cassandra: 1 live failure'])
+  expect(opts.statuses).toStrictEqual(['1 live failure'])
   await call('bun test', ok())
-  expect(opts.statuses).toStrictEqual(['cassandra: 1 live failure', undefined])
+  expect(opts.statuses).toStrictEqual(['1 live failure', undefined])
 })
 
 test('a resolve through the tools hook refreshes the status line', async () => {
@@ -868,7 +882,7 @@ test('forget forgets exactly the selected record, bumps rev and refreshes the st
   await press('forget')
   expect((await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)).toEqual([keys[0]!])
   expect(Number(state('rev'))).toBeGreaterThan(rev)
-  expect(opts.statuses).toEqual(['cassandra: 1 live failure'])
+  expect(opts.statuses).toEqual(['1 live failure'])
   expect(state('notice')).toBeNull()
 })
 

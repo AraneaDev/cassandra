@@ -5,5 +5,5 @@ import type { Io } from './io.ts'
 export async function statusText(io: Io, cwd: string): Promise<string | undefined> {
   const live = await liveRecords(io, cwd)
   if (!live) return undefined
-  return `cassandra: ${live.total} live ${live.total === 1 ? 'failure' : 'failures'}`
+  return `${live.total} live ${live.total === 1 ? 'failure' : 'failures'}`
 }

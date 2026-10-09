@@ -515,17 +515,27 @@ async function answerTool($: ModEngine, wrapIo: (io: Io) => Io, e: ToolCallEvent
 export const NOT_RUN_TEXT = /^(?:Permission to use .* has been denied\.|[^\n]*requires approval[^\n]*|[^\n]*haven't granted[^\n]*)$/
 
 /**
+ * A Bash result the engine wrapped as a tool-use error: input it refused or a hook that
+ * blocked the call, so the command never ran. A command that ran and failed comes back
+ * as plain text (`Exit code N …`). Bash only, because other tools use the same wrapper
+ * for failures that did happen.
+ */
+export const BASH_NOT_RUN_TEXT = /^<tool_use_error>/
+
+/**
  * What a call came to, from what the engine answered.
  *
  * An explicit `{ deny }` (from another plugin) is a denial. An errored result is the
  * user's interrupt when the dispatch was aborted, a call that never ran when the text
- * says a permission was refused, and otherwise a failure.
+ * says a permission was refused (or, for Bash, the engine refused or a hook blocked it),
+ * and otherwise a failure.
  */
-export function outcomeOf(r: ToolCallOutcome, aborted: boolean): Outcome {
+export function outcomeOf(r: ToolCallOutcome, aborted: boolean, tool?: string): Outcome {
   if (r.deny !== undefined) return { kind: 'denial', reason: r.deny }
   if (r.isError === true) {
     if (aborted) return { kind: 'interrupt' }
     if (r.text !== undefined && NOT_RUN_TEXT.test(r.text)) return { kind: 'not_run' }
+    if (tool === 'Bash' && r.text !== undefined && BASH_NOT_RUN_TEXT.test(r.text)) return { kind: 'not_run' }
     return { kind: 'failure', reason: r.text }
   }
   return { kind: 'success' }
@@ -706,7 +716,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     const result = await next(e)
 
     try {
-      const changed = await settle(io, call, outcomeOf(result, next.signal?.aborted === true), warning?.hash ?? null)
+      const changed = await settle(io, call, outcomeOf(result, next.signal?.aborted === true, call.tool), warning?.hash ?? null)
       if (changed) await refreshStatus($, io)
     } catch {
       // The call happened; only the bookkeeping is lost.
