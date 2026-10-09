@@ -224,7 +224,6 @@ describe('redraw cost', () => {
         expect(rows.find((n) => text(n).startsWith('▸'))?.props.key).toBe(`row:${h.slice(0, 8)}`)
       }
       const ms = Math.max(...runs)
-      console.log(`pane redraw over 1,000 records: ${runs.map((r) => r.toFixed(1)).join(', ')} ms (max ${ms.toFixed(1)})`)
       expect(ms).toBeLessThan(2000)
     } finally {
       rmSync(tmp, { recursive: true, force: true })
