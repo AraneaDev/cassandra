@@ -36,3 +36,11 @@ test('a hostile package name stays on one line and outside the code span', () =>
   expect(inScope({ scope: 'pk`g\nx\u0007y' })).toBe(' (in pk`g x y)')
   expect(history({ ...base, display: 'bun test', kind: 'failure' as const, count: 1, scope: 'a\nb' })).toBe('`bun test` (in a b) failed once')
 })
+
+test('a hand-edited scope that is not a string is ignored, not thrown on', () => {
+  for (const scope of [1, true, {}, ['a']] as unknown as string[]) {
+    expect(inScope({ scope })).toBe('')
+    expect(labelOf({ display: 'bun test', scope })).toBe('bun test')
+    expect(history({ ...base, scope })).toBe('`bun test` failed once')
+  }
+})

@@ -6,9 +6,12 @@ import type { FailureRecord, StateKind } from './types.ts'
  * stored tool output is fenced.
  */
 
-/** " (in packages/a)" for a record from a monorepo package, '' for a root record. One line. */
+/**
+ * " (in packages/a)" for a record from a monorepo package, '' for a root record. One line.
+ * A scope that is not a string can only come from a hand-edited record; it reads as none.
+ */
 export function inScope(r: Pick<FailureRecord, 'scope'>): string {
-  return r.scope ? ` (in ${oneLine(r.scope)})` : ''
+  return typeof r.scope === 'string' && r.scope ? ` (in ${oneLine(r.scope)})` : ''
 }
 
 /** The command and, for a package's record, where it ran: for plain-text lists. */
