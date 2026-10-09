@@ -36,6 +36,6 @@ test('the query tool is answered through the real engine', async ($) => {
 test('/cassandra is answered by the mod through the real engine', async ($) => {
   const r = await $.command.run({ command: 'cassandra', args: 'nope' })
   expect(typeof r.text).toBe('string')
-  expect(r.text).toBe('cassandra: could not read what this project remembers.')
+  expect(r.text).toBe('could not read what this project remembers.')
   expect(r.exitCode).toBe(1)
 })

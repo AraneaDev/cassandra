@@ -201,15 +201,20 @@ async function refreshStatus($: ModEngine, io: Io): Promise<void> {
   }
 }
 
+/** What /cassandra shows when it cannot answer; the engine already labels it "cassandra: ". */
+const COMMAND_FALLBACK = 'could not read what this project remembers.'
+
 /** Serve /cassandra with the CLI's own text. Never throws. */
-async function answerCommand($: ModEngine, io: Io, args: string): Promise<{ text: string; exitCode: number }> {
+async function answerCommand($: ModEngine, io: Io, args: string | undefined): Promise<{ text: string; exitCode: number }> {
   try {
-    const parts = args.split(/\s+/).filter(Boolean)
+    // A bare /cassandra may arrive with no args at all.
+    const parts = (args ?? '').split(/\s+/).filter(Boolean)
     const r = await runCommand(io, await $.session.cwd(), parts)
-    if (parts[0] === 'forget') await refreshStatus($, io)
+    // Only a forget that forgot something changes the count (a partial --all still starts so).
+    if (parts[0] === 'forget' && r.text.startsWith('Forgot')) await refreshStatus($, io)
     return { text: r.text, exitCode: r.code }
   } catch {
-    return { text: 'cassandra: could not read what this project remembers.', exitCode: 1 }
+    return { text: COMMAND_FALLBACK, exitCode: 1 }
   }
 }
 
@@ -303,9 +308,14 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     try {
       await $.tool.register(QUERY_TOOL)
       await $.tool.register(RESOLVE_TOOL)
-      await $.command.register({ name: 'cassandra', description: 'Show what Cassandra remembers failing in this project', argumentHint: '[list | why <id> | forget <id> | forget --all | stats]' })
     } catch {
       // The session goes on without Cassandra's tools.
+    }
+    // Apart from the tools: an engine that refuses the command costs only /cassandra.
+    try {
+      await $.command.register({ name: 'cassandra', description: 'Show what Cassandra remembers failing in this project', argumentHint: '[list | why <id> | forget <id> | forget --all | stats]' })
+    } catch {
+      // The session goes on without /cassandra.
     }
     try {
       await refreshStatus($, wrapIo(modIo(hostOf($))))
@@ -381,7 +391,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     try {
       io = wrapIo(modIo(hostOf($)))
     } catch {
-      return { text: 'cassandra: could not read what this project remembers.', exitCode: 1 }
+      return { text: COMMAND_FALLBACK, exitCode: 1 }
     }
     return answerCommand($, io, e.args)
   })

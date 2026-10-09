@@ -627,6 +627,7 @@ test('a refused tool registration still lets session.start prune and claim', asy
   expect(existsSync(join(tmp, 'home', 'sessions', 's1.mod'))).toBe(true)
   expect(existsSync(stale)).toBe(false)
   expect(opts.registered ?? []).toEqual([])
+  expect(opts.commands).toEqual(['cassandra'])
 })
 
 test('a tool the core cannot serve is still answered, without next', async () => {
@@ -638,7 +639,7 @@ test('a tool the core cannot serve is still answered, without next', async () =>
 })
 
 type CommandHook = ($: ModEngine, e: { command: string; args: string }, n: () => Promise<unknown>) => Promise<{ text?: string; exitCode?: number }>
-const command = (args: string) => (hooks.get('command.run') as unknown as CommandHook)(host, { command: 'cassandra', args }, async () => ({}))
+const command = (args: string | undefined) => (hooks.get('command.run') as unknown as CommandHook)(host, { command: 'cassandra', args: args as string }, async () => ({}))
 const start = () => (hooks.get('session.start') as unknown as ($: ModEngine, e: unknown, n: () => Promise<unknown>) => Promise<unknown>)(host, {}, async () => ({}))
 
 test('session.start registers /cassandra and pins the live count', async () => {
@@ -697,10 +698,25 @@ test('a resolve through the tools hook refreshes the status line', async () => {
 test('a command the core cannot serve answers with the fallback text and code 1', async () => {
   await seedFailure()
   wrap = (i) => ({ ...i, sha256: async () => { throw new Error('boom') } })
-  expect(await command('list')).toEqual({ text: 'cassandra: could not read what this project remembers.', exitCode: 1 })
+  expect(await command('list')).toEqual({ text: 'could not read what this project remembers.', exitCode: 1 })
 })
 
 test('a command whose io cannot be built still answers with the fallback text', async () => {
   wrap = () => { throw new Error('boom') }
-  expect(await command('stats')).toEqual({ text: 'cassandra: could not read what this project remembers.', exitCode: 1 })
+  expect(await command('stats')).toEqual({ text: 'could not read what this project remembers.', exitCode: 1 })
+})
+
+test('a bare /cassandra with no args at all gets the list text', async () => {
+  await seedFailure()
+  const { runCommand } = await import('../src/commands/run.ts')
+  const listed = await runCommand(io(), cwd, [])
+  expect(await command(undefined)).toEqual({ text: listed.text, exitCode: 0 })
+})
+
+test('a forget that forgets nothing leaves the status line alone', async () => {
+  await seedFailure()
+  opts.statuses = []
+  expect((await command('forget')).exitCode).toBe(1)
+  expect((await command('forget deadbeef')).exitCode).toBe(1)
+  expect(opts.statuses).toStrictEqual([])
 })
