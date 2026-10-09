@@ -33,9 +33,14 @@ export async function liveRecords(io: Io, cwd: string, limit = DIGEST_LIMIT): Pr
   return live.length === 0 ? null : { records: live, kind: stamp.kind }
 }
 
+/** A record whose display fits one list item: a heredoc's newlines would split the note's list. */
+function oneLine(record: FailureRecord): FailureRecord {
+  return { ...record, display: record.display.replace(/\s+/g, ' ') }
+}
+
 /** The note: one header line, then one line per record in the warning's own words. */
 export function digestText(records: LiveRecords['records'], kind: LiveRecords['kind']): string {
   const header = `cassandra: these calls failed earlier in this project, and nothing in ${scopeOf(kind)} has changed since:`
-  const lines = records.map(({ record }) => `- ${history(record)}, most recently ${record.lastSeen}.${reason(record)}`)
+  const lines = records.map(({ record }) => `- ${history(oneLine(record))}, most recently ${record.lastSeen}.${reason(record)}`)
   return [header, ...lines].join('\n')
 }

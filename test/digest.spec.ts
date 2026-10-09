@@ -59,6 +59,16 @@ test('newest first, capped at the limit', async () => {
   expect(live?.records.map((r) => r.record.display)).toEqual(['cmd 7', 'cmd 6', 'cmd 5', 'cmd 4', 'cmd 3'])
 })
 
+test('a multi-line command is one list item in the digest, its whitespace runs collapsed', async () => {
+  await seed("cat <<'EOF' > x\n  one\n\ttwo\nEOF", '2026-01-01T00:00:01.000Z')
+  const live = (await liveRecords(io, cwd))!
+  const text = digestText(live.records, live.kind)
+  expect(text.split('\n')).toHaveLength(2)
+  expect(text).toContain("- `cat <<'EOF' > x one two EOF` failed once")
+  // The stored record, and so the per-call warning built from it, keeps the newlines.
+  expect(live.records[0]!.record.display).toContain('\n')
+})
+
 test('the digest reads like the warning: scope, history, fenced stored excerpt', async () => {
   await seed('bun test', '2026-01-01T00:00:01.000Z', 'Exit code 1 "quoted" [31m')
   const live = (await liveRecords(io, cwd))!
