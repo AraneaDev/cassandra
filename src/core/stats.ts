@@ -12,9 +12,10 @@ export type BriefBoundary = 'subagent' | 'compaction'
  * so the freshness probe missed a real change. `confirmed` means it failed again.
  * `briefed` means a note listing live failures was handed over at a boundary.
  * `resolved` means an agent said a remembered failure was fixed outside the repository,
- * and it was forgotten.
+ * and it was forgotten. `fixed` means a recorded failure succeeded and what changed in
+ * between was kept.
  */
-type StatKind = 'warned' | 'false_positive' | 'confirmed' | 'briefed' | 'resolved'
+type StatKind = 'warned' | 'false_positive' | 'confirmed' | 'briefed' | 'resolved' | 'fixed'
 
 /** One line of the efficacy log. A briefing carries `hashes`; every other kind one `hash`. */
 export interface StatEvent {
@@ -24,6 +25,8 @@ export interface StatEvent {
   hashes?: string[]
   boundary?: Boundary
   reason?: string
+  files?: number
+  fixNote?: boolean
 }
 
 /** Append one event. Never throws: losing a metric must not cost a session. */
@@ -55,6 +58,10 @@ export async function readStats(io: Io, paths: Paths): Promise<StatEvent[]> {
           }
           if (kind === 'resolved') {
             if (typeof hash !== 'string' || typeof parsed.reason !== 'string') return null
+            return parsed as StatEvent
+          }
+          if (kind === 'fixed') {
+            if (typeof hash !== 'string' || typeof parsed.files !== 'number') return null
             return parsed as StatEvent
           }
           if (typeof hash !== 'string') return null

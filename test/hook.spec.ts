@@ -99,7 +99,7 @@ test('a repeat failure on a warned call logs confirmed and does not clear', asyn
   expect((await readStats(nodeIo, await pathsFor(nodeIo, cwd))).some((e) => e.kind === 'confirmed')).toBe(true)
 })
 
-test('a success on a call that was never warned about clears nothing', async () => {
+test('a success on a call that was never warned about still forgets the record, logging no false positive', async () => {
   await handle(fail('bun test'))
   const out = await handle({
     hook_event_name: 'PostToolUse', session_id: 's1', cwd,
@@ -107,7 +107,9 @@ test('a success on a call that was never warned about clears nothing', async () 
   })
   expect(out).toBeNull()
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
-  expect(await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash)).not.toBeNull()
+  const paths = await pathsFor(nodeIo, cwd)
+  expect(await readRecord(nodeIo, paths, hash)).toBeNull()
+  expect((await readStats(nodeIo, paths)).some((e) => e.kind === 'false_positive')).toBe(false)
 })
 
 test('a permission denial is recorded and warns on repeat', async () => {

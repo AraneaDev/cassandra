@@ -1,5 +1,6 @@
 import { digestText, liveRecords } from './digest.ts'
 import { history, reason, scopeOf } from './describe.ts'
+import { computeFix, writeFix } from './fixes.ts'
 import { displayFor, fingerprint } from './fingerprint.ts'
 import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
@@ -102,9 +103,18 @@ export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: s
   if (outcome.kind === 'interrupt' || outcome.kind === 'not_run' || !call.cwd) return
   const paths = await pathsFor(io, call.cwd)
   if (outcome.kind === 'success') {
-    if (!warnedHash) return
-    await appendStat(io, paths, { kind: 'false_positive', hash: warnedHash })
-    await deleteRecord(io, paths, warnedHash)
+    if (warnedHash) await appendStat(io, paths, { kind: 'false_positive', hash: warnedHash })
+    const hash = warnedHash ?? (call.tool ? await fingerprint(io, call.tool, call.input) : null)
+    if (!hash) return
+    const found = await readRecord(io, paths, hash)
+    if (!found) return
+    // The call works now. Keep what changed since it failed, then forget it as a dead end.
+    const note = await computeFix(io, call.cwd, found)
+    if (note) {
+      await writeFix(io, paths, hash, note)
+      await appendStat(io, paths, { kind: 'fixed', hash, files: note.files.length + note.more })
+    }
+    await deleteRecord(io, paths, hash)
     return
   }
   // It failed again after we warned, so the warning was right and was disregarded.
