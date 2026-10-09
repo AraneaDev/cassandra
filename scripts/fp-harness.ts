@@ -19,10 +19,15 @@ import { nodeHost } from '../test/support/node-host.ts'
 
 const useMod = process.argv.includes('--io=mod')
 const io: Io = useMod ? modIo(nodeHost()) : nodeIo
-const ioName = useMod ? 'mod' : 'node'
+const ioName = useMod ? "mod (3ms settle before each mutation: the mod's listing is whole-millisecond)" : 'node'
 
-/** The mod's fs.list reports whole milliseconds; a real shell command never lands in the same one as the stamp before it. */
-const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 3))
+/**
+ * The mod's fs.list reports whole milliseconds, so an in-process same-length rewrite that lands
+ * in the same millisecond as the previous stamp is invisible to it (a real shell command never
+ * is that fast). Only the mod path waits; the node walk sees full mtimes and must keep catching
+ * same-millisecond rewrites, which is the regression this harness exists to catch.
+ */
+const settle = (): Promise<void> => (useMod ? new Promise((r) => setTimeout(r, 3)) : Promise.resolve())
 
 interface Mutation {
   name: string
@@ -94,7 +99,7 @@ async function runSynthetic(): Promise<number> {
   }
 
   const rate = ((failures / total) * 100).toFixed(1)
-  console.error(`\nfreshness FP harness (io=${ioName}): ${total - failures}/${total} mutations detected, false-positive rate ${rate}%`)
+  console.error(`\nfreshness FP harness (${ioName}): ${total - failures}/${total} mutations detected, false-positive rate ${rate}%`)
 
   // Known blind spot, reported for the record rather than folded into the total
   // above. A same-length rewrite that also restores the file's original atime and
