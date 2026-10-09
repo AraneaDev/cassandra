@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.25](https://github.com/AraneaDev/cassandra/compare/v0.0.24...v0.0.25) (2026-10-09)
+
+
+### Fixes
+
+* name edits to files that were already dirty when a call failed ([#60](https://github.com/AraneaDev/cassandra/issues/60)) ([acf768e](https://github.com/AraneaDev/cassandra/commit/acf768e7cfc35a050d7f6a39a159fa228e8c7005))
+
 ## [0.0.24](https://github.com/AraneaDev/cassandra/compare/v0.0.23...v0.0.24) (2026-10-09)
 
 
