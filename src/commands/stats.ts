@@ -43,16 +43,28 @@ export async function stats(io: Io, paths: Paths): Promise<number> {
   }
 
   if (briefed.length > 0) {
-    const briefedHashes = new Set(briefed.flatMap((e) => e.hashes ?? []))
-    // A briefed call repeated across the same kind of boundary anyway: the note was not heeded.
+    // A call counts as repeated when a warning at a subagent or compaction boundary comes
+    // strictly after the earliest briefing that named it: the note was not heeded.
+    const firstBriefed = new Map<string, string>()
+    for (const e of briefed) {
+      for (const h of e.hashes ?? []) {
+        const seen = firstBriefed.get(h)
+        if (seen === undefined || e.t < seen) firstBriefed.set(h, e.t)
+      }
+    }
     const repeated = new Set(events
-      .filter((e) => e.kind === 'warned' && (e.boundary === 'subagent' || e.boundary === 'compaction') && e.hash && briefedHashes.has(e.hash))
+      .filter((e) => {
+        if (e.kind !== 'warned' || !e.hash) return false
+        if (e.boundary !== 'subagent' && e.boundary !== 'compaction') return false
+        const first = firstBriefed.get(e.hash)
+        return first !== undefined && e.t > first
+      })
       .map((e) => e.hash))
     console.log(`\n${briefed.length} ${briefed.length === 1 ? 'briefing' : 'briefings'} sent\n`)
     for (const b of ['subagent', 'compaction'] as const) {
       console.log(`    ${b.padEnd(13)} ${String(briefed.filter((e) => e.boundary === b).length).padStart(4)}`)
     }
-    console.log(`  repeated after briefing  ${repeated.size} of ${briefedHashes.size}  (briefed, then retried across a boundary anyway)`)
+    console.log(`  repeated after briefing  ${repeated.size} of ${firstBriefed.size}  (briefed, then retried across a boundary anyway)`)
   }
   return 0
 }
