@@ -77,6 +77,14 @@ reordering, no stripping of trailing pipes or redirects, since each of those can
 merge two different commands into one. An `mcp__*` call is hashed on the raw `tool_input`
 as delivered.
 
+In a git repository, a `Bash` call made inside a package is remembered for that package
+only, and shown as `` `bun test` (in packages/a) ``. The package is the nearest folder
+between the call's directory and the repository root that holds one of `package.json`,
+`Cargo.toml`, `go.mod`, `pyproject.toml`, `composer.json`, `Gemfile`, `pom.xml`,
+`build.gradle`, `build.gradle.kts`, `mix.exs`, `deno.json` or `deno.jsonc`. Calls at the
+repository root, outside git and to MCP tools are unchanged. The "anything changed since"
+check stays repository-wide.
+
 There is one piece of free text it reads from the call's outcome, and it is worth knowing
 about (the `resolve` reason, below, is the other). When a call
 fails or is denied, Cassandra keeps a 240-character excerpt of that tool's own
@@ -263,9 +271,11 @@ measurable, and that is the trade being made.
 
 Known gaps and differences:
 
-- The fingerprint does not include the working directory. In a monorepo, a success of the
-  same command in another package forgets the failure, and its note says the fix was
-  elsewhere.
+- Records made inside a monorepo package before this version have no package. They stay
+  silent there, and can match the same command run at the repo root until they are
+  forgotten.
+- A package without one of the listed manifests counts as part of the nearest parent
+  package, or of the root.
 - A fix note does not name an edit to a file that already had uncommitted changes when
   the call failed.
 - A user MCP server named `cassandra` that itself exposes a `query` or `resolve` tool

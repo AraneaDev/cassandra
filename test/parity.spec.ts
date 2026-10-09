@@ -12,7 +12,7 @@ const NOW = '2026-01-01T00:00:00.000Z'
 
 /** One scripted step: a call and how it ended, or a compaction. */
 type Step =
-  | { call: string; tool?: string; input?: Record<string, unknown>; ends: 'fail' | 'ok' | 'deny' | 'interrupt'; agentId?: string; sessionId?: string }
+  | { call: string; tool?: string; input?: Record<string, unknown>; ends: 'fail' | 'ok' | 'deny' | 'interrupt'; agentId?: string; sessionId?: string; dir?: string }
   | { compact: true }
   | { spawn: string }
   | { touch: string }
@@ -96,14 +96,14 @@ function repo(name: string): string {
   return dir
 }
 
-async function runBinary(cwd: string): Promise<string[]> {
+async function runBinary(cwd: string, script: Step[] = SCRIPT): Promise<string[]> {
   process.env.CASSANDRA_HOME = join(tmp, 'home-binary')
   // The core writes a data-root pointer under HOME; keep it out of the real home.
   process.env.HOME = tmp
   const io: Io = { ...nodeIo, now: () => NOW }
   const said: string[] = []
   let n = 0
-  for (const step of SCRIPT) {
+  for (const step of script) {
     if ('touch' in step) { writeFileSync(join(cwd, step.touch), 'x'); continue }
     if ('remove' in step) { rmSync(join(cwd, step.remove), { force: true }); continue }
     if ('compact' in step) {
@@ -117,7 +117,7 @@ async function runBinary(cwd: string): Promise<string[]> {
       said.push(note ? JSON.parse(note).hookSpecificOutput.additionalContext : '')
       continue
     }
-    const base = { session_id: step.sessionId ?? 's1', cwd, tool_name: step.tool ?? 'Bash', tool_input: step.input ?? { command: step.call }, tool_use_id: `t${(n += 1)}`, agent_id: step.agentId }
+    const base = { session_id: step.sessionId ?? 's1', cwd: step.dir ? join(cwd, step.dir) : cwd, tool_name: step.tool ?? 'Bash', tool_input: step.input ?? { command: step.call }, tool_use_id: `t${(n += 1)}`, agent_id: step.agentId }
     const pre = await handle({ ...base, hook_event_name: 'PreToolUse' }, io)
     said.push(step.ends === 'deny' ? DENY : pre ? JSON.parse(pre).hookSpecificOutput.additionalContext : '')
     if (step.ends === 'ok') await handle({ ...base, hook_event_name: 'PostToolUse' }, io)
@@ -128,17 +128,18 @@ async function runBinary(cwd: string): Promise<string[]> {
   return said
 }
 
-async function runMod(cwd: string): Promise<string[]> {
+async function runMod(cwd: string, script: Step[] = SCRIPT): Promise<string[]> {
   const opts: { sessionId: string; cwd: string; env: Record<string, string>; appended?: Array<{ agentId?: string; text: string }> } = { sessionId: 's1', cwd, env: { CASSANDRA_HOME: join(tmp, 'home-mod'), HOME: tmp } }
   const host = nodeHost(opts) as ModEngine
   const hooks = new Map<string, (...a: unknown[]) => Promise<unknown>>()
   install(((event: string, a: unknown, b?: unknown) => { hooks.set(event, (b ?? a) as never) }) as never, (io) => ({ ...io, now: () => NOW }))
   const said: string[] = []
   let n = 0
-  for (const step of SCRIPT) {
+  for (const step of script) {
     if ('touch' in step) { writeFileSync(join(cwd, step.touch), 'x'); continue }
     if ('remove' in step) { rmSync(join(cwd, step.remove), { force: true }); continue }
     if ('compact' in step || 'spawn' in step) {
+      opts.cwd = cwd
       const before = opts.appended?.length ?? 0
       const flush = (row: Record<string, unknown>) => hooks.get('session.append')!(host, { ...row, uuid: `u-${(n += 1)}` }, async () => ({}))
       if ('compact' in step) {
@@ -152,6 +153,7 @@ async function runMod(cwd: string): Promise<string[]> {
       continue
     }
     opts.sessionId = step.sessionId ?? 's1'
+    opts.cwd = step.dir ? join(cwd, step.dir) : cwd
     const answer: ToolCallOutcome = step.ends === 'ok' ? { result: {}, text: '' }
       : step.ends === 'deny' ? { deny: 'policy' }
       : step.ends === 'interrupt' ? { isError: true, result: 'Interrupted', text: 'Interrupted' }
@@ -195,4 +197,40 @@ test('the same holds on the git path', async () => {
     expect(said.some((l) => l.includes('Last time this started working after'))).toBe(true)
     expect(Object.keys(snapshot(join(tmp, home))).some((k) => k.startsWith('P/fixes/'))).toBe(true)
   }
+})
+
+const MONO: Step[] = [
+  { call: 'bun test', ends: 'fail', dir: 'packages/a' },
+  { call: 'bun test', ends: 'fail', dir: 'packages/b' },
+  { call: 'bun test', ends: 'fail', dir: 'packages/a' },
+  { call: 'bun test', ends: 'ok', dir: 'packages/b' },
+  { call: 'bun test', ends: 'fail', dir: 'packages/a' },
+  { call: 'bun test', ends: 'fail' },
+]
+
+test('in a monorepo both front ends keep each package to itself', async () => {
+  const mono = (name: string): string => {
+    const dir = repo(name)
+    for (const p of ['', 'packages/a', 'packages/b']) {
+      mkdirSync(join(dir, p), { recursive: true })
+      writeFileSync(join(dir, p, 'package.json'), '{}')
+    }
+    for (const a of [['init', '-q'], ['config', 'user.email', 't@e.com'], ['config', 'user.name', 'T'], ['add', '-A'], ['commit', '-qm', 'init', '--date', '2026-01-01T00:00:00Z']]) {
+      expect(Bun.spawnSync(['git', '-C', dir, ...a], { stdout: 'ignore', stderr: 'ignore', env: { ...process.env, GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' } }).exitCode).toBe(0)
+    }
+    return dir
+  }
+  const saidBinary = await runBinary(mono('m1'), MONO)
+  const saidMod = await runMod(mono('m2'), MONO)
+  expect(saidMod).toEqual(saidBinary)
+  expect(saidBinary[0]).toBe('')
+  expect(saidBinary[1]).toBe('')
+  expect(saidBinary[2]).toContain('`bun test` (in packages/a) failed once before')
+  expect(saidBinary[3]).toContain('`bun test` (in packages/b) failed once before')
+  expect(saidBinary[4]).toContain('`bun test` (in packages/a) failed 2 times before')
+  expect(saidBinary[5]).toBe('')
+  const store = snapshot(join(tmp, 'home-binary'))
+  expect(scrub(snapshot(join(tmp, 'home-mod')))).toEqual(scrub(store))
+  const records = Object.entries(store).filter(([k]) => k.startsWith('P/records/')).map(([, v]) => JSON.parse(v) as { scope?: string })
+  expect(records.map((r) => r.scope ?? '').sort()).toEqual(['', 'packages/a'])
 })
