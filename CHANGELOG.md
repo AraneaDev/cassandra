@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.17](https://github.com/AraneaDev/cassandra/compare/v0.0.16...v0.0.17) (2026-10-09)
+
+
+### Features
+
+* brief subagents and compacted conversations on live dead ends ([#39](https://github.com/AraneaDev/cassandra/issues/39)) ([fb8c15f](https://github.com/AraneaDev/cassandra/commit/fb8c15f3ff69220eda9786d2e495234a39f4848f))
+
 ## [0.0.16](https://github.com/AraneaDev/cassandra/compare/v0.0.15...v0.0.16) (2026-10-09)
 
 
