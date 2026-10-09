@@ -201,3 +201,35 @@ test('session.start survives a core error', async () => {
   const started = { ok: true }
   expect(await start(host, {}, async () => started)).toBe(started)
 })
+
+test('a data root that changes after the claim gets the marker re-written under the new root', async () => {
+  await call('ls', ok())
+  expect(existsSync(join(tmp, 'home', 'sessions', 's1.mod'))).toBe(true)
+  opts.env = { ...opts.env, CASSANDRA_HOME: join(tmp, 'home2') }
+  await call('ls', ok())
+  expect(existsSync(join(tmp, 'home2', 'sessions', 's1.mod'))).toBe(true)
+})
+
+test('a nullish engine result passes through tool.call without throwing', async () => {
+  const hook = hooks.get('tool.call') as unknown as ($: ModEngine, e: ToolCallEvent, n: unknown) => Promise<unknown>
+  const next = Object.assign(async () => undefined, { signal: { aborted: false } as AbortSignal })
+  expect(await hook(host, { tool: 'Bash', tool_use_id: 't1', command: 'ls' }, next)).toBeUndefined()
+})
+
+test('a nullish compaction result passes through without throwing', async () => {
+  const compact = hooks.get('session.compact') as unknown as ($: ModEngine, e: object, n: () => Promise<unknown>) => Promise<unknown>
+  expect(await compact(host, {}, async () => undefined)).toBeUndefined()
+})
+
+test('a Bash failure whose output mentions approval is still a failure', async () => {
+  await call('echo y', failed('Exit code 1\nthis requires approval'))
+  const hash = (await fingerprint(io(), 'Bash', { command: 'echo y' }))!
+  expect(await readRecord(io(), await pathsFor(io(), cwd), hash)).not.toBeNull()
+})
+
+test('with no resolvable data root the call still runs and nothing throws', async () => {
+  opts.env = {}
+  const { r, nextCalls } = await call('ls', ok())
+  expect(nextCalls).toBe(1)
+  expect(r).toBeDefined()
+})

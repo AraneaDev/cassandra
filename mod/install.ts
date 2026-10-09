@@ -1,6 +1,6 @@
 import { check, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
-import { pathsFor } from '../src/core/paths.ts'
+import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
 
@@ -84,7 +84,7 @@ export function toolInput(e: ToolCallEvent): Record<string, unknown> {
  * non-aborted result with this text (found by a spike against the real engine). The
  * classic binary records nothing for these, so neither does the mod.
  */
-export const NOT_RUN_TEXT = /^Permission to use .* has been denied\.$|requires approval|haven't granted/
+export const NOT_RUN_TEXT = /^(?:Permission to use .* has been denied\.|[^\n]*requires approval[^\n]*|[^\n]*haven't granted[^\n]*)$/
 
 /**
  * What a call came to, from what the engine answered.
@@ -112,14 +112,18 @@ export function outcomeOf(r: ToolCallOutcome, aborted: boolean): Outcome {
  * and its result is never lost or changed beyond the one added line of context.
  */
 export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
-  let claimed: { id: string; at: number } | null = null
+  let claimed: { id: string; root: string; at: number } | null = null
 
   // Claim the session before the call, because the classic PreToolUse hook runs beneath
   // this one and must already see the claim. Lazily, on every call, because a /clear
   // changes the session id without a session.start.
   const claim = async (io: Io, id: string): Promise<void> => {
-    if (claimed && claimed.id === id && Date.now() - claimed.at < MARKER_REFRESH_MS) return
-    if (await markModSession(io, id)) claimed = { id, at: Date.now() }
+    // The data root can move after the first claim (the classic hooks may write the
+    // pointer), so the claim is only reusable while the root it was made under holds.
+    const root = await dataRoot(io).catch(() => null)
+    if (root === null) return
+    if (claimed && claimed.id === id && claimed.root === root && Date.now() - claimed.at < MARKER_REFRESH_MS) return
+    if (await markModSession(io, id)) claimed = { id, root, at: Date.now() }
   }
 
   on('session.start', async ($, e, next) => {
@@ -146,7 +150,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
 
   on('session.compact', async ($, e, next) => {
     const compacted = await next(e)
-    if (e.agentId !== undefined || compacted.skip !== undefined) return compacted
+    if (e.agentId !== undefined || compacted?.skip !== undefined) return compacted
     try {
       const io = wrapIo(modIo(hostOf($)))
       await bumpCompactions(io, await pathsFor(io, await $.session.cwd()), await $.session.id())
@@ -177,7 +181,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     } catch {
       // The call happened; only the bookkeeping is lost.
     }
-    if (!warning || result.deny !== undefined) return result
+    if (!warning || result?.deny !== undefined) return result
     return { ...result, context: [...(result.context ?? []), warning.text] }
   })
 }
