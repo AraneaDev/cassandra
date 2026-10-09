@@ -8,9 +8,10 @@ import { statusText } from '../src/core/status.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
 import type { BriefBoundary } from '../src/core/stats.ts'
 import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from '../src/core/tools.ts'
+import { listRecords } from '../src/core/record.ts'
 import { resolveHash } from '../src/core/resolve.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
-import { KEY_CANCEL, KEY_CONFIRM, KEY_FORGET, KEY_FORGET_ALL, ROW_KEY_PREFIX, drawPane, type Elements } from './pane.tsx'
+import { KEY_CANCEL, KEY_CONFIRM, KEY_FORGET, KEY_FORGET_ALL, PANE_CHROME_LINES, ROW_KEY_PREFIX, drawPane, type Elements } from './pane.tsx'
 
 /** A user-role row a plugin appends: text blocks the model reads, in the named loop (main when absent). */
 export interface AppendArgs {
@@ -269,14 +270,19 @@ const REV = { plugin: 'cassandra', key: 'rev' } as const
 /** The outcome of the last action, when it failed. */
 const NOTICE = { plugin: 'cassandra', key: 'notice' } as const
 
-/** The pane's own lines around the list: rules, detail, stats, notice and the action row. */
-const PANE_CHROME_ROWS = 8
+/** What the pane last drew: how many rows its list had room for. Forget acts within it. */
+export interface PaneWindow {
+  maxRows: number
+}
 
 /** What /cassandra pane answers once the pane is open. */
 const PANE_OPENED = 'Opened the Cassandra pane.'
 
 /** What /cassandra pane answers where nothing can show a pane. */
 const PANE_HEADLESS = 'The pane needs an interactive session.'
+
+/** What /cassandra pane answers to an origin that is not the person's own. */
+const PANE_REFUSAL = 'The pane opens only from your own /cassandra command.'
 
 /**
  * Bump the pane's revision, so an open pane that read it draws again. Never throws.
@@ -298,7 +304,21 @@ async function refreshStatus($: ModEngine, io: Io): Promise<void> {
   } catch {
     // The previous line stays until the next change.
   }
+  await dropEmptyConfirm($, io)
   await bumpRev($)
+}
+
+/**
+ * Drop a bulk-forget confirmation once the store is empty, however it emptied, so the
+ * confirm row does not come back with the next record. Never throws.
+ */
+async function dropEmptyConfirm($: ModEngine, io: Io): Promise<void> {
+  try {
+    if ((await $.state.get(CONFIRM_ALL)).value !== true) return
+    if ((await listRecords(io, await pathsFor(io, await $.session.cwd()))).length === 0) await $.state.set(CONFIRM_ALL, false)
+  } catch {
+    // The confirmation stays until the person answers it.
+  }
 }
 
 /** What the pane remembers, read fresh. Rejects when the state cannot be read. */
@@ -326,15 +346,17 @@ async function openPane($: ModEngine): Promise<{ text: string; exitCode: number 
  * the error line; a drawing that fails falls back to what lies beneath. Never throws
  * of its own.
  */
-async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRenderEvent, unknown>, wrapIo: (io: Io) => Io): Promise<unknown> {
+async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRenderEvent, unknown>, wrapIo: (io: Io) => Io, drawn: PaneWindow): Promise<unknown> {
   try {
     const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
     const rows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24
+    // Not state: a render may not write it, and a press only needs this session's last drawing.
+    drawn.maxRows = Math.max(1, rows - PANE_CHROME_LINES)
     let model: PaneModel
     try {
       // Read so that a bump of the revision draws the pane again.
       await $.state.get(REV)
-      model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), Math.max(1, rows - PANE_CHROME_ROWS))
+      model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), drawn.maxRows)
     } catch {
       model = unreadableModel()
     }
@@ -375,21 +397,23 @@ async function paneForget($: ModEngine, io: Io, run: () => Promise<CommandResult
 }
 
 /** Act on a press in the pane, by the key of the Button pressed. Never throws. */
-async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io): Promise<void> {
+async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: PaneWindow): Promise<void> {
   try {
     const io = wrapIo(modIo(hostOf($)))
     const cwd = await $.session.cwd()
     switch (e.element) {
       case KEY_FORGET:
         await paneForget($, io, async () => {
-          const target = await paneTarget(io, cwd, (await $.state.get(SELECTED)).value ?? null)
+          // Exactly the row the pane shows selected, within the rows it last drew.
+          const target = await paneTarget(io, cwd, (await $.state.get(SELECTED)).value ?? null, drawn.maxRows)
           return target === null ? null : forget(io, await pathsFor(io, cwd), target, false)
         }, 'Could not forget the selected record.')
         return
       // An old failure line must not sit beside the confirm row, nor outlive the cancel.
       case KEY_FORGET_ALL:
         await $.state.set(NOTICE, null)
-        await $.state.set(CONFIRM_ALL, true)
+        // Nothing to confirm on an empty store.
+        if ((await listRecords(io, await pathsFor(io, cwd))).length > 0) await $.state.set(CONFIRM_ALL, true)
         return
       case KEY_CANCEL:
         await $.state.set(NOTICE, null)
@@ -422,7 +446,8 @@ async function answerCommand($: ModEngine, io: Io, args: string | undefined, ori
   try {
     // A bare /cassandra may arrive with no args at all.
     const parts = (args ?? '').split(/\s+/).filter(Boolean)
-    if (parts[0] === 'pane') return await openPane($)
+    // The pane is for the person: a plugin, a schedule or a peer may not open it.
+    if (parts[0] === 'pane') return BULK_ORIGINS.has(origin?.kind ?? '') ? await openPane($) : { text: PANE_REFUSAL, exitCode: 1 }
     // Wiping every record is for a person or a headless run; a plugin, a schedule or a peer may not.
     if (parts[0] === 'forget' && parts.includes('--all') && !BULK_ORIGINS.has(origin?.kind ?? '')) {
       return { text: BULK_REFUSAL, exitCode: 1 }
@@ -614,12 +639,14 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     return answerCommand($, io, e.args, e.origin)
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => renderPane($, e, next, wrapIo))
+  const drawn: PaneWindow = { maxRows: Number.MAX_SAFE_INTEGER }
+  on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => renderPane($, e, next, wrapIo, drawn))
 
-  // Presses run one at a time, so a second Forget reads the selection the first one left.
+  // Presses and focus moves run one at a time, in order, so a Forget reads the selection
+  // the press or the move before it left.
   let pressing: Promise<void> = Promise.resolve()
   on('ui.press', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
-    const done = pressing.then(() => onPanePress($, e, wrapIo))
+    const done = pressing.then(() => onPanePress($, e, wrapIo, drawn))
     pressing = done
     await done
     // A press that fails beneath still counts as taken here: the action already ran.
@@ -627,7 +654,9 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
   })
 
   on('ui.focus', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
-    await selectRow($, wrapIo, e.element).catch(() => undefined)
+    const done = pressing.then(() => selectRow($, wrapIo, e.element)).catch(() => undefined)
+    pressing = done
+    await done
     // A move that fails beneath leaves the ring where it was.
     return next(e).catch(() => ({ deny: 'cassandra: the focus could not move.' }))
   })

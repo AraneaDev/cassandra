@@ -64,13 +64,15 @@ test('a vanished selection falls back to the first row; a present one is kept', 
 test('detail reports the excerpt, the probe and the fix', async () => {
   const a = await seed('one', '2026-01-01T00:00:01.000Z', 'boom')
   let m = await paneModel(io, cwd, view, 10)
-  expect(m.detail).toEqual({ reason: 'stored excerpt (tool output)', probe: 'mtime · nothing changed since', fix: null })
+  expect(m.detail).toEqual({ reason: 'boom', probe: 'mtime · nothing changed since', fix: null })
   const note: FixNote = { kind: 'changed', files: ['x.ts'], more: 0, at: '2026-02-02T00:00:00.000Z' }
   await writeFix(io, await pathsFor(io, cwd), a, note)
   m = await paneModel(io, cwd, view, 10)
   expect(m.detail?.fix).toBe(fixSentence(note))
   await seed('two', '2026-01-01T00:00:05.000Z')
-  expect((await paneModel(io, cwd, view, 10)).detail?.reason).toBe('(none captured)')
+  expect((await paneModel(io, cwd, view, 10)).detail?.reason).toBeNull()
+  await seed('three', '2026-01-01T00:00:06.000Z', 'line one\n\u0007line two')
+  expect((await paneModel(io, cwd, view, 10)).detail?.reason).toBe('line one line two')
 })
 
 test('stats match the numbers cassandra stats reads', async () => {
@@ -120,11 +122,23 @@ test('warningRates is zero with no events', () => {
   expect(warningRates([])).toMatchObject({ warned: 0, fpRate: 0, sameContextRate: 0 })
 })
 
-test('the forget target is the selection while remembered, else the newest, else none', async () => {
-  expect(await paneTarget(io, cwd, null)).toBeNull()
+test('the forget target is the selection while shown, else the first shown row, else none', async () => {
+  expect(await paneTarget(io, cwd, null, 10)).toBeNull()
   const a = await seed('one', '2026-01-01T00:00:01.000Z')
   const b = await seed('two', '2026-01-01T00:00:02.000Z')
-  expect(await paneTarget(io, cwd, a)).toBe(a)
-  expect(await paneTarget(io, cwd, 'gone')).toBe(b)
-  expect(await paneTarget(io, cwd, null)).toBe(b)
+  expect(await paneTarget(io, cwd, a, 10)).toBe(a)
+  expect(await paneTarget(io, cwd, 'gone', 10)).toBe(b)
+  expect(await paneTarget(io, cwd, null, 10)).toBe(b)
+})
+
+test('a selection past the window is never the target: it is the row the model shows selected', async () => {
+  const a = await seed('one', '2026-01-01T00:00:01.000Z')
+  const b = await seed('two', '2026-01-01T00:00:02.000Z')
+  const c = await seed('three', '2026-01-01T00:00:03.000Z')
+  for (const maxRows of [1, 2, 3]) {
+    const shown = (await paneModel(io, cwd, { ...view, selected: a }, maxRows)).selected
+    expect(await paneTarget(io, cwd, a, maxRows)).toBe(shown!)
+  }
+  expect(await paneTarget(io, cwd, a, 2)).toBe(c)
+  expect(b).toBeDefined()
 })

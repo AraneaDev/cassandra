@@ -11,6 +11,17 @@ export const KEY_CONFIRM = 'forget-all-confirm'
 /** Key of the button that backs out of forgetting everything. */
 export const KEY_CANCEL = 'forget-all-cancel'
 
+/**
+ * Every line the pane draws besides its rows, when all of them show: the rule above the
+ * list, `…N more`, the rule above the detail, reason, probe, fix, the rule below, stats,
+ * the notice and the action row. The list gets the body's rows minus these, so the
+ * action row stays on screen however many records there are.
+ */
+const CHROME = ['rule', 'more', 'detail rule', 'reason', 'probe', 'fix', 'foot rule', 'stats', 'notice', 'action row'] as const
+
+/** How many lines the pane draws besides its rows, at most. */
+export const PANE_CHROME_LINES = CHROME.length
+
 /** An engine element constructor, called through the JSX factory. */
 type Tag = (props: Record<string, unknown>) => unknown
 
@@ -21,12 +32,23 @@ export interface Elements { Box: unknown; Text: unknown; Button: unknown }
 const noop = (): void => {}
 
 function clip(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, Math.max(0, max - 1))}…` : s
+  if (max < 1) return ''
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s
 }
 
-function rowLabel(r: PaneRow, selected: boolean, max: number): string {
-  const tail = `${r.kind} ${r.count}× ${r.day}${r.stale ? ' stale' : ''}`
-  return `${selected ? '▸' : ' '} ${r.id} ${clip(r.display, max)} ${tail}`
+/** Narrowest room the display keeps before the whole label is clipped instead. */
+const MIN_DISPLAY = 4
+
+/**
+ * One row's label, never wider than `columns`: the display gives way first, so the
+ * marker, the id and the tail (with `stale`) stay whole while they can.
+ */
+function rowLabel(r: PaneRow, selected: boolean, columns: number): string {
+  const head = `${selected ? '▸' : ' '} ${r.id} `
+  const tail = ` ${r.kind} ${r.count}× ${r.day}${r.stale ? ' stale' : ''}`
+  const room = columns - head.length - tail.length
+  if (room >= MIN_DISPLAY) return `${head}${clip(r.display, room)}${tail}`
+  return clip(`${head}${r.display}${tail}`, columns)
 }
 
 /**
@@ -38,11 +60,11 @@ export function drawPane(el: Elements, model: PaneModel, columns: number): unkno
   const Text = el.Text as Tag
   const Button = el.Button as Tag
   const rule = '─'.repeat(Math.max(0, columns))
-  const line = (s: string, dim = false): unknown => <Text dimColor={dim || undefined}>{s}</Text>
+  // Every line is clipped to the body, so nothing wraps and the line count holds.
+  const line = (s: string, dim = false): unknown => <Text dimColor={dim || undefined}>{clip(s, columns)}</Text>
 
   if (model.error) return <Box flexDirection="column">{line(model.error)}</Box>
 
-  const max = Math.max(10, columns - 30)
   const body: unknown[] = []
   if (model.rows.length === 0) {
     body.push(line('Nothing remembered in this project.'))
@@ -51,7 +73,7 @@ export function drawPane(el: Elements, model: PaneModel, columns: number): unkno
       const sel = r.hash === model.selected
       body.push(
         <Button key={`${ROW_KEY_PREFIX}${r.id}`} plain onPress={noop} dimColor={r.stale || undefined}>
-          {rowLabel(r, sel, max)}
+          {rowLabel(r, sel, columns)}
         </Button>,
       )
     }
@@ -60,8 +82,9 @@ export function drawPane(el: Elements, model: PaneModel, columns: number): unkno
 
   const detail: unknown[] = []
   if (model.detail) {
-    detail.push(line(rule, true), line(`reason ${clip(model.detail.reason, max)}`), line(`probe ${clip(model.detail.probe, max)}`))
-    if (model.detail.fix) detail.push(line(`fix ${clip(model.detail.fix, max)}`))
+    const reason = model.detail.reason === null ? 'reason (none captured)' : `reason (tool output) ${model.detail.reason}`
+    detail.push(line(rule, true), line(reason), line(`probe ${model.detail.probe}`))
+    if (model.detail.fix) detail.push(line(`fix ${model.detail.fix}`))
   }
 
   const foot: unknown[] = []

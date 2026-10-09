@@ -28,7 +28,7 @@ const lines = (m: PaneModel, cols = 100) => nodes(m, cols).filter((n) => n.type 
 const row = (id: string, stale = false) => ({ hash: id + 'ffffff', id, display: `npm test ${id}`, kind: 'failed' as const, count: 2, day: '10-09', stale })
 const base: PaneModel = {
   rows: [row('aaaaaaaa'), row('bbbbbbbb', true)], more: 0, selected: 'aaaaaaaaffffff',
-  detail: { reason: 'stored excerpt (tool output)', probe: 'git · nothing changed since', fix: 'use bun' },
+  detail: { reason: 'npm ERR! missing script: test', probe: 'git · nothing changed since', fix: 'use bun' },
   stats: null, confirmAll: false, total: 2, notice: null, error: null,
 }
 
@@ -55,7 +55,8 @@ describe('drawPane', () => {
 
   test('detail lines, and no fix line when null', () => {
     const l = lines(base)
-    expect(l).toContain('reason stored excerpt (tool output)')
+    expect(l).toContain('reason (tool output) npm ERR! missing script: test')
+    expect(lines({ ...base, detail: { ...base.detail!, reason: null } })).toContain('reason (none captured)')
     expect(l).toContain('probe git · nothing changed since')
     expect(l).toContain('fix use bun')
     const none = lines({ ...base, detail: { ...base.detail!, fix: null } })
@@ -99,12 +100,44 @@ describe('drawPane', () => {
     expect(err.some((n) => n.type === 'Button')).toBe(false)
   })
 
-  test('long displays are truncated to columns - 30', () => {
+  test('long displays are clipped with an ellipsis to fit the columns', () => {
     const long = { ...base, rows: [{ ...row('aaaaaaaa'), display: 'x'.repeat(200) }] }
     const r = nodes(long, 80).find((n) => n.props.key === 'row:aaaaaaaa')!
-    expect(text(r).length).toBeLessThan(80)
+    expect(text(r).length).toBe(80)
+    expect(text(r)).toEndWith(' failed 2× 10-09')
     expect(text(r)).toContain('…')
     const rule = lines(long, 40).find((x) => /^─+$/.test(x))!
     expect(rule.length).toBe(40)
+  })
+
+  test('at a narrow width nothing is wider than the columns: rows with marker and stale, the detail and the notice', () => {
+    const narrow: PaneModel = {
+      ...base,
+      rows: [{ ...row('aaaaaaaa'), display: 'x'.repeat(200) }, { ...row('bbbbbbbb', true), display: 'y'.repeat(200) }],
+      detail: { reason: 'r'.repeat(200), probe: 'p'.repeat(200), fix: 'f'.repeat(200) },
+      stats: 'fp 4.2% · same_context 11.1% and more words here',
+      notice: 'Could not remove some fix notes; check the permissions under /a/very/long/path/fixes.',
+    }
+    for (const cols of [30, 12]) {
+      const all = nodes(narrow, cols)
+      const drawn = [...all.filter((n) => n.type === 'Text'), ...all.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:'))].map(text)
+      for (const l of drawn) expect(l.length).toBeLessThanOrEqual(cols)
+      expect(drawn.some((l) => l.startsWith('▸'))).toBe(true)
+    }
+    const stale = nodes(narrow, 60).find((n) => n.props.key === 'row:bbbbbbbb')!
+    expect(text(stale).length).toBe(60)
+    expect(text(stale)).toEndWith('stale')
+  })
+
+  test('the chrome around the rows is exactly PANE_CHROME_LINES lines when everything shows', () => {
+    const full: PaneModel = { ...base, more: 5, stats: 'fp 1.0% · same_context 2.0%', notice: 'Could not forget the selected record.' }
+    for (const m of [full, { ...full, confirmAll: true }]) {
+      const all = nodes(m)
+      const texts = all.filter((n) => n.type === 'Text').length
+      const rows = all.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).length
+      const actionRows = all.filter((n) => n.props.key === 'action-row' || n.props.key === 'confirm-row').length
+      expect(texts + actionRows).toBe(keys.PANE_CHROME_LINES)
+      expect(rows).toBe(m.rows.length)
+    }
   })
 })

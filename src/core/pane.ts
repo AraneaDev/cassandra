@@ -8,8 +8,8 @@ import { readStats, warningRates } from './stats.ts'
 
 /** One remembered call as a list row. */
 export interface PaneRow { hash: string; id: string; display: string; kind: 'failed' | 'denied'; count: number; day: string; stale: boolean }
-/** What the selected row shows beneath the list. */
-export interface PaneDetail { reason: string; probe: string; fix: string | null }
+/** What the selected row shows beneath the list; `reason` is the stored excerpt on one line, null when none was captured. */
+export interface PaneDetail { reason: string | null; probe: string; fix: string | null }
 /** What the pane remembers between redraws. */
 export interface PaneView { selected: string | null; confirmAll: boolean; notice: string | null }
 /** Everything the pane draws, as plain data. */
@@ -27,20 +27,27 @@ export interface PaneModel {
 
 const UNREADABLE = "Cassandra could not read this project's store."
 
-/** The order the pane lists records in: the most recently seen first. */
-function newestFirst(a: { record: { lastSeen: string } }, b: { record: { lastSeen: string } }): number {
-  return b.record.lastSeen.localeCompare(a.record.lastSeen)
+/** Longest stored excerpt the model hands on; the drawing clips it to the width. */
+const REASON_CAP = 500
+
+/**
+ * What the pane shows of the records: newest first, the first `maxRows`, and the row
+ * shown as selected. A selection that vanished, or sits past `maxRows`, falls back to
+ * the first shown row on purpose: the pane has no scrolling. One helper for the drawing
+ * and for Forget, so Forget acts on exactly the row marked selected.
+ */
+function windowOf<T extends { hash: string; record: { lastSeen: string } }>(all: T[], selected: string | null, maxRows: number): { sorted: T[]; shown: T[]; chosen: T | undefined } {
+  const sorted = [...all].sort((a, b) => b.record.lastSeen.localeCompare(a.record.lastSeen))
+  const shown = sorted.slice(0, Math.max(0, maxRows))
+  return { sorted, shown, chosen: shown.find((r) => r.hash === selected) ?? shown[0] }
 }
 
 /**
- * The record a Forget press acts on, read fresh: the selected one while it is still
- * remembered, otherwise the newest, which is the row the pane then shows as selected.
- * Null when nothing is remembered.
+ * The record a Forget press acts on, read fresh: the row the pane shows as selected
+ * with `maxRows` rows. Null when nothing is shown.
  */
-export async function paneTarget(io: Io, cwd: string, selected: string | null): Promise<string | null> {
-  const all = await listRecords(io, await pathsFor(io, cwd))
-  if (all.some((r) => r.hash === selected)) return selected
-  return all.sort(newestFirst)[0]?.hash ?? null
+export async function paneTarget(io: Io, cwd: string, selected: string | null, maxRows: number): Promise<string | null> {
+  return windowOf(await listRecords(io, await pathsFor(io, cwd)), selected, maxRows).chosen?.hash ?? null
 }
 
 /** Plain display data for `/cassandra pane`: what is remembered, what is selected, and how warnings fare. */
@@ -57,10 +64,11 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
     if (all.length === 0) return { ...empty, stats }
 
     const stamp = await stateStamp(io, cwd)
-    const sorted = all
-      .map(({ hash, record }) => ({ hash, record, stale: !unchanged(record.stateStamp, record.stateKind, stamp) }))
-      .sort(newestFirst)
-    const shown = sorted.slice(0, Math.max(0, maxRows))
+    const { sorted, shown, chosen } = windowOf(
+      all.map(({ hash, record }) => ({ hash, record, stale: !unchanged(record.stateStamp, record.stateKind, stamp) })),
+      view.selected,
+      maxRows,
+    )
     const rows: PaneRow[] = shown.map(({ hash, record, stale }) => ({
       hash,
       id: hash.slice(0, 8),
@@ -71,16 +79,13 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
       stale,
     }))
 
-    // A selection that vanished, or sits past maxRows, falls back to the first shown row on
-    // purpose: the pane has no scrolling.
-    const chosen = shown.find((r) => r.hash === view.selected) ?? shown[0]
     let detail: PaneDetail | null = null
     if (chosen) {
       const note = await readFix(io, paths, chosen.hash)
       // A record's stateKind is never 'none': the record writer refuses to store a 'none' stamp.
       const kind = chosen.record.stateKind
       detail = {
-        reason: chosen.record.errorExcerpt ? 'stored excerpt (tool output)' : '(none captured)',
+        reason: oneLine(chosen.record.errorExcerpt).slice(0, REASON_CAP) || null,
         probe: `${kind} · ${chosen.stale ? 'something' : 'nothing'} changed since`,
         fix: note ? fixSentence(note) : null,
       }

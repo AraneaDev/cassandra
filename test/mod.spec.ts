@@ -997,3 +997,74 @@ test('a press or a focus move that fails beneath never rejects', async () => {
   const moved = await paneHook('ui.focus')(host, { ...PANE, element: keys[0], origin: { kind: 'person' } }, boom)
   expect(moved).toEqual({ deny: 'cassandra: the focus could not move.' })
 })
+
+// ---- final fix wave ----
+
+const { PANE_CHROME_LINES } = await import('../mod/pane.tsx')
+const sized = (bodyRows: number, bodyColumns = 100) => render({ bodyColumns, scroll: { offset: 0, bodyRows } })
+const shownRows = (drawn: Drawn[]) => drawn.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
+const drawnLines = (drawn: Drawn[]) =>
+  drawn.filter((n) => n.type === 'Text').length + shownRows(drawn).length + drawn.filter((n) => n.props?.key === 'action-row' || n.props?.key === 'confirm-row').length
+
+test('forget acts on the row the pane shows selected, never on a selection pushed out of view', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const two = PANE_CHROME_LINES + 2
+  const before = shownRows(await sized(two))
+  expect(before).toHaveLength(2)
+  await press(before[1]!)
+  await seedFailure('make')
+  const after = shownRows(await sized(two))
+  expect(after).not.toContain(before[1])
+  await press('forget')
+  const left = (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`).sort()
+  expect(left).toEqual([after[1]!, before[1]!].sort())
+})
+
+test('/cassandra pane opens only for the person\'s own origins', async () => {
+  for (const kind of ['plugin', 'scheduled-trigger']) {
+    expect(await command('pane', { kind })).toEqual({ text: 'The pane opens only from your own /cassandra command.', exitCode: 1 })
+  }
+  expect(await command('pane', undefined)).toEqual({ text: 'The pane opens only from your own /cassandra command.', exitCode: 1 })
+  expect(opts.opened).toBeUndefined()
+  for (const kind of ['composer', 'bridge', 'sdk']) expect((await command('pane', { kind })).exitCode).toBe(0)
+  expect(opts.opened).toHaveLength(3)
+})
+
+test('with hundreds of records and a fix note, the rows and the action row fit the body', async () => {
+  const paths = await pathsFor(io(), cwd)
+  for (let i = 0; i < 200; i++) await seedFailure(`false ${i}`)
+  const { writeFix } = await import('../src/core/fixes.ts')
+  const newest = (await remembered()).map((r) => r.hash)
+  for (const h of newest) await writeFix(io(), paths, h, { kind: 'elsewhere', at: '2026-10-09T00:00:00Z', files: [], more: 0 } as never)
+  await press('forget')
+  // A failed action leaves a notice line too.
+  opts.state!.set('notice', 'Could not forget the selected record.')
+  for (const bodyRows of [12, 20, 40]) {
+    const drawn = await sized(bodyRows)
+    expect(drawnLines(drawn)).toBeLessThanOrEqual(bodyRows)
+    expect(drawn.some((n) => n.props?.key === 'action-row')).toBe(true)
+    expect(drawn.map((n) => (n.type === 'Text' ? textOf(n) : '')).some((l) => l.startsWith('fix '))).toBe(true)
+  }
+}, 30_000)
+
+test('a focus move and a forget right after it act in order: the forget takes the newly focused row', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  await Promise.all([focus(keys[1]!), press('forget')])
+  expect((await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)).toEqual([keys[0]!])
+})
+
+test('forget-all on an empty store asks nothing, and a confirmation the store emptied under is dropped', async () => {
+  await press('forget-all')
+  expect(state('confirmAll')).not.toBe(true)
+  await seedFailure()
+  await press('forget-all')
+  expect(state('confirmAll')).toBe(true)
+  // The store empties another way while the confirmation shows.
+  expect((await command('forget --all')).exitCode).toBe(0)
+  expect(state('confirmAll')).toBe(false)
+  await seedFailure()
+  expect((await render()).some((n) => n.props?.key === 'confirm-row')).toBe(false)
+})
