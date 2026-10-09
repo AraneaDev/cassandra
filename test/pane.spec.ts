@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { fixSentence, writeFix } from '../src/core/fixes.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
 import { stateStamp } from '../src/core/freshness.ts'
-import { paneModel, paneTarget, type PaneView } from '../src/core/pane.ts'
+import { paneModel, type PaneView } from '../src/core/pane.ts'
 import { pathsFor } from '../src/core/paths.ts'
 import { upsertRecord } from '../src/core/record.ts'
 import { appendStat, readStats, warningRates } from '../src/core/stats.ts'
@@ -120,25 +120,4 @@ test('an unreadable store gives the error model', async () => {
 
 test('warningRates is zero with no events', () => {
   expect(warningRates([])).toMatchObject({ warned: 0, fpRate: 0, sameContextRate: 0 })
-})
-
-test('the forget target is the selection while shown, else the first shown row, else none', async () => {
-  expect(await paneTarget(io, cwd, null, 10)).toBeNull()
-  const a = await seed('one', '2026-01-01T00:00:01.000Z')
-  const b = await seed('two', '2026-01-01T00:00:02.000Z')
-  expect(await paneTarget(io, cwd, a, 10)).toBe(a)
-  expect(await paneTarget(io, cwd, 'gone', 10)).toBe(b)
-  expect(await paneTarget(io, cwd, null, 10)).toBe(b)
-})
-
-test('a selection past the window is never the target: it is the row the model shows selected', async () => {
-  const a = await seed('one', '2026-01-01T00:00:01.000Z')
-  const b = await seed('two', '2026-01-01T00:00:02.000Z')
-  const c = await seed('three', '2026-01-01T00:00:03.000Z')
-  for (const maxRows of [1, 2, 3]) {
-    const shown = (await paneModel(io, cwd, { ...view, selected: a }, maxRows)).selected
-    expect(await paneTarget(io, cwd, a, maxRows)).toBe(shown!)
-  }
-  expect(await paneTarget(io, cwd, a, 2)).toBe(c)
-  expect(b).toBeDefined()
 })

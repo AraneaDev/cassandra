@@ -2,7 +2,7 @@ import { forget } from '../src/commands/forget.ts'
 import { runCommand, type CommandResult } from '../src/commands/run.ts'
 import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
-import { paneModel, paneTarget, unreadableModel, type PaneModel, type PaneView } from '../src/core/pane.ts'
+import { paneModel, unreadableModel, type PaneModel, type PaneView } from '../src/core/pane.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { statusText } from '../src/core/status.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
@@ -64,6 +64,8 @@ export interface PaneMatcher {
 
 /** A `ui.render` input for the pane, as far as the mod reads it. */
 export interface PaneRenderEvent {
+  /** Where the tree will be drawn: terminal, desktop, vscode or mobile. */
+  surface?: string
   props: { bodyColumns?: number; scroll?: { bodyRows: number } }
   viewport?: { columns: number; rows: number }
   [key: string]: unknown
@@ -72,6 +74,8 @@ export interface PaneRenderEvent {
 /** A `ui.press` input: the key of the Button pressed. */
 export interface PressEvent {
   element: string
+  /** Where the press came from: the surface whose drawing it pressed. */
+  surface?: string
   [key: string]: unknown
 }
 
@@ -270,10 +274,14 @@ const REV = { plugin: 'cassandra', key: 'rev' } as const
 /** The outcome of the last action, when it failed. */
 const NOTICE = { plugin: 'cassandra', key: 'notice' } as const
 
-/** What the pane last drew: how many rows its list had room for. Forget acts within it. */
-export interface PaneWindow {
-  maxRows: number
+/** What one surface last drew: the row it marked selected, and every row it showed. */
+export interface DrawnPane {
+  selected: string | null
+  hashes: ReadonlySet<string>
 }
+
+/** What each surface last drew, by surface. Forget acts only on rows the person saw. */
+export type DrawnBySurface = Map<string, DrawnPane>
 
 /** What /cassandra pane answers once the pane is open. */
 const PANE_OPENED = 'Opened the Cassandra pane.'
@@ -346,20 +354,20 @@ async function openPane($: ModEngine): Promise<{ text: string; exitCode: number 
  * the error line; a drawing that fails falls back to what lies beneath. Never throws
  * of its own.
  */
-async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRenderEvent, unknown>, wrapIo: (io: Io) => Io, drawn: PaneWindow): Promise<unknown> {
+async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRenderEvent, unknown>, wrapIo: (io: Io) => Io, drawn: DrawnBySurface): Promise<unknown> {
   try {
     const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
     const rows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24
-    // Not state: a render may not write it, and a press only needs this session's last drawing.
-    drawn.maxRows = Math.max(1, rows - PANE_CHROME_LINES)
     let model: PaneModel
     try {
       // Read so that a bump of the revision draws the pane again.
       await $.state.get(REV)
-      model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), drawn.maxRows)
+      model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), Math.max(1, rows - PANE_CHROME_LINES))
     } catch {
       model = unreadableModel()
     }
+    // Not state: a render may not write it, and a press only needs this session's own drawing.
+    drawn.set(e.surface ?? '', { selected: model.selected, hashes: new Set(model.rows.map((r) => r.hash)) })
     return drawPane($.ui.resolve(e), model, columns)
   } catch {
     return next(e)
@@ -383,7 +391,11 @@ async function paneForget($: ModEngine, io: Io, run: () => Promise<CommandResult
   let notice: string | null
   try {
     const r = await run()
-    if (r === null) return
+    if (r === null) {
+      // Nothing seen to act on: redraw, so the person sees the store as it is now.
+      await bumpRev($)
+      return
+    }
     notice = r.code === 0 ? null : r.text
   } catch {
     notice = failure
@@ -397,15 +409,28 @@ async function paneForget($: ModEngine, io: Io, run: () => Promise<CommandResult
 }
 
 /** Act on a press in the pane, by the key of the Button pressed. Never throws. */
-async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: PaneWindow): Promise<void> {
+/**
+ * The record Forget acts on: a row this surface drew. The row focus selected, when it was
+ * drawn here (the ring sits on it even before the redraw), else the row drawn as
+ * selected. Null when nothing was drawn here or that record is gone.
+ */
+async function forgetTarget($: ModEngine, io: Io, cwd: string, drawn: DrawnPane | undefined): Promise<string | null> {
+  if (!drawn) return null
+  const selected = (await $.state.get(SELECTED)).value ?? null
+  const target = selected !== null && drawn.hashes.has(selected) ? selected : drawn.selected
+  if (target === null) return null
+  const stored = await listRecords(io, await pathsFor(io, cwd))
+  return stored.some((r) => r.hash === target) ? target : null
+}
+
+async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: DrawnBySurface): Promise<void> {
   try {
     const io = wrapIo(modIo(hostOf($)))
     const cwd = await $.session.cwd()
     switch (e.element) {
       case KEY_FORGET:
         await paneForget($, io, async () => {
-          // Exactly the row the pane shows selected, within the rows it last drew.
-          const target = await paneTarget(io, cwd, (await $.state.get(SELECTED)).value ?? null, drawn.maxRows)
+          const target = await forgetTarget($, io, cwd, drawn.get(e.surface ?? ''))
           return target === null ? null : forget(io, await pathsFor(io, cwd), target, false)
         }, 'Could not forget the selected record.')
         return
@@ -639,7 +664,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     return answerCommand($, io, e.args, e.origin)
   })
 
-  const drawn: PaneWindow = { maxRows: Number.MAX_SAFE_INTEGER }
+  const drawn: DrawnBySurface = new Map()
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => renderPane($, e, next, wrapIo, drawn))
 
   // Presses and focus moves run one at a time, in order, so a Forget reads the selection

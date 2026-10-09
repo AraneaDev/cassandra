@@ -769,13 +769,13 @@ const textOf = (n: Drawn): string => n.children.map((c) => (typeof c === 'string
 type PaneHook = ($: ModEngine, e: Record<string, unknown>, n: (e: any) => Promise<unknown>) => Promise<unknown>
 const paneHook = (event: string) => hooks.get(event) as unknown as PaneHook
 const PANE = { component: 'Pane', requestId: 'cassandra' }
-const render = async (props: Record<string, unknown> = { bodyColumns: 100, scroll: { offset: 0, bodyRows: 30 } }) =>
-  walk(await paneHook('ui.render')(host, { ...PANE, surface: 'terminal', props, viewport: { columns: 120, rows: 40 } }, async () => ({})))
+const render = async (props: Record<string, unknown> = { bodyColumns: 100, scroll: { offset: 0, bodyRows: 30 } }, surface = 'terminal') =>
+  walk(await paneHook('ui.render')(host, { ...PANE, surface, props, viewport: { columns: 120, rows: 40 } }, async () => ({})))
 const rowKeys = async () => (await render()).filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
 const selectedKey = async () => (await render()).filter((n) => n.type === 'Button' && textOf(n).startsWith('▸')).map((n) => String(n.props.key))[0]
-const press = async (element: string) => {
+const press = async (element: string, surface = 'terminal') => {
   let passed = 0
-  const r = await paneHook('ui.press')(host, { ...PANE, plugin: 'cassandra', element, surface: 'terminal' }, async (e) => { passed += 1; return { element: e.element } })
+  const r = await paneHook('ui.press')(host, { ...PANE, plugin: 'cassandra', element, surface }, async (e) => { passed += 1; return { element: e.element } })
   expect(passed).toBe(1)
   expect(r).toEqual({ element })
 }
@@ -872,16 +872,25 @@ test('forget forgets exactly the selected record, bumps rev and refreshes the st
   expect(state('notice')).toBeNull()
 })
 
-test('two quick presses of forget forget two different records (Review Focus 5)', async () => {
+test('two quick presses of forget never forget an unseen row; each redraw lets the next one act (Review Focus 5)', async () => {
   await seedFailure('bun test')
   await seedFailure('npm test')
   await seedFailure('make')
+  await render()
+  // The second press finds the drawn row gone and only asks for a redraw.
+  const rev = Number(state('rev') ?? 0)
   await Promise.all([press('forget'), press('forget')])
+  expect(await remembered()).toHaveLength(2)
+  expect(Number(state('rev'))).toBeGreaterThan(rev + 1)
+  await render()
+  await press('forget')
   expect(await remembered()).toHaveLength(1)
+  await render()
   await press('forget')
   expect(await remembered()).toHaveLength(0)
   expect(state('notice')).toBeNull()
   // Nothing left to forget: nothing happens.
+  await render()
   await press('forget')
   expect(state('notice')).toBeNull()
 })
@@ -923,11 +932,13 @@ test('forget-all-confirm forgets every record and the fix notes', async () => {
 
 test('a forget that fails sets the notice', async () => {
   await seedFailure()
+  await render()
   wrap = (i) => ({ ...i, sha256: async () => { throw new Error('boom') } })
   await press('forget')
   expect(state('notice')).toBe('Could not forget the selected record.')
   expect(await remembered()).toHaveLength(1)
   wrap = (i) => i
+  await render()
   await press('forget')
   expect(state('notice')).toBeNull()
 })
@@ -968,12 +979,14 @@ test('a single forget whose command answers a non-zero code sets the notice to i
   }))
   try {
     await seedFailure()
+    await render()
     await press('forget')
     expect(state('notice')).toBe('No record matching x.')
     expect(await remembered()).toHaveLength(1)
   } finally {
     refuse = false
   }
+  await render()
   await press('forget')
   expect(state('notice')).toBeNull()
   expect(await remembered()).toHaveLength(0)
@@ -1067,4 +1080,56 @@ test('forget-all on an empty store asks nothing, and a confirmation the store em
   expect(state('confirmAll')).toBe(false)
   await seedFailure()
   expect((await render()).some((n) => n.props?.key === 'confirm-row')).toBe(false)
+})
+
+// ---- Ruling 14: Forget acts only on what this surface drew ----
+
+const idsLeft = async () => (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`).sort()
+
+test('a newer record recorded between the draw and the press is not forgotten: the drawn row is', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const drawnSel = await selectedKey()
+  const keys = await rowKeys()
+  await seedFailure('make')
+  const newest = (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`).find((k) => !keys.includes(k))!
+  await press('forget')
+  expect(await idsLeft()).toEqual([...keys.filter((k) => k !== drawnSel), newest].sort())
+})
+
+test('two surfaces with different windows each forget their own shown selection', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  await seedFailure('make')
+  const all = await rowKeys()
+  const oldest = all[2]!
+  await press(oldest)
+  const terminal = shownRows(await render({ bodyColumns: 100, scroll: { offset: 0, bodyRows: PANE_CHROME_LINES + 3 } }, 'terminal'))
+  const desktop = shownRows(await render({ bodyColumns: 100, scroll: { offset: 0, bodyRows: PANE_CHROME_LINES + 1 } }, 'desktop'))
+  expect(terminal).toContain(oldest)
+  expect(desktop).toEqual([all[0]!])
+  await press('forget', 'desktop')
+  expect(await idsLeft()).toEqual([all[1]!, oldest].sort())
+  await press('forget', 'terminal')
+  expect(await idsLeft()).toEqual([all[1]!])
+})
+
+test('focus a drawn row, then f with no redraw between: the focused row is forgotten', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  expect(await selectedKey()).toBe(keys[0])
+  await focus(keys[1]!)
+  await press('forget')
+  expect(await idsLeft()).toEqual([keys[0]!])
+})
+
+test('a press before any draw forgets nothing and asks for a redraw', async () => {
+  await seedFailure()
+  const rev = Number(state('rev') ?? 0)
+  await press('forget')
+  expect(await remembered()).toHaveLength(1)
+  expect(Number(state('rev'))).toBe(rev + 1)
+  await press('forget', 'desktop')
+  expect(await remembered()).toHaveLength(1)
 })

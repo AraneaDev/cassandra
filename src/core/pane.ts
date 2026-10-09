@@ -33,21 +33,12 @@ const REASON_CAP = 500
 /**
  * What the pane shows of the records: newest first, the first `maxRows`, and the row
  * shown as selected. A selection that vanished, or sits past `maxRows`, falls back to
- * the first shown row on purpose: the pane has no scrolling. One helper for the drawing
- * and for Forget, so Forget acts on exactly the row marked selected.
+ * the first shown row on purpose: the pane has no scrolling.
  */
 function windowOf<T extends { hash: string; record: { lastSeen: string } }>(all: T[], selected: string | null, maxRows: number): { sorted: T[]; shown: T[]; chosen: T | undefined } {
   const sorted = [...all].sort((a, b) => b.record.lastSeen.localeCompare(a.record.lastSeen))
   const shown = sorted.slice(0, Math.max(0, maxRows))
   return { sorted, shown, chosen: shown.find((r) => r.hash === selected) ?? shown[0] }
-}
-
-/**
- * The record a Forget press acts on, read fresh: the row the pane shows as selected
- * with `maxRows` rows. Null when nothing is shown.
- */
-export async function paneTarget(io: Io, cwd: string, selected: string | null, maxRows: number): Promise<string | null> {
-  return windowOf(await listRecords(io, await pathsFor(io, cwd)), selected, maxRows).chosen?.hash ?? null
 }
 
 /** Plain display data for `/cassandra pane`: what is remembered, what is selected, and how warnings fare. */
