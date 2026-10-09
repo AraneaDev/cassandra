@@ -19,7 +19,7 @@ type Step =
   | { call: string; tool?: string; input?: Record<string, unknown>; ends: 'fail' | 'ok' | 'deny' | 'interrupt'; agentId?: string; sessionId?: string; dir?: string; postDir?: string }
   | { compact: true }
   | { spawn: string }
-  | { touch: string }
+  | { touch: string; text?: string }
   | { remove: string }
 
 const SCRIPT: Step[] = [
@@ -108,7 +108,7 @@ async function runBinary(cwd: string, script: Step[] = SCRIPT): Promise<string[]
   const said: string[] = []
   let n = 0
   for (const step of script) {
-    if ('touch' in step) { writeFileSync(join(cwd, step.touch), 'x'); continue }
+    if ('touch' in step) { writeFileSync(join(cwd, step.touch), step.text ?? 'x'); continue }
     if ('remove' in step) { rmSync(join(cwd, step.remove), { force: true }); continue }
     if ('compact' in step) {
       await handle({ hook_event_name: 'PostCompact', session_id: 's1', cwd }, io)
@@ -141,7 +141,7 @@ async function runMod(cwd: string, script: Step[] = SCRIPT): Promise<string[]> {
   const said: string[] = []
   let n = 0
   for (const step of script) {
-    if ('touch' in step) { writeFileSync(join(cwd, step.touch), 'x'); continue }
+    if ('touch' in step) { writeFileSync(join(cwd, step.touch), step.text ?? 'x'); continue }
     if ('remove' in step) { rmSync(join(cwd, step.remove), { force: true }); continue }
     if ('compact' in step || 'spawn' in step) {
       opts.cwd = cwd
@@ -202,6 +202,38 @@ test('the same holds on the git path', async () => {
     expect(said.some((l) => l.includes('Last time this started working after'))).toBe(true)
     expect(Object.keys(snapshot(join(tmp, home))).some((k) => k.startsWith('P/fixes/'))).toBe(true)
   }
+})
+
+/** An edit to a file that was already dirty when the call failed. */
+const DIRTY_EDIT: Step[] = [
+  { touch: 'd.txt', text: 'before' },
+  { call: 'build', ends: 'fail' },
+  { touch: 'd.txt', text: 'after' },
+  { call: 'build', ends: 'ok' },
+  { call: 'build', ends: 'fail' },
+  { call: 'build', ends: 'fail' },
+]
+
+test('on the git path both front ends store the same dirtyHashes, and name an edit to an already-dirty file', async () => {
+  const init = (dir: string): string => {
+    for (const a of [['init', '-q'], ['config', 'user.email', 't@e.com'], ['config', 'user.name', 'T'], ['add', '-A'], ['commit', '-qm', 'init', '--date', '2026-01-01T00:00:00Z']]) {
+      expect(Bun.spawnSync(['git', '-C', dir, ...a], { stdout: 'ignore', stderr: 'ignore', env: { ...process.env, GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' } }).exitCode).toBe(0)
+    }
+    return dir
+  }
+  const saidBinary = await runBinary(init(repo('h1')), DIRTY_EDIT)
+  const saidMod = await runMod(init(repo('h2')), DIRTY_EDIT)
+  expect(saidMod).toEqual(saidBinary)
+  expect(saidBinary.at(-1)).toContain('Last time this started working after `d.txt` changed')
+  const want = { 'd.txt': (await nodeIo.sha256('after')).slice(0, 16) }
+  for (const home of ['home-binary', 'home-mod']) {
+    const store = snapshot(join(tmp, home))
+    const records = Object.entries(store).filter(([k]) => k.startsWith('P/records/')).map(([, v]) => JSON.parse(v) as { dirtyHashes?: Record<string, string> })
+    expect(records.map((r) => r.dirtyHashes)).toEqual([want])
+    // The scrub masks stamps only, so a dirtyHashes difference would still fail the comparison below.
+    expect(Object.values(scrub(store)).some((v) => v.includes(`"dirtyHashes":{"d.txt":"${want['d.txt']}"}`))).toBe(true)
+  }
+  expect(scrub(snapshot(join(tmp, 'home-mod')))).toEqual(scrub(snapshot(join(tmp, 'home-binary'))))
 })
 
 const MONO: Step[] = [
