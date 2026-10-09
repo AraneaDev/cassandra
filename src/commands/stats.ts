@@ -1,4 +1,5 @@
 import { readStats, type Boundary } from '../core/stats.ts'
+import { readRecord } from '../core/record.ts'
 import type { Io } from '../core/io.ts'
 import type { Paths } from '../core/paths.ts'
 
@@ -16,7 +17,8 @@ export async function stats(io: Io, paths: Paths): Promise<number> {
   const events = await readStats(io, paths)
   const warned = events.filter((e) => e.kind === 'warned')
   const briefed = events.filter((e) => e.kind === 'briefed')
-  if (warned.length === 0 && briefed.length === 0) {
+  const resolves = events.filter((e) => e.kind === 'resolved' && e.hash)
+  if (warned.length === 0 && briefed.length === 0 && resolves.length === 0) {
     console.log('No warnings recorded yet for this project.')
     return 0
   }
@@ -66,6 +68,16 @@ export async function stats(io: Io, paths: Paths): Promise<number> {
       console.log(`    ${b.padEnd(13)} ${String(briefed.filter((e) => e.boundary === b).length).padStart(4)}`)
     }
     console.log(`  repeated after briefing  ${repeated.size} of ${firstBriefed.size}  (briefed, then retried across a boundary anyway)`)
+  }
+
+  if (resolves.length > 0) {
+    // A resolve the agent got wrong: the record was created again after it was forgotten.
+    let failedAgain = 0
+    for (const e of resolves) {
+      const record = await readRecord(io, paths, e.hash!)
+      if (record && record.firstSeen > e.t) failedAgain += 1
+    }
+    console.log(`${warned.length > 0 || briefed.length > 0 ? '\n' : ''}  resolved by an agent  ${resolves.length}, failed again ${failedAgain}  (a high second number means resolve is silencing warnings, not reporting fixes)`)
   }
   return 0
 }
