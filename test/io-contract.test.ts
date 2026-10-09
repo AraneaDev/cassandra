@@ -3,8 +3,10 @@ import { chmodSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Io } from '../src/core/io.ts'
+import { modIo } from '../src/io/mod.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { memoryIo } from './support/memory-io.ts'
+import { nodeHost } from './support/node-host.ts'
 
 /** One implementation under contract: an `Io`, a writable root, and a way to make a path unreadable. */
 export interface Subject {
@@ -17,12 +19,20 @@ export interface Subject {
 
 const isRoot = typeof process.getuid === 'function' && process.getuid() === 0
 
-/** Subjects keyed by name. Task 6 adds `mod`. */
+/** Subjects keyed by name.  */
 export const SUBJECTS: Record<string, () => Subject> = {
   node: () => {
     const root = mkdtempSync(join(tmpdir(), 'cass-io-'))
     return {
       io: nodeIo, root, canRun: true,
+      makeUnreadable: (p) => chmodSync(p, 0o000),
+      cleanup: () => { try { chmodSync(join(root, 'locked'), 0o700) } catch {} rmSync(root, { recursive: true, force: true }) },
+    }
+  },
+  mod: () => {
+    const root = mkdtempSync(join(tmpdir(), 'cass-io-mod-'))
+    return {
+      io: modIo(nodeHost()), root, canRun: true,
       makeUnreadable: (p) => chmodSync(p, 0o000),
       cleanup: () => { try { chmodSync(join(root, 'locked'), 0o700) } catch {} rmSync(root, { recursive: true, force: true }) },
     }

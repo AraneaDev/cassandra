@@ -201,3 +201,23 @@ test('an empty session id is never a mod session', async () => {
   expect(await markModSession(nodeIo, '')).toBe(false)
   expect(await isModSession(nodeIo, '')).toBe(false)
 })
+
+test('a mod that cannot see CLAUDE_PLUGIN_DATA follows the pointer the binary left', async () => {
+  const { modIo } = await import('../src/io/mod.ts')
+  const { nodeHost } = await import('./support/node-host.ts')
+  const home = join(tmp, 'h')
+  const pluginData = join(tmp, 'plugin-data')
+  mkdirSync(pluginData, { recursive: true })
+  delete process.env.CASSANDRA_HOME
+  process.env.HOME = home
+  process.env.CLAUDE_PLUGIN_DATA = pluginData
+  expect(await dataRoot(nodeIo)).toBe(pluginData)
+  const mod = modIo(nodeHost({ env: { HOME: home } }))
+  expect(await dataRoot(mod)).toBe(pluginData)
+})
+
+test('a mod with neither an explicit root nor HOME cannot resolve a data root and says so by rejecting', async () => {
+  const { modIo } = await import('../src/io/mod.ts')
+  const { nodeHost } = await import('./support/node-host.ts')
+  await expect(dataRoot(modIo(nodeHost({ env: {} })))).rejects.toThrow('no home directory')
+})
