@@ -97,3 +97,26 @@ test('the walk stops after 32 steps', async () => {
   expect(await packageScope(io, deep)).toBe('')
   expect(await packageScope(io, `${root}/d0/d1`)).toBe('d0')
 })
+
+/** The io with every entry named `name` under `dir` listed as a link: the kind both front ends give one. */
+function linkedAt(base: Io, dir: string, name: string): Io {
+  return {
+    ...base,
+    async list(d) {
+      const listing = await base.list(d)
+      if (!listing.ok || d !== dir) return listing
+      return { ok: true, entries: listing.entries.map((e) => (e.name === name ? { ...e, kind: 'other' as const } : e)) }
+    },
+  }
+}
+
+test('a symlinked manifest does not mark a package', async () => {
+  const linked = linkedAt(io, `${root}/packages/a`, 'package.json')
+  expect(await packageScope(linked, `${root}/packages/a/src`)).toBe('')
+})
+
+test('a package with a regular manifest beside a symlinked one is still a package', async () => {
+  await io.writeText(`${root}/packages/a/deno.json`, '{}')
+  const linked = linkedAt(io, `${root}/packages/a`, 'package.json')
+  expect(await packageScope(linked, `${root}/packages/a/src`)).toBe('packages/a')
+})

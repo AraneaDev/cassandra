@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { tmpdir } from 'node:os'
 import { install, type ModEngine, type ToolCallEvent, type ToolCallOutcome } from '../mod/install.ts'
@@ -277,6 +277,34 @@ test('in a monorepo both front ends keep each package to itself', async () => {
   expect(records.map((r) => r.scope ?? '').sort()).toEqual(['', 'packages/a'])
   expect(Object.values(store).some((v) => v.includes('cd packages/a'))).toBe(false)
   for (const home of ['home-binary', 'home-mod']) expect(Object.keys(snapshot(join(tmp, home))).some((k) => k.startsWith('P/fixes/'))).toBe(true)
+})
+
+test('a symlinked manifest marks no package on either front end', async () => {
+  const linked = (name: string): string => {
+    const dir = repo(name)
+    mkdirSync(join(dir, 'shared'), { recursive: true })
+    mkdirSync(join(dir, 'packages/a'), { recursive: true })
+    writeFileSync(join(dir, 'shared', 'package.json'), '{}')
+    symlinkSync('../../shared/package.json', join(dir, 'packages/a', 'package.json'))
+    for (const a of [['init', '-q'], ['config', 'user.email', 't@e.com'], ['config', 'user.name', 'T'], ['add', '-A'], ['commit', '-qm', 'init', '--date', '2026-01-01T00:00:00Z']]) {
+      expect(Bun.spawnSync(['git', '-C', dir, ...a], { stdout: 'ignore', stderr: 'ignore', env: { ...process.env, GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' } }).exitCode).toBe(0)
+    }
+    return dir
+  }
+  const steps: Step[] = [
+    { call: 'bun test', ends: 'fail', dir: 'packages/a' },
+    { call: 'bun test', ends: 'fail' },
+  ]
+  const saidBinary = await runBinary(linked('s1'), steps)
+  const saidMod = await runMod(linked('s2'), steps)
+  expect(saidMod).toEqual(saidBinary)
+  // packages/a is no package, so the same command at the root is the same record.
+  expect(saidBinary[1]).toContain('`bun test` failed once before')
+  expect(saidBinary[1]).not.toContain('(in ')
+  const store = snapshot(join(tmp, 'home-binary'))
+  expect(scrub(snapshot(join(tmp, 'home-mod')))).toEqual(scrub(store))
+  const records = Object.entries(store).filter(([k]) => k.startsWith('P/records/')).map(([, v]) => JSON.parse(v) as { scope?: string })
+  expect(records.map((r) => r.scope)).toEqual([undefined])
 })
 
 /** Two sibling git repositories, as a user with several checkouts side by side has. */

@@ -280,6 +280,8 @@ Known gaps and differences:
   forgotten.
 - A package without one of the listed manifests counts as part of the nearest parent
   package, or of the root.
+- A manifest that is a symlink does not mark a package, on either front end: only a
+  regular file does.
 - A fix note names an edit to a file that already had uncommitted changes when the call
   failed, unless that file held over 256K characters of text, sat under a symlinked
   directory, or was beyond the first 50 dirty files at the time.
