@@ -125,9 +125,6 @@ A false-positive harness applies nine mutation shapes across both the git and mt
 and currently detects 18 of 18, at a 0.0% false-positive rate. A separate check against a
 headless repository, one with no commits at all, passes 9 of 9.
 
-File times are compared at full precision, not truncated, so both front ends stamp a tree
-the same way where they can read the same times.
-
 One gap is inherent to a metadata-only probe rather than a bug in it: a file rewritten to
 different content of the same length, with its mtime restored afterward, is not detected
 on the mtime path. The harness reports it.
@@ -156,8 +153,9 @@ freshness probe, which is where its time goes.
 
 For comparison, the binary was timed with `hyperfine` (`-N`, 50 warm runs) against a
 temporary data directory and an unchanged repo: a hit is p50 48.20ms (p95 54.41ms) and a
-miss p50 31.47ms (p95 33.75ms). On this machine the mod's hit path is faster than the
-binary's. Timing the same miss payload with 60 runs, `main`'s binary measured
+miss p50 31.47ms (p95 33.75ms). The mod figure is an in-process floor that excludes the engine's `$` dispatch, while the
+binary figure is a full process measurement, so the two are not like for like. Timing the
+same miss payload with 60 runs, `main`'s binary measured
 31.6 ± 2.3ms and this branch's 33.8 ± 2.6ms, so the mod port did not cause the binary's
 figure.
 
@@ -198,8 +196,8 @@ Known gaps and differences:
 - The mod detects an interrupt by the dispatch's abort signal. This was verified with
   SIGINT on a headless run, not with Esc in the interactive UI.
 - On the mtime path, outside git, a record is matched only by the front end that wrote it.
-  File times are compared at full precision, and the two runtimes may report them
-  differently.
+  The mod's listing is whole-millisecond and the binary's is fractional, so after
+  switching front ends the existing non-git records go silent.
 - The mod's file listing reports whole milliseconds, so on the mtime path a same-length
   rewrite within the same millisecond as the previous stamp is not detected by the mod.
   The binary detects it.
