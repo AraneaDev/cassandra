@@ -1,4 +1,5 @@
 import { deleteRecord, listRecords } from '../core/record.ts'
+import { removeAllFixes } from '../core/fixes.ts'
 import type { Io } from '../core/io.ts'
 import { type Paths } from '../core/paths.ts'
 import { explainResolution, resolveHash } from '../core/resolve.ts'
@@ -8,7 +9,11 @@ export async function forget(io: Io, paths: Paths, target: string | null, all: b
   if (all) {
     const records = await listRecords(io, paths)
     for (const { hash } of records) await deleteRecord(io, paths, hash)
-    console.log(`Forgot ${records.length} record${records.length === 1 ? '' : 's'}.`)
+    const fixes = await removeAllFixes(io, paths)
+    const n = records.length
+    console.log(fixes > 0
+      ? `Forgot ${n} record${n === 1 ? '' : 's'} and ${fixes} fix note${fixes === 1 ? '' : 's'}.`
+      : `Forgot ${n} record${n === 1 ? '' : 's'}.`)
     return 0
   }
   if (!target) {
