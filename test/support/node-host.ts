@@ -21,7 +21,18 @@ export interface NodeHostOptions {
   commands?: string[]
   /** Every value the mod pinned with `$.ui.status`, in order; undefined clears the line. */
   statuses?: Array<string | undefined>
+  /** What `$.session.surfaces()` answers; terminal when absent, none for a headless run. */
+  surfaces?: readonly string[]
+  /** Every pane the mod opened with `$.ui.open`, in order. */
+  opened?: unknown[]
+  /** The plugin's `$.state`, in memory, by key. */
+  state?: Map<string, unknown>
+  /** Make `$.state.set` reject. */
+  stateSetRejects?: boolean
 }
+
+/** The element table `$.ui.resolve` hands out here: each element is its own name. */
+export const FAKE_ELEMENTS = { Box: 'Box', Text: 'Text', Button: 'Button' } as const
 
 /** The slice of `$` the mod uses beyond `ModHost`. */
 export type NodeHost = ModHost & {
@@ -29,10 +40,19 @@ export type NodeHost = ModHost & {
     id(): Promise<string>
     cwd(): Promise<string>
     append(args: { message: { content: Array<{ text: string }> }; agentId?: string }): Promise<{ deny?: string }>
+    surfaces(): Promise<readonly string[]>
+  }
+  state: {
+    get(ref: { plugin: string; key: string }): Promise<{ value: never; version: number }>
+    set(ref: { plugin: string; key: string }, value: unknown): Promise<{ isSet: boolean; version: number }>
   }
   tool: { register(spec: { name: string; description: string }): Promise<unknown> }
   command: { register(spec: { name: string; description?: string; argumentHint?: string }): Promise<unknown> }
-  ui: { status(text: string | undefined): void }
+  ui: {
+    status(text: string | undefined): void
+    open(args: unknown): Promise<{ isPlaced: boolean }>
+    resolve(e: unknown): typeof FAKE_ELEMENTS
+  }
 }
 
 /**
@@ -97,6 +117,20 @@ export function nodeHost(opts: NodeHostOptions = {}): NodeHost {
         ;(opts.appended ??= []).push({ agentId: args.agentId, text: args.message.content.map((c) => c.text).join('') })
         return {}
       },
+      async surfaces() {
+        return opts.surfaces ?? ['terminal']
+      },
+    },
+    state: {
+      async get(ref) {
+        const state = (opts.state ??= new Map())
+        return { value: state.get(ref.key) as never, version: state.has(ref.key) ? 1 : 0 }
+      },
+      async set(ref, value) {
+        if (opts.stateSetRejects) throw new Error('cannot set')
+        ;(opts.state ??= new Map()).set(ref.key, value)
+        return { isSet: true, version: 1 }
+      },
     },
     tool: {
       async register(spec: { name: string; description: string }) {
@@ -114,6 +148,13 @@ export function nodeHost(opts: NodeHostOptions = {}): NodeHost {
     ui: {
       status(text: string | undefined) {
         ;(opts.statuses ??= []).push(text)
+      },
+      async open(args) {
+        ;(opts.opened ??= []).push(args)
+        return { isPlaced: true }
+      },
+      resolve() {
+        return FAKE_ELEMENTS
       },
     },
   }

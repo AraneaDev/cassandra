@@ -301,6 +301,11 @@ Known gaps and differences:
   Bun. On a mod build `/cassandra` does not.
 - The status line's interactive display was not checked by hand during development.
   Headless runs confirmed it is harmless.
+- The pane (`/cassandra pane`) is covered by the engine test kit, which mounts it on
+  terminal and desktop and presses its buttons by key. The kit cannot send hotkey
+  letters, so `f` and `a` are untested. Opening focused, the arrow and Tab focus walk,
+  focus events and Esc were checked by hand under tmux on a throwaway prototype pane,
+  not on this one.
 - The engine smoke tests (`mod/smoke.test.ts`) prove routing. One checks that a tool call
   passes through once, unchanged. One checks that a `query` call reaches Cassandra's own
   tool hook and is answered without being passed on. Neither reaches a real store, because
@@ -332,6 +337,25 @@ runs when the person types it, or in a headless run; any other origin is refused
 nothing is forgotten. On builds without mods, `/cassandra` is the plugin's markdown
 command, which takes your request in plain words and runs the CLI through Bun. On mod
 builds that command is still reachable as `/cassandra:cassandra`.
+
+`/cassandra pane` opens a pane beside the conversation with the project's records: a list, the
+selected record in detail, and the same figures as `stats`. The selected row is marked
+with a leading `▸`, and a stale row is dimmed and suffixed `stale`. Move with the arrow
+keys or Tab, and select with Enter or by focusing the row. `f` forgets the selected
+record. `a` asks for a second press, offering "Forget all N records" or Cancel, before it
+drops everything. Esc closes the pane. The pane needs a mod build and an interactive
+session; with no interactive surface, as in `claude -p`, `/cassandra pane` answers "The
+pane needs an interactive session." and exits 1. Only your own command opens it: from
+a plugin or a schedule, `/cassandra pane` answers "The pane opens only from your own
+/cassandra command." and exits 1. The shell CLI does not know `pane`.
+
+The pane is not live. Records written by other sessions show up when this pane next
+redraws: after this session's own store changes, or when you move focus to another row.
+`f` only ever forgets a row the pane has drawn; if that row is gone, the press just
+redraws the pane.
+
+The status line stays the only unprompted UI. A warning toast was left out on purpose:
+it would speak unprompted.
 
 ## What Cassandra does not do
 
