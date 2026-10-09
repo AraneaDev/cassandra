@@ -314,3 +314,26 @@ test('a denial reason is read from denial_reason, falling back to reason', async
   const hash = (await fingerprint(nodeIo, 'Bash', { command: 'curl evil.test' }))!
   expect((await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash))?.errorExcerpt).toBe('network egress blocked')
 })
+
+test('the binary stands down when the mod has claimed the session', async () => {
+  const { markModSession } = await import('../src/core/session.ts')
+  await markModSession(nodeIo, 's1')
+  await handle(fail('bun test'))
+  const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
+  expect(await readRecord(nodeIo, await pathsFor(nodeIo, cwd), hash)).toBeNull()
+  expect(await handle(pre('bun test'))).toBeNull()
+})
+
+test('another session\'s marker does not silence this one', async () => {
+  const { markModSession } = await import('../src/core/session.ts')
+  await markModSession(nodeIo, 'someone-else')
+  await handle(fail('bun test'))
+  expect(await handle(pre('bun test'))).not.toBeNull()
+})
+
+test('run never throws: garbage input is silence, a real payload is handled', async () => {
+  const { run } = await import('../src/hook')
+  expect(await run('not json')).toBeNull()
+  await handle(fail('bun test'))
+  expect(await run(JSON.stringify(pre('bun test')))).not.toBeNull()
+})
