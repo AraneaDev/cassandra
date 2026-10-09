@@ -90,10 +90,10 @@ export interface ModOn {
 }
 
 /**
- * The same calls the binary's hooks match: Bash and every MCP tool, except Cassandra's own.
+ * The same calls the binary's hooks match: Bash and every MCP tool, except Cassandra's own two.
  * `classify()` ignores those already; the matcher keeps the hook from being dispatched for them.
  */
-export const TRACKED = /^(?:Bash|mcp__(?!cassandra__).+)$/
+export const TRACKED = /^(?:Bash|mcp__(?!cassandra__(?:query|resolve)$).+)$/
 
 /** Keys the engine puts on a `tool.call` input that are not the tool's arguments. */
 const RESERVED = new Set(['tool', 'tool_use_id', 'consent', 'agentId'])

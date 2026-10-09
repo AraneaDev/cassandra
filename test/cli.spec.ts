@@ -254,5 +254,5 @@ test('stats reports agent resolves and how many failed again afterwards (Review 
   writeRecordAt(paths, 'bb11bb22cc33dd44', '2026-01-01T00:00:01.000Z')
   expect(await run(['stats', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('resolved by an agent  3, failed again 1')
-  expect(out.join('\n')).toStartWith('  resolved by an agent')
+  expect(out.join('\n')).toStartWith('agent resolves\n\n  resolved by an agent')
 })

@@ -4,19 +4,20 @@ import { sanitiseExcerpt } from './engine.ts'
 import { fingerprint } from './fingerprint.ts'
 import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
+import { OWN_TOOL_PREFIX } from './own-tools.ts'
 import { pathsFor } from './paths.ts'
 import { deleteRecord, readRecord } from './record.ts'
 import { explainResolution, resolveHash } from './resolve.ts'
 import { appendStat } from './stats.ts'
 
 /** How the engine lists this plugin's tools to the model (confirmed by the tools spike). */
-export const TOOL_PREFIX = 'mcp__cassandra__'
+export const TOOL_PREFIX = OWN_TOOL_PREFIX
 
 /** What the model reads about `query`. One sentence: tool descriptions ride every request. */
 export const QUERY_TOOL = {
   name: 'query',
   description: 'Ask whether a command already failed in this project and nothing has changed since, or with no command, list the calls that are known dead ends right now.',
-  inputSchema: { type: 'object', properties: { command: { type: 'string' } } },
+  inputSchema: { type: 'object', properties: { command: { type: 'string', description: 'a Bash command, exactly as it was run' } } },
 }
 
 /** What the model reads about `resolve`. */
@@ -25,7 +26,11 @@ export const RESOLVE_TOOL = {
   description: 'Tell Cassandra a remembered failure was fixed outside this repository, so it stops warning about it. If the call fails again it is remembered again.',
   inputSchema: {
     type: 'object',
-    properties: { command: { type: 'string' }, id: { type: 'string' }, reason: { type: 'string' } },
+    properties: {
+      command: { type: 'string', description: 'a Bash command, exactly as it was run' },
+      id: { type: 'string', description: 'the 8-character id that query lists' },
+      reason: { type: 'string', description: 'what was fixed, and where' },
+    },
     required: ['reason'],
   },
 }
@@ -58,10 +63,13 @@ export async function queryText(io: Io, cwd: string, input: unknown): Promise<st
     const record = hash ? await readRecord(io, await pathsFor(io, cwd), hash) : null
     if (!hash || !record) return say('No failure of this command is remembered in this project.')
     const stamp = await stateStamp(io, cwd)
-    const scope = scopeOf(record.stateKind as Exclude<typeof record.stateKind, 'none'>)
-    const verdict = unchanged(record.stateStamp, record.stateKind, stamp)
-      ? `Nothing in ${scope} has changed since.`
-      : `Something in ${scope} has changed since, so a retry may be legitimate.`
+    let verdict = 'Cassandra cannot tell whether anything has changed since.'
+    if (record.stateKind !== 'none' && stamp.kind !== 'none') {
+      const scope = scopeOf(record.stateKind)
+      verdict = unchanged(record.stateStamp, record.stateKind, stamp)
+        ? `Nothing in ${scope} has changed since.`
+        : `Something in ${scope} has changed since, so a retry may be legitimate.`
+    }
     return say(`${history(record)}, most recently ${record.lastSeen}.${reason(record)} ${verdict}`)
   } catch {
     return say('could not read what this project remembers.')
@@ -76,7 +84,7 @@ export async function queryText(io: Io, cwd: string, input: unknown): Promise<st
 export async function resolveFailure(io: Io, cwd: string, input: unknown): Promise<string> {
   try {
     const { command, id, reason: why } = fieldsOf(input)
-    if ((command === undefined) === (id === undefined)) return say('Name the failure by `command` or by `id`, not both.')
+    if ((command === undefined) === (id === undefined)) return say('Name the failure by exactly one of `command` or `id`.')
     if (command !== undefined && typeof command !== 'string') return say('`command` must be a string.')
     if (id !== undefined && typeof id !== 'string') return say('`id` must be a string.')
     const stated = typeof why === 'string' ? sanitiseExcerpt(why) : ''

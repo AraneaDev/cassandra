@@ -77,7 +77,8 @@ export async function stats(io: Io, paths: Paths): Promise<number> {
       const record = await readRecord(io, paths, e.hash!)
       if (record && record.firstSeen > e.t) failedAgain += 1
     }
-    console.log(`${warned.length > 0 || briefed.length > 0 ? '\n' : ''}  resolved by an agent  ${resolves.length}, failed again ${failedAgain}  (a high second number means resolve is silencing warnings, not reporting fixes)`)
+    console.log(`${warned.length > 0 || briefed.length > 0 ? '\n' : ''}agent resolves\n`)
+    console.log(`  resolved by an agent  ${resolves.length}, failed again ${failedAgain}  (a high second number means resolve is silencing warnings, not reporting fixes)`)
   }
   return 0
 }

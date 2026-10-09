@@ -85,4 +85,6 @@ test("Cassandra's own tools are never tracked", () => {
   expect(classify('mcp__cassandra__resolve')).toBe('ignored')
   expect(classify('mcp__cassandra_other__x')).toBe('mcp')
   expect(classify('mcp__srv__cassandra__query')).toBe('mcp')
+  expect(classify('mcp__cassandra__select')).toBe('mcp')
+  expect(classify('mcp__cassandra__queryx')).toBe('mcp')
 })

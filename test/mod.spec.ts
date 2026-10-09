@@ -601,6 +601,8 @@ test("the tracking matcher excludes Cassandra's own tools and nothing else", asy
   expect(TRACKED.test('Read')).toBe(false)
   expect(TRACKED.test('mcp__cassandra_x__y')).toBe(true)
   expect(TRACKED.test('mcp__srv__cassandra__x')).toBe(true)
+  expect(TRACKED.test('mcp__cassandra__select')).toBe(true)
+  expect(TRACKED.test('mcp__cassandra__queryx')).toBe(true)
   expect(TRACKED.test('Bash2')).toBe(false)
 })
 

@@ -69,7 +69,7 @@ Only `Bash` and `mcp__*` calls. `Edit` and `Write` payloads never repeat byte fo
 even when the edit is functionally the same fix twice, so they are deliberately left out
 of the index rather than indexed and never matching.
 
-Cassandra never reads your prompts or the model's prose. It fingerprints `tool_name` plus
+Cassandra never reads your prompts, and it fingerprints `tool_name` plus
 `tool_input`, both structured JSON, so the match is deterministic and says nothing about
 which language you or the agent are working in. A `Bash` command is trimmed and has runs
 of whitespace collapsed before hashing, nothing else: no path canonicalization, no flag
@@ -77,7 +77,8 @@ reordering, no stripping of trailing pipes or redirects, since each of those can
 merge two different commands into one. An `mcp__*` call is hashed on the raw `tool_input`
 as delivered.
 
-There is one piece of free text it does read, and it is worth knowing about. When a call
+There is one piece of free text it reads from the call's outcome, and it is worth knowing
+about (the `resolve` reason, below, is the other). When a call
 fails or is denied, Cassandra keeps a 240-character excerpt of that tool's own
 `error_message` or `denial_reason`, writes it to the record on disk, and quotes it back in
 the warning so you can see why the call died last time. That excerpt is output from a
@@ -145,7 +146,7 @@ answer only when asked, and Cassandra never records calls to its own tools.
 - **`query`** writes nothing. With a `command`, it answers whether that `Bash` command
   already failed in this project, how often and when, the fenced last reason, and whether
   anything in this repository or directory tree changed since. Without a command, it lists
-  the live dead ends, at most five plus "...and N more", each with an 8-character id.
+  the live dead ends, at most five plus "…and N more live failures.", each with an 8-character id.
 - **`resolve`** is for a fix that happened outside the repository, which the freshness
   probe cannot see. It takes exactly one of `command` or `id`, plus a `reason`. Cassandra
   forgets the record, the same as `cassandra forget`, and logs a `resolved` stats line with
@@ -233,6 +234,8 @@ measurable, and that is the trade being made.
 
 Known gaps and differences:
 
+- A user MCP server named `cassandra` that itself exposes a `query` or `resolve` tool
+  would clash with Cassandra's own tools. Its other tools are tracked as usual.
 - Mod timing: the mod hands a new subagent its note after the subagent's first tool
   result, when its loop is running and is sure to make another request. A subagent that
   never uses a tool gets no note. If that subagent's very first action repeats a dead end,
@@ -285,14 +288,18 @@ directory. A `/cassandra` slash command runs `list` inside a session, and switch
 
 ## What Cassandra does not do
 
-- It never blocks, denies, or rewrites a call. The only thing it can add is one line of
-  `additionalContext`. A briefing is a note added to a conversation, not a change to the
-  call or compaction that triggered it.
-- It never reads your prompts or the model's prose. The match is on structured
-  `tool_name` and `tool_input` JSON.
-- It does keep one piece of free text: a 240-character excerpt of the failing tool's own
-  error output or denial reason, stored with the record and quoted back, fenced, in the
-  warning. That is the whole of what it reads beyond the call itself.
+- It never blocks, denies, or rewrites a call. On a call it adds one line of
+  `additionalContext`. On the mod path it also answers its own two tools, `query` and
+  `resolve`, when the model calls them, and adds the boundary notes. A briefing is a note
+  added to a conversation, not a change to the call or compaction that triggered it.
+- It never reads your prompts. The match is on structured `tool_name` and `tool_input`
+  JSON. The one place the model's own words reach it is the `reason` it passes to
+  `resolve`.
+- It does keep two pieces of free text. One is a 240-character excerpt of the failing
+  tool's own error output or denial reason, stored with the record and quoted back,
+  fenced, in the warning. The other is the `resolve` reason, which is model-written: it is
+  stored sanitised and capped at 240 characters in the project's stats log. Those are the
+  whole of what it reads beyond the call itself.
 - It never leaves the machine. There is no network request, no telemetry, no API key.
 - It stores nothing outside its own data directory.
 

@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from 'bun:test'
 import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from '../src/core/tools.ts'
 import { settle, type Call } from '../src/core/engine.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
-import { pathsFor } from '../src/core/paths.ts'
+import { pathsFor, recordPath } from '../src/core/paths.ts'
 import { readRecord } from '../src/core/record.ts'
 import { readStats } from '../src/core/stats.ts'
 import { memoryIo, type MemoryIo } from './support/memory-io.ts'
@@ -41,6 +41,15 @@ test('query with a recorded command after a change says a retry may be legitimat
   expect(await queryText(io, cwd, { command: 'bun test' })).toEndWith(
     'Something in this directory tree has changed since, so a retry may be legitimate.',
   )
+})
+
+test('query cannot tell about change when the stamp is unknowable', async () => {
+  await fail('bun test')
+  const paths = await pathsFor(io, cwd)
+  const hash = await hashOf('bun test')
+  const rec = (await readRecord(io, paths, hash))!
+  await io.writeText(recordPath(paths, hash), JSON.stringify({ ...rec, stateKind: 'none', stateStamp: '' }))
+  expect(await queryText(io, cwd, { command: 'bun test' })).toEndWith('Cassandra cannot tell whether anything has changed since.')
 })
 
 test('query with an unknown command', async () => {
@@ -101,12 +110,12 @@ test('resolve with an ambiguous prefix deletes nothing and lists candidates (Rev
 })
 
 test('resolve refuses bad input without throwing (Review Focus 1)', async () => {
-  expect(await resolveFailure(io, cwd, { reason: 'x' })).toBe('cassandra: Name the failure by `command` or by `id`, not both.')
-  expect(await resolveFailure(io, cwd, { command: 'a', id: 'abcd', reason: 'x' })).toBe('cassandra: Name the failure by `command` or by `id`, not both.')
+  expect(await resolveFailure(io, cwd, { reason: 'x' })).toBe('cassandra: Name the failure by exactly one of `command` or `id`.')
+  expect(await resolveFailure(io, cwd, { command: 'a', id: 'abcd', reason: 'x' })).toBe('cassandra: Name the failure by exactly one of `command` or `id`.')
   expect(await resolveFailure(io, cwd, { command: 'a', reason: '   ' })).toBe('cassandra: Give a `reason`: what was fixed, and where.')
   expect(await resolveFailure(io, cwd, { command: 'a' })).toBe('cassandra: Give a `reason`: what was fixed, and where.')
   expect(await resolveFailure(io, cwd, { id: ['x'], reason: 'r' })).toBe('cassandra: `id` must be a string.')
-  expect(await resolveFailure(io, cwd, 'nonsense')).toBe('cassandra: Name the failure by `command` or by `id`, not both.')
+  expect(await resolveFailure(io, cwd, 'nonsense')).toBe('cassandra: Name the failure by exactly one of `command` or `id`.')
 })
 
 test('resolve an unknown command says so and writes nothing', async () => {
