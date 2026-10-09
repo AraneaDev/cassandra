@@ -392,7 +392,9 @@ async function paneForget($: ModEngine, io: Io, run: () => Promise<CommandResult
   try {
     const r = await run()
     if (r === null) {
-      // Nothing seen to act on: redraw, so the person sees the store as it is now.
+      // Nothing seen to act on: redraw, so the person sees the store as it is now,
+      // without the outcome of an older action beside it.
+      await $.state.set(NOTICE, null).catch(() => undefined)
       await bumpRev($)
       return
     }

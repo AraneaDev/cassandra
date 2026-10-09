@@ -1147,3 +1147,20 @@ test('a press before any draw forgets nothing and asks for a redraw', async () =
   await press('forget', 'desktop')
   expect(await remembered()).toHaveLength(1)
 })
+
+test('a forget that finds nothing to forget clears an old notice as it asks for a redraw', async () => {
+  await seedFailure()
+  opts.state = new Map<string, unknown>([['notice', 'Could not forget the selected record.']])
+  // Nothing drawn on this surface yet.
+  await press('forget')
+  expect(state('notice')).toBeNull()
+  expect(await remembered()).toHaveLength(1)
+  // The drawn row is gone by the press.
+  await render()
+  opts.state.set('notice', 'Could not forget the selected record.')
+  expect((await command('forget --all')).exitCode).toBe(0)
+  const rev = Number(state('rev') ?? 0)
+  await press('forget')
+  expect(state('notice')).toBeNull()
+  expect(Number(state('rev'))).toBe(rev + 1)
+})
