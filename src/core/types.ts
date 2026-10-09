@@ -45,6 +45,12 @@ export interface FailureRecord {
   dirty?: string[]
   /** True when `dirty` was cut at the cap, so a path missing from it may still have been dirty. */
   dirtyTruncated?: boolean
+  /**
+   * Path to the first 16 hex characters of its content's SHA-256, for the first 50 `dirty`
+   * paths that were regular files of at most 256K characters. Lets a fix note name an edit
+   * to a file that was dirty both when the call failed and when it worked.
+   */
+  dirtyHashes?: Record<string, string>
 }
 
 /** The subset of a Claude Code hook payload Cassandra reads. All fields are optional by design. */

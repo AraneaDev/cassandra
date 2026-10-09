@@ -201,6 +201,31 @@ describe('settle success writes fix notes', () => {
     expect(await readRecord(nodeIo, paths, w.hash)).toBeNull()
   })
 
+  test('a failure hashes the dirty files; an edit to one is named, and check reads none of them', async () => {
+    const dir = repo()
+    writeFileSync(join(dir, 'a.txt'), 'edited'); writeFileSync(join(dir, 'b.txt'), 'x')
+    await settle(nodeIo, gcall(dir), { kind: 'failure', reason: 'x' }, null)
+    const paths = await pathsFor(nodeIo, dir)
+    const hash = (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!
+    const rec = (await readRecord(nodeIo, paths, hash))!
+    expect(rec.dirtyHashes).toEqual({ 'a.txt': (await nodeIo.sha256('edited')).slice(0, 16), 'b.txt': (await nodeIo.sha256('x')).slice(0, 16) })
+    const read: string[] = []
+    const watching = { ...nodeIo, readText: async (p: string) => { read.push(p); return nodeIo.readText(p) } }
+    expect(await check(watching, gcall(dir))).not.toBeNull()
+    expect(read.filter((p) => p.startsWith(dir) && !p.includes('/.git'))).toEqual([])
+    writeFileSync(join(dir, 'a.txt'), 'edited again')
+    await settle(nodeIo, gcall(dir), { kind: 'success' }, null)
+    expect((await readFix(nodeIo, paths, hash))?.files).toEqual(['a.txt'])
+  })
+
+  test('a clean tree stores no dirtyHashes', async () => {
+    const dir = repo()
+    await settle(nodeIo, gcall(dir), { kind: 'failure', reason: 'x' }, null)
+    const rec = (await readRecord(nodeIo, await pathsFor(nodeIo, dir), (await fingerprint(nodeIo, 'Bash', { command: 'bun test' }))!))!
+    expect(rec.gitHead).toBeDefined()
+    expect('dirtyHashes' in rec).toBe(false)
+  })
+
   test('an unrecorded success writes nothing', async () => {
     const dir = repo()
     await settle(nodeIo, gcall(dir), { kind: 'success' }, null)

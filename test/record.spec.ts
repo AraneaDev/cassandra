@@ -54,6 +54,13 @@ test('upsert on an existing record increments and refreshes state, keeping first
   expect(second.firstSeen).toBe(first.firstSeen)
 })
 
+test('a record carrying dirtyHashes is valid and survives every reader', async () => {
+  const hashes = { 'a.txt': '0123456789abcdef' }
+  await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', { ...seed, gitHead: 'no-head', dirty: ['a.txt'], dirtyHashes: hashes })
+  expect((await readRecord(nodeIo, paths, 'aa11bb22cc33dd44'))?.dirtyHashes).toEqual(hashes)
+  expect((await listRecords(nodeIo, paths)).map((r) => r.record.dirtyHashes)).toEqual([hashes])
+})
+
 test('a corrupt record is deleted and reads as null', async () => {
   const p = recordPath(paths, 'ffeeddccbbaa9988')
   mkdirSync(join(paths.records, 'ff'), { recursive: true })
