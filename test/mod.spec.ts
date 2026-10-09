@@ -748,3 +748,208 @@ test('forget <id> still forgets one record from a plugin origin', async () => {
   expect(r.text).toStartWith('Forgot')
   expect(r.exitCode).toBe(0)
 })
+
+// ---- /cassandra pane ----
+
+interface Drawn { type: string; props: Record<string, any>; children: any[] }
+const g = globalThis as any
+// The engine supplies the JSX factory `h` as a global; here it builds plain nodes.
+g.h ??= (type: string, props: Record<string, any> | null, ...children: any[]): Drawn => ({ type, props: props ?? {}, children: children.flat() })
+g.Fragment ??= 'Fragment'
+
+function walk(n: any, out: Drawn[] = []): Drawn[] {
+  if (n && typeof n === 'object') {
+    out.push(n)
+    for (const c of n.children ?? []) walk(c, out)
+  }
+  return out
+}
+const textOf = (n: Drawn): string => n.children.map((c) => (typeof c === 'string' ? c : textOf(c))).join('')
+
+type PaneHook = ($: ModEngine, e: Record<string, unknown>, n: (e: any) => Promise<unknown>) => Promise<unknown>
+const paneHook = (event: string) => hooks.get(event) as unknown as PaneHook
+const PANE = { component: 'Pane', requestId: 'cassandra' }
+const render = async (props: Record<string, unknown> = { bodyColumns: 100, scroll: { offset: 0, bodyRows: 30 } }) =>
+  walk(await paneHook('ui.render')(host, { ...PANE, surface: 'terminal', props, viewport: { columns: 120, rows: 40 } }, async () => ({})))
+const rowKeys = async () => (await render()).filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
+const selectedKey = async () => (await render()).filter((n) => n.type === 'Button' && textOf(n).startsWith('▸')).map((n) => String(n.props.key))[0]
+const press = async (element: string) => {
+  let passed = 0
+  const r = await paneHook('ui.press')(host, { ...PANE, plugin: 'cassandra', element, surface: 'terminal' }, async (e) => { passed += 1; return { element: e.element } })
+  expect(passed).toBe(1)
+  expect(r).toEqual({ element })
+}
+const focus = async (element: string | undefined) => {
+  let passed = 0
+  const r = await paneHook('ui.focus')(host, { ...PANE, element, origin: { kind: 'person' } }, async () => { passed += 1; return {} })
+  expect(passed).toBe(1)
+  expect(r).toEqual({})
+}
+const state = (key: string) => opts.state?.get(key)
+const remembered = async () => (await import('../src/core/record.ts')).listRecords(io(), await pathsFor(io(), cwd))
+
+test('/cassandra pane opens the pane focused, answers, and resets the confirmation (Review Focus 2)', async () => {
+  opts.state = new Map<string, unknown>([['confirmAll', true]])
+  expect(await command('pane')).toEqual({ text: 'Opened the Cassandra pane.', exitCode: 0 })
+  expect(opts.opened).toEqual([{ id: 'cassandra', title: 'Cassandra', focus: true, closeOnEscape: true }])
+  expect(state('confirmAll')).toBe(false)
+})
+
+test('/cassandra pane with no surface answers that it needs an interactive session and opens nothing', async () => {
+  opts.surfaces = []
+  expect(await command('pane', { kind: 'sdk' })).toEqual({ text: 'The pane needs an interactive session.', exitCode: 1 })
+  expect(opts.opened).toBeUndefined()
+})
+
+test('/cassandra pane whose open fails answers with the fallback text', async () => {
+  host = { ...host, ui: { ...host.ui, open: async () => { throw new Error('no panes here') } } }
+  expect(await command('pane')).toEqual({ text: 'could not read what this project remembers.', exitCode: 1 })
+})
+
+test('the render hook draws one row per remembered record', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const ids = (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)
+  expect((await rowKeys()).sort()).toEqual(ids.sort())
+})
+
+test('the render hook works without a measured body or viewport', async () => {
+  await seedFailure()
+  const drawn = walk(await paneHook('ui.render')(host, { ...PANE, surface: 'terminal', props: {} }, async () => ({})))
+  expect(drawn.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:'))).toHaveLength(1)
+})
+
+test('the render hook draws the error line when the store cannot be read (Review Focus 4)', async () => {
+  await seedFailure()
+  wrap = (i) => ({ ...i, list: async () => { throw new Error('boom') } })
+  const lines = (await render()).filter((n) => n.type === 'Text').map(textOf)
+  expect(lines).toEqual(["Cassandra could not read this project's store."])
+})
+
+test('the render hook draws the error line when the state cannot be read', async () => {
+  host = { ...host, state: { ...host.state, get: async () => { throw new Error('boom') } } }
+  const lines = (await render()).filter((n) => n.type === 'Text').map(textOf)
+  expect(lines).toEqual(["Cassandra could not read this project's store."])
+})
+
+test('pressing a row selects it', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  await press(keys[1]!)
+  expect(await selectedKey()).toBe(keys[1])
+  expect(String(state('selected'))).toStartWith(keys[1]!.slice('row:'.length))
+})
+
+test('pressing a row that is gone changes nothing', async () => {
+  await press('row:deadbeef')
+  expect(state('selected')).toBeUndefined()
+})
+
+test('moving focus onto a row selects it; other stops select nothing', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  await focus(keys[1]!)
+  expect(await selectedKey()).toBe(keys[1])
+  await focus('forget')
+  await focus(undefined)
+  expect(await selectedKey()).toBe(keys[1])
+})
+
+test('forget forgets exactly the selected record, bumps rev and refreshes the status', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  await press(keys[1]!)
+  opts.statuses = []
+  const rev = Number(state('rev') ?? 0)
+  await press('forget')
+  expect((await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)).toEqual([keys[0]!])
+  expect(Number(state('rev'))).toBeGreaterThan(rev)
+  expect(opts.statuses).toEqual(['cassandra: 1 live failure'])
+  expect(state('notice')).toBeNull()
+})
+
+test('two quick presses of forget forget two different records (Review Focus 5)', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  await seedFailure('make')
+  await Promise.all([press('forget'), press('forget')])
+  expect(await remembered()).toHaveLength(1)
+  await press('forget')
+  expect(await remembered()).toHaveLength(0)
+  expect(state('notice')).toBeNull()
+  // Nothing left to forget: nothing happens.
+  await press('forget')
+  expect(state('notice')).toBeNull()
+})
+
+test('forget-all asks first, and cancel backs out', async () => {
+  await seedFailure()
+  await press('forget-all')
+  expect(state('confirmAll')).toBe(true)
+  expect((await render()).some((n) => n.props?.key === 'forget-all-confirm')).toBe(true)
+  await press('forget-all-cancel')
+  expect(state('confirmAll')).toBe(false)
+  expect(await remembered()).toHaveLength(1)
+})
+
+test('forget-all-confirm forgets every record and the fix notes, even with a plugin-like origin guard in place', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const paths = await pathsFor(io(), cwd)
+  const { writeFix } = await import('../src/core/fixes.ts')
+  const fixed = (await remembered())[0]!.hash
+  await writeFix(io(), paths, fixed, { kind: 'elsewhere', at: '2026-10-09T00:00:00Z', files: [], more: 0 } as never)
+  const { readFix: before } = await import('../src/core/fixes.ts')
+  expect(await before(io(), paths, fixed)).not.toBeNull()
+  await press('forget-all')
+  opts.statuses = []
+  const rev = Number(state('rev') ?? 0)
+  await press('forget-all-confirm')
+  expect(await remembered()).toHaveLength(0)
+  const { readFix } = await import('../src/core/fixes.ts')
+  expect(await readFix(io(), paths, fixed)).toBeNull()
+  expect(state('confirmAll')).toBe(false)
+  expect(Number(state('rev'))).toBeGreaterThan(rev)
+  expect(opts.statuses).toEqual([undefined])
+})
+
+test('a forget that fails sets the notice', async () => {
+  await seedFailure()
+  wrap = (i) => ({ ...i, sha256: async () => { throw new Error('boom') } })
+  await press('forget')
+  expect(state('notice')).toBe('Could not forget the selected record.')
+  expect(await remembered()).toHaveLength(1)
+  wrap = (i) => i
+  await press('forget')
+  expect(state('notice')).toBeNull()
+})
+
+test('a forget-all whose fix notes cannot all be removed sets the notice to its text', async () => {
+  await seedFailure()
+  const paths = await pathsFor(io(), cwd)
+  const { writeFix } = await import('../src/core/fixes.ts')
+  await writeFix(io(), paths, (await remembered())[0]!.hash, { kind: 'elsewhere', at: '2026-10-09T00:00:00Z', files: [], more: 0 } as never)
+  wrap = (i) => ({ ...i, remove: async (p) => { if (p.includes('fixes')) throw new Error('boom'); return i.remove(p) } })
+  await press('forget-all-confirm')
+  expect(String(state('notice'))).toContain('Could not remove some fix notes')
+})
+
+test('a press whose state cannot be written is swallowed and still passes on', async () => {
+  await seedFailure()
+  opts.stateSetRejects = true
+  for (const key of ['forget-all', 'forget-all-cancel', 'row:deadbeef', 'something-else', 'forget']) await press(key)
+  await focus('row:deadbeef')
+})
+
+test('every status refresh bumps rev, so an open pane redraws by itself', async () => {
+  await call('bun test', failed())
+  const after = Number(state('rev'))
+  expect(after).toBeGreaterThan(0)
+  await call('bun test', ok())
+  expect(Number(state('rev'))).toBe(after + 1)
+  await start()
+  expect(Number(state('rev'))).toBe(after + 2)
+})

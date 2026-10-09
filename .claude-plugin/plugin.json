@@ -17,5 +17,6 @@
     "observability",
     "context",
     "compaction"
-  ]
+  ],
+  "types": "./types/index.d.ts"
 }

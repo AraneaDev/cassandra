@@ -27,12 +27,25 @@ export interface PaneModel {
 
 const UNREADABLE = "Cassandra could not read this project's store."
 
+/** The order the pane lists records in: the most recently seen first. */
+function newestFirst(a: { record: { lastSeen: string } }, b: { record: { lastSeen: string } }): number {
+  return b.record.lastSeen.localeCompare(a.record.lastSeen)
+}
+
+/**
+ * The record a Forget press acts on, read fresh: the selected one while it is still
+ * remembered, otherwise the newest, which is the row the pane then shows as selected.
+ * Null when nothing is remembered.
+ */
+export async function paneTarget(io: Io, cwd: string, selected: string | null): Promise<string | null> {
+  const all = await listRecords(io, await pathsFor(io, cwd))
+  if (all.some((r) => r.hash === selected)) return selected
+  return all.sort(newestFirst)[0]?.hash ?? null
+}
+
 /** Plain display data for `/cassandra pane`: what is remembered, what is selected, and how warnings fare. */
 export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: number): Promise<PaneModel> {
-  const empty: PaneModel = {
-    rows: [], more: 0, selected: null, detail: null, stats: null,
-    confirmAll: view.confirmAll, total: 0, notice: view.notice, error: null,
-  }
+  const empty = emptyModel(view)
   try {
     const paths = await pathsFor(io, cwd)
     const all = await listRecords(io, paths)
@@ -46,7 +59,7 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
     const stamp = await stateStamp(io, cwd)
     const sorted = all
       .map(({ hash, record }) => ({ hash, record, stale: !unchanged(record.stateStamp, record.stateKind, stamp) }))
-      .sort((a, b) => b.record.lastSeen.localeCompare(a.record.lastSeen))
+      .sort(newestFirst)
     const shown = sorted.slice(0, Math.max(0, maxRows))
     const rows: PaneRow[] = shown.map(({ hash, record, stale }) => ({
       hash,
@@ -82,6 +95,18 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
       total: sorted.length,
     }
   } catch {
-    return { ...empty, error: UNREADABLE }
+    return unreadableModel(view)
   }
+}
+
+function emptyModel(view: PaneView): PaneModel {
+  return {
+    rows: [], more: 0, selected: null, detail: null, stats: null,
+    confirmAll: view.confirmAll, total: 0, notice: view.notice, error: null,
+  }
+}
+
+/** The model of a pane that cannot read its store or its view: the one error line. */
+export function unreadableModel(view: PaneView = { selected: null, confirmAll: false, notice: null }): PaneModel {
+  return { ...emptyModel(view), error: UNREADABLE }
 }

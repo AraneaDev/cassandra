@@ -1,12 +1,16 @@
-import { runCommand } from '../src/commands/run.ts'
+import { forget } from '../src/commands/forget.ts'
+import { runCommand, type CommandResult } from '../src/commands/run.ts'
 import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
+import { paneModel, paneTarget, unreadableModel, type PaneModel, type PaneView } from '../src/core/pane.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { statusText } from '../src/core/status.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
 import type { BriefBoundary } from '../src/core/stats.ts'
 import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from '../src/core/tools.ts'
+import { resolveHash } from '../src/core/resolve.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
+import { KEY_CANCEL, KEY_CONFIRM, KEY_FORGET, KEY_FORGET_ALL, ROW_KEY_PREFIX, drawPane, type Elements } from './pane.tsx'
 
 /** A user-role row a plugin appends: text blocks the model reads, in the named loop (main when absent). */
 export interface AppendArgs {
@@ -20,12 +24,60 @@ export interface AppendResult {
   [key: string]: unknown
 }
 
-/** The slice of `$` the hooks use: the core's, the session's identity and its append, and tool registration. */
+/** What the pane keeps in `$.state` between redraws; `types/index.d.ts` declares the same contract to the engine. */
+export interface PaneState {
+  selected: string | null
+  confirmAll: boolean
+  rev: number
+  notice: string | null
+}
+
+/** A reference to one of the pane's values, as `$.state` takes it. */
+export type PaneRef<K extends keyof PaneState> = { readonly plugin: 'cassandra'; readonly key: K }
+
+/** The arguments of `$.ui.open`, as far as the mod passes them. */
+export interface OpenArgs {
+  id: string
+  title: string
+  focus: boolean
+  closeOnEscape: boolean
+}
+
+/** The slice of `$` the hooks use: the core's, the session's identity and its append, tool registration, state and the pane. */
 export type ModEngine = ModHost & {
-  session: { id(): Promise<string>; cwd(): Promise<string>; append(args: AppendArgs): Promise<AppendResult> }
+  session: { id(): Promise<string>; cwd(): Promise<string>; append(args: AppendArgs): Promise<AppendResult>; surfaces(): Promise<readonly string[]> }
   tool: { register(spec: { name: string; description: string; inputSchema?: Record<string, unknown> }): Promise<unknown> }
   command: { register(spec: { name: string; description?: string; argumentHint?: string }): Promise<unknown> }
-  ui: { status(text: string | undefined): void }
+  state: {
+    get<K extends keyof PaneState>(ref: PaneRef<K>): Promise<{ value: PaneState[K] | undefined; version: number }>
+    set<K extends keyof PaneState>(ref: PaneRef<K>, value: PaneState[K]): Promise<unknown>
+  }
+  ui: { status(text: string | undefined): void; open(args: OpenArgs): Promise<unknown>; resolve(e: PaneRenderEvent): Elements }
+}
+
+/** Which site the pane hooks match: the one pane this plugin opens. */
+export interface PaneMatcher {
+  component: 'Pane'
+  requestId: string
+}
+
+/** A `ui.render` input for the pane, as far as the mod reads it. */
+export interface PaneRenderEvent {
+  props: { bodyColumns?: number; scroll?: { bodyRows: number } }
+  viewport?: { columns: number; rows: number }
+  [key: string]: unknown
+}
+
+/** A `ui.press` input: the key of the Button pressed. */
+export interface PressEvent {
+  element: string
+  [key: string]: unknown
+}
+
+/** A `ui.focus` input: the key of the element taking the ring, absent for one of the engine's stops. */
+export interface FocusEvent {
+  element?: string
+  [key: string]: unknown
 }
 
 /** A `session.compact` input, as far as the mod reads it. */
@@ -100,6 +152,9 @@ export interface ModOn {
   (event: 'agent.spawn', hook: ($: ModEngine, e: SpawnEvent, next: Next<SpawnEvent, SpawnResult>) => Promise<unknown>): unknown
   (event: 'command.run', matcher: { command: string }, hook: ($: ModEngine, e: CommandEvent, next: Next<CommandEvent, unknown>) => Promise<{ text?: string; exitCode?: number }>): unknown
   (event: 'tool.call', matcher: { tool: RegExp }, hook: ($: ModEngine, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>) => Promise<ToolCallOutcome>): unknown
+  (event: 'ui.render', matcher: PaneMatcher, hook: ($: ModEngine, e: PaneRenderEvent, next: Next<PaneRenderEvent, unknown>) => Promise<unknown>): unknown
+  (event: 'ui.press', matcher: PaneMatcher, hook: ($: ModEngine, e: PressEvent, next: Next<PressEvent, unknown>) => Promise<unknown>): unknown
+  (event: 'ui.focus', matcher: PaneMatcher, hook: ($: ModEngine, e: FocusEvent, next: Next<FocusEvent, unknown>) => Promise<unknown>): unknown
 }
 
 /**
@@ -200,12 +255,145 @@ async function holdClaim($: ModEngine, wrapIo: (io: Io) => Io, claim: (io: Io, i
   }
 }
 
-/** Re-read the live count and pin it under the prompt. Never throws; a failure keeps the old line. */
+/** The id the pane is opened under, and the `requestId` its hooks match. */
+const PANE_ID = 'cassandra'
+
+// Where the pane keeps what it remembers between redraws. One const each, because the
+// validator lists a module's state only from literal references.
+/** The hash of the selected record. */
+const SELECTED = { plugin: 'cassandra', key: 'selected' } as const
+/** Whether the bulk-forget confirmation is showing. */
+const CONFIRM_ALL = { plugin: 'cassandra', key: 'confirmAll' } as const
+/** A revision the render hook reads, so a bump draws an open pane again. */
+const REV = { plugin: 'cassandra', key: 'rev' } as const
+/** The outcome of the last action, when it failed. */
+const NOTICE = { plugin: 'cassandra', key: 'notice' } as const
+
+/** The pane's own lines around the list: rules, detail, stats, notice and the action row. */
+const PANE_CHROME_ROWS = 8
+
+/** What /cassandra pane answers once the pane is open. */
+const PANE_OPENED = 'Opened the Cassandra pane.'
+
+/** What /cassandra pane answers where nothing can show a pane. */
+const PANE_HEADLESS = 'The pane needs an interactive session.'
+
+/**
+ * Bump the pane's revision, so an open pane that read it draws again. Never throws.
+ * Top-level because it takes `$`: the validator follows `$` nowhere else.
+ */
+async function bumpRev($: ModEngine): Promise<void> {
+  try {
+    const { value } = await $.state.get(REV)
+    await $.state.set(REV, (value ?? 0) + 1)
+  } catch {
+    // An open pane redraws at its next change instead.
+  }
+}
+
+/** Re-read the live count and pin it under the prompt, and redraw an open pane. Never throws; a failure keeps the old line. */
 async function refreshStatus($: ModEngine, io: Io): Promise<void> {
   try {
     $.ui.status(await statusText(io, await $.session.cwd()))
   } catch {
     // The previous line stays until the next change.
+  }
+  await bumpRev($)
+}
+
+/** What the pane remembers, read fresh. Rejects when the state cannot be read. */
+async function readView($: ModEngine): Promise<PaneView> {
+  const selected = (await $.state.get(SELECTED)).value ?? null
+  const confirmAll = (await $.state.get(CONFIRM_ALL)).value ?? false
+  const notice = (await $.state.get(NOTICE)).value ?? null
+  return { selected, confirmAll, notice }
+}
+
+/**
+ * Open the pane, unless nothing can show one. The confirmation never survives into a
+ * fresh open, and neither does an old notice. Rejects on a host failure.
+ */
+async function openPane($: ModEngine): Promise<{ text: string; exitCode: number }> {
+  if ((await $.session.surfaces()).length === 0) return { text: PANE_HEADLESS, exitCode: 1 }
+  await $.state.set(CONFIRM_ALL, false)
+  await $.state.set(NOTICE, null)
+  await $.ui.open({ id: PANE_ID, title: 'Cassandra', focus: true, closeOnEscape: true })
+  return { text: PANE_OPENED, exitCode: 0 }
+}
+
+/** Draw the pane from the store and the view. Never throws: a failure draws the error line. */
+async function renderPane($: ModEngine, e: PaneRenderEvent, wrapIo: (io: Io) => Io): Promise<unknown> {
+  const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
+  const rows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24
+  let model: PaneModel
+  try {
+    // Read so that a bump of the revision draws the pane again.
+    await $.state.get(REV)
+    model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), Math.max(1, rows - PANE_CHROME_ROWS))
+  } catch {
+    model = unreadableModel()
+  }
+  return drawPane($.ui.resolve(e), model, columns)
+}
+
+/** Select the row a key names, when it is a row still remembered. Never throws. */
+async function selectRow($: ModEngine, wrapIo: (io: Io) => Io, key: string | undefined): Promise<void> {
+  if (!key?.startsWith(ROW_KEY_PREFIX)) return
+  try {
+    const io = wrapIo(modIo(hostOf($)))
+    const r = await resolveHash(io, await pathsFor(io, await $.session.cwd()), key.slice(ROW_KEY_PREFIX.length))
+    if (r.ok) await $.state.set(SELECTED, r.hash)
+  } catch {
+    // The selection stays where it was.
+  }
+}
+
+/** Run one forget for the pane: its failure becomes the notice, and any change redraws. Never throws. */
+async function paneForget($: ModEngine, io: Io, run: () => Promise<CommandResult | null>, failure: string): Promise<void> {
+  let notice: string | null
+  try {
+    const r = await run()
+    if (r === null) return
+    notice = r.code === 0 ? null : r.text
+  } catch {
+    notice = failure
+  }
+  try {
+    await $.state.set(NOTICE, notice)
+  } catch {
+    // The pane shows the outcome at its next redraw, or not at all.
+  }
+  await refreshStatus($, io)
+}
+
+/** Act on a press in the pane, by the key of the Button pressed. Never throws. */
+async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io): Promise<void> {
+  try {
+    const io = wrapIo(modIo(hostOf($)))
+    const cwd = await $.session.cwd()
+    switch (e.element) {
+      case KEY_FORGET:
+        await paneForget($, io, async () => {
+          const target = await paneTarget(io, cwd, (await $.state.get(SELECTED)).value ?? null)
+          return target === null ? null : forget(io, await pathsFor(io, cwd), target, false)
+        }, 'Could not forget the selected record.')
+        return
+      case KEY_FORGET_ALL:
+        await $.state.set(CONFIRM_ALL, true)
+        return
+      case KEY_CANCEL:
+        await $.state.set(CONFIRM_ALL, false)
+        return
+      case KEY_CONFIRM:
+        // The person's own gesture in the pane, so the guard on forget --all does not apply.
+        await $.state.set(CONFIRM_ALL, false)
+        await paneForget($, io, async () => forget(io, await pathsFor(io, cwd), null, true), 'Could not forget every record.')
+        return
+      default:
+        await selectRow($, wrapIo, e.element)
+    }
+  } catch {
+    // The press changes nothing.
   }
 }
 
@@ -223,6 +411,7 @@ async function answerCommand($: ModEngine, io: Io, args: string | undefined, ori
   try {
     // A bare /cassandra may arrive with no args at all.
     const parts = (args ?? '').split(/\s+/).filter(Boolean)
+    if (parts[0] === 'pane') return await openPane($)
     // Wiping every record is for a person or a headless run; a plugin, a schedule or a peer may not.
     if (parts[0] === 'forget' && parts.includes('--all') && !BULK_ORIGINS.has(origin?.kind ?? '')) {
       return { text: BULK_REFUSAL, exitCode: 1 }
@@ -331,7 +520,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     }
     // Apart from the tools: an engine that refuses the command costs only /cassandra.
     try {
-      await $.command.register({ name: 'cassandra', description: 'Show what Cassandra remembers failing in this project', argumentHint: '[list | why <id> | forget <id> | forget --all | stats]' })
+      await $.command.register({ name: 'cassandra', description: 'Show what Cassandra remembers failing in this project', argumentHint: '[list | why <id> | forget <id> | forget --all | stats | pane]' })
     } catch {
       // The session goes on without /cassandra.
     }
@@ -412,6 +601,22 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
       return { text: COMMAND_FALLBACK, exitCode: 1 }
     }
     return answerCommand($, io, e.args, e.origin)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => renderPane($, e, wrapIo))
+
+  // Presses run one at a time, so a second Forget reads the selection the first one left.
+  let pressing: Promise<void> = Promise.resolve()
+  on('ui.press', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
+    const done = pressing.then(() => onPanePress($, e, wrapIo))
+    pressing = done
+    await done
+    return next(e)
+  })
+
+  on('ui.focus', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
+    await selectRow($, wrapIo, e.element)
+    return next(e)
   })
 
   on('tool.call', { tool: new RegExp(`^${TOOL_PREFIX}(?:${QUERY_TOOL.name}|${RESOLVE_TOOL.name})$`) }, async ($, e) => answerTool($, wrapIo, e))
