@@ -5,11 +5,17 @@
     "src/hook.ts",
     "scripts/*.ts",
     "test/**/*.spec.ts",
-    "test/support/**/*.ts"
+    "test/support/**/*.ts",
+    "mod/index.ts",
+    "mod/*.test.ts"
   ],
   "project": [
     "src/**/*.ts",
     "scripts/**/*.ts",
-    "test/**/*.ts"
+    "test/**/*.ts",
+    "mod/**/*.ts"
+  ],
+  "ignoreDependencies": [
+    "claude-code"
   ]
 }
