@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto'
-import type { ToolKind } from './types'
+import type { Io } from './io.ts'
+import type { ToolKind } from './types.ts'
 
 /**
  * Which extractor a tool name routes to. Edit and Write payloads never repeat, so they are ignored.
@@ -61,8 +61,8 @@ export function displayFor(toolName: string, toolInput: unknown): string {
  * sha256 rather than Bun.hash, which is not guaranteed stable across Bun versions and
  * would silently invalidate every stored record on an upgrade.
  */
-export function fingerprint(toolName: string, toolInput: unknown): string | null {
+export async function fingerprint(io: Io, toolName: string, toolInput: unknown): Promise<string | null> {
   const sig = significant(toolName, toolInput)
   if (sig === null) return null
-  return createHash('sha256').update(`${toolName} ${sig}`).digest('hex').slice(0, 16)
+  return (await io.sha256(`${toolName} ${sig}`)).slice(0, 16)
 }

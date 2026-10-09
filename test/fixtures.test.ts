@@ -3,18 +3,18 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { handle } from '../src/hook'
-import type { HookPayload } from '../src/types'
+import type { HookPayload } from '../src/core/types.ts'
 
 let cassandraHome: string
 let cwd: string
 
-beforeEach(() => {
+beforeEach(async () => {
   cassandraHome = mkdtempSync(join(tmpdir(), 'cass-home-'))
   cwd = mkdtempSync(join(tmpdir(), 'cass-cwd-'))
   process.env.CASSANDRA_HOME = cassandraHome
 })
 
-afterEach(() => {
+afterEach(async () => {
   delete process.env.CASSANDRA_HOME
   rmSync(cassandraHome, { recursive: true, force: true })
   rmSync(cwd, { recursive: true, force: true })
@@ -36,13 +36,13 @@ function payloads(): HookPayload[] {
  */
 const hasHarvest = payloads().filter((p) => p.session_id === 'harvested').length > 4
 
-test('every real payload is handled without throwing', () => {
+test('every real payload is handled without throwing', async () => {
   for (const p of payloads()) {
-    expect(() => handle({ ...p, cwd })).not.toThrow()
+    await expect(handle({ ...p, cwd })).resolves.toBeDefined()
   }
 })
 
-test.skipIf(!hasHarvest)('replayed payloads emit warnings with the documented shape', () => {
+test.skipIf(!hasHarvest)('replayed payloads emit warnings with the documented shape', async () => {
   const all = payloads()
   const harvested = all.filter((p) => p.session_id === 'harvested')
   const toReplay = harvested.slice(0, Math.min(100, harvested.length))
@@ -57,7 +57,7 @@ test.skipIf(!hasHarvest)('replayed payloads emit warnings with the documented sh
     replayed += 1
 
     // First: simulate a failure to create a record
-    handle({
+    await handle({
       hook_event_name: 'PostToolUseFailure',
       session_id: payload.session_id,
       cwd,
@@ -68,7 +68,7 @@ test.skipIf(!hasHarvest)('replayed payloads emit warnings with the documented sh
     })
 
     // Second: replay the same tool call as PreToolUse
-    const out = handle({ ...payload, cwd })
+    const out = await handle({ ...payload, cwd })
     if (out !== null) {
       warningsEmitted++
       expect(() => JSON.parse(out)).not.toThrow()
@@ -87,7 +87,7 @@ test.skipIf(!hasHarvest)('replayed payloads emit warnings with the documented sh
   expect(warningsEmitted / replayed).toBeGreaterThanOrEqual(0.9)
 })
 
-test.skipIf(!hasHarvest)('harvested payloads include Bash calls beyond the synthetic set', () => {
+test.skipIf(!hasHarvest)('harvested payloads include Bash calls beyond the synthetic set', async () => {
   const all = payloads()
   const harvested = all.filter((p) => p.session_id === 'harvested')
   const harvestedBash = harvested.filter((p) => p.tool_name === 'Bash')

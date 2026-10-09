@@ -20,36 +20,36 @@ function initRepo(dir: string): void {
   git(dir, 'commit', '-qm', 'init')
 }
 
-beforeEach(() => { tmp = mkdtempSync(join(tmpdir(), 'cass-fresh-')) })
-afterEach(() => { rmSync(tmp, { recursive: true, force: true }) })
+beforeEach(async () => { tmp = mkdtempSync(join(tmpdir(), 'cass-fresh-')) })
+afterEach(async () => { rmSync(tmp, { recursive: true, force: true }) })
 
 // The safety rule that bounds the whole risk.
-test('a none stamp never counts as unchanged', () => {
+test('a none stamp never counts as unchanged', async () => {
   expect(unchanged('anything', 'git', { kind: 'none', value: '' })).toBe(false)
   expect(unchanged('', 'none', { kind: 'none', value: '' })).toBe(false)
   expect(unchanged('x', 'none', { kind: 'git', value: 'x' })).toBe(false)
 })
 
-test('a stamp taken twice with nothing touched is identical', () => {
+test('a stamp taken twice with nothing touched is identical', async () => {
   const repo = join(tmp, 'r'); initRepo(repo)
   expect(stateStamp(repo).value).toBe(stateStamp(repo).value)
 })
 
-test('git: an uncommitted edit changes the stamp', () => {
+test('git: an uncommitted edit changes the stamp', async () => {
   const repo = join(tmp, 'r'); initRepo(repo)
   const before = stateStamp(repo)
   writeFileSync(join(repo, 'a.txt'), 'two')
   expect(stateStamp(repo).value).not.toBe(before.value)
 })
 
-test('git: a new untracked file changes the stamp', () => {
+test('git: a new untracked file changes the stamp', async () => {
   const repo = join(tmp, 'r'); initRepo(repo)
   const before = stateStamp(repo)
   writeFileSync(join(repo, 'b.txt'), 'new')
   expect(stateStamp(repo).value).not.toBe(before.value)
 })
 
-test('git: a commit changes the stamp', () => {
+test('git: a commit changes the stamp', async () => {
   const repo = join(tmp, 'r'); initRepo(repo)
   const before = stateStamp(repo)
   writeFileSync(join(repo, 'a.txt'), 'two')
@@ -57,7 +57,7 @@ test('git: a commit changes the stamp', () => {
   expect(stateStamp(repo).value).not.toBe(before.value)
 })
 
-test('git: a sed -i style rewrite changes the stamp', () => {
+test('git: a sed -i style rewrite changes the stamp', async () => {
   const repo = join(tmp, 'r'); initRepo(repo)
   const before = stateStamp(repo)
   // Written the portable way rather than as `sed -i`. BSD sed on macOS reads the next
@@ -69,12 +69,12 @@ test('git: a sed -i style rewrite changes the stamp', () => {
   expect(stateStamp(repo).value).not.toBe(before.value)
 })
 
-test('git: stamp kind is git inside a repository', () => {
+test('git: stamp kind is git inside a repository', async () => {
   const repo = join(tmp, 'r'); initRepo(repo)
   expect(stateStamp(repo).kind).toBe('git')
 })
 
-test('mtime: kind is mtime outside a repository', () => {
+test('mtime: kind is mtime outside a repository', async () => {
   const plain = join(tmp, 'p'); mkdirSync(plain, { recursive: true })
   writeFileSync(join(plain, 'a.txt'), 'one')
   expect(stateStamp(plain).kind).toBe('mtime')
@@ -89,7 +89,7 @@ test('mtime: a rewritten file changes the stamp', async () => {
   expect(stateStamp(plain).value).not.toBe(before.value)
 })
 
-test('mtime: a new file changes the stamp even within the same second', () => {
+test('mtime: a new file changes the stamp even within the same second', async () => {
   const plain = join(tmp, 'p'); mkdirSync(plain, { recursive: true })
   writeFileSync(join(plain, 'a.txt'), 'one')
   const before = stateStamp(plain)
@@ -97,7 +97,7 @@ test('mtime: a new file changes the stamp even within the same second', () => {
   expect(stateStamp(plain).value).not.toBe(before.value)
 })
 
-test('mtime: dot directories and node_modules are skipped', () => {
+test('mtime: dot directories and node_modules are skipped', async () => {
   const plain = join(tmp, 'p'); mkdirSync(join(plain, 'node_modules'), { recursive: true })
   mkdirSync(join(plain, '.cache'), { recursive: true })
   writeFileSync(join(plain, 'a.txt'), 'one')
@@ -107,15 +107,15 @@ test('mtime: dot directories and node_modules are skipped', () => {
   expect(stateStamp(plain).value).toBe(before.value)
 })
 
-test('a nonexistent directory yields none rather than throwing', () => {
+test('a nonexistent directory yields none rather than throwing', async () => {
   expect(stateStamp(join(tmp, 'gone')).kind).toBe('none')
 })
 
-test('unchanged requires the kind to match, so a fallback switch never warns', () => {
+test('unchanged requires the kind to match, so a fallback switch never warns', async () => {
   expect(unchanged('abc', 'git', { kind: 'mtime', value: 'abc' })).toBe(false)
 })
 
-test('mtime: deleting the last file moves the stamp and stays kind mtime, not none', () => {
+test('mtime: deleting the last file moves the stamp and stays kind mtime, not none', async () => {
   const plain = join(tmp, 'p'); mkdirSync(plain, { recursive: true })
   writeFileSync(join(plain, 'a.txt'), 'one')
   const before = stateStamp(plain)
@@ -125,7 +125,7 @@ test('mtime: deleting the last file moves the stamp and stays kind mtime, not no
   expect(after.value).not.toBe(before.value)
 })
 
-test('mtime: a directory of only node_modules and a dot-directory is still kind mtime', () => {
+test('mtime: a directory of only node_modules and a dot-directory is still kind mtime', async () => {
   const plain = join(tmp, 'p')
   mkdirSync(join(plain, 'node_modules'), { recursive: true })
   mkdirSync(join(plain, '.git-ish'), { recursive: true })
@@ -135,7 +135,7 @@ test('mtime: a directory of only node_modules and a dot-directory is still kind 
   expect(stamp.kind).toBe('mtime')
 })
 
-test('mtime: two different readable-but-empty directories share the canonical empty stamp', () => {
+test('mtime: two different readable-but-empty directories share the canonical empty stamp', async () => {
   const p1 = join(tmp, 'p1'); mkdirSync(p1, { recursive: true })
   const p2 = join(tmp, 'p2'); mkdirSync(p2, { recursive: true })
   const s1 = stateStamp(p1)
@@ -154,7 +154,7 @@ test('mtime: two different readable-but-empty directories share the canonical em
 // factored into `isMissingSubtree` specifically so it can be unit-tested
 // directly against the error shapes readdirSync actually throws, rather than
 // relying on a real permissions failure.
-test('isMissingSubtree treats ENOENT and ENOTDIR as gone, everything else as poisoning', () => {
+test('isMissingSubtree treats ENOENT and ENOTDIR as gone, everything else as poisoning', async () => {
   expect(isMissingSubtree({ code: 'ENOENT' })).toBe(true)
   expect(isMissingSubtree({ code: 'ENOTDIR' })).toBe(true)
   expect(isMissingSubtree({ code: 'EACCES' })).toBe(false)
@@ -164,7 +164,7 @@ test('isMissingSubtree treats ENOENT and ENOTDIR as gone, everything else as poi
   expect(isMissingSubtree(new Error('no code'))).toBe(false)
 })
 
-test('git: an uninitialized (zero-commit) repo yields kind git', () => {
+test('git: an uninitialized (zero-commit) repo yields kind git', async () => {
   const repo = join(tmp, 'r'); mkdirSync(repo, { recursive: true })
   git(repo, 'init', '-q')
   git(repo, 'config', 'user.email', 't@example.com')
@@ -173,7 +173,7 @@ test('git: an uninitialized (zero-commit) repo yields kind git', () => {
   expect(stateStamp(repo).kind).toBe('git')
 })
 
-test('git: a mutation in a zero-commit repo moves the stamp', () => {
+test('git: a mutation in a zero-commit repo moves the stamp', async () => {
   const repo = join(tmp, 'r'); mkdirSync(repo, { recursive: true })
   git(repo, 'init', '-q')
   git(repo, 'config', 'user.email', 't@example.com')
@@ -184,7 +184,7 @@ test('git: a mutation in a zero-commit repo moves the stamp', () => {
   expect(stateStamp(repo).value).not.toBe(before.value)
 })
 
-test('git: the first commit in a zero-commit repo moves the stamp again', () => {
+test('git: the first commit in a zero-commit repo moves the stamp again', async () => {
   const repo = join(tmp, 'r'); mkdirSync(repo, { recursive: true })
   git(repo, 'init', '-q')
   git(repo, 'config', 'user.email', 't@example.com')
@@ -232,7 +232,7 @@ function buildOverlongTree(base: string): string {
  * structural failure can. The subtree exists and is not empty, the walk cannot see into
  * it, and the only correct answer is `none`, which never warns.
  */
-test('a non-ENOENT failure inside the walk poisons the whole stamp', () => {
+test('a non-ENOENT failure inside the walk poisons the whole stamp', async () => {
   const base = join(tmp, 'deep')
   mkdirSync(base, { recursive: true })
   try {

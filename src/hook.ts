@@ -1,12 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { displayFor, fingerprint } from './fingerprint'
+import { displayFor, fingerprint } from './core/fingerprint.ts'
 import { stateStamp, unchanged } from './freshness'
-import { pathsFor, pendingPath, type Paths } from './paths'
-import { join } from 'node:path'
+import { pathsFor } from './core/paths.ts'
+import { markPending, takePending } from './core/pending.ts'
 import { deleteRecord, readRecord, upsertRecord } from './record'
-import { bumpCompactions, compactionCount } from './session'
+import { bumpCompactions, compactionCount } from './core/session.ts'
 import { appendStat, attributeBoundary } from './stats'
-import type { HookPayload, RecordKind } from './types'
+import type { HookPayload, RecordKind } from './core/types.ts'
+import { nodeIo } from './io/node.ts'
 
 const EXCERPT_MAX = 240
 
@@ -29,66 +29,13 @@ function excerpt(text: string | undefined): string {
   return t.length > EXCERPT_MAX ? `${t.slice(0, EXCERPT_MAX - 3)}...` : t
 }
 
-/** How long a marker can sit unresolved before it is assumed to belong to a dead session. */
-const PENDING_TTL_MS = 24 * 60 * 60 * 1000
-
-/**
- * Drop markers whose outcome never arrived.
- *
- * A marker is written when a warning fires and removed when the call resolves. A
- * session killed in between leaves one behind forever, and nothing else ever
- * enumerates this directory, so it only grows. This runs on the warn path, which is
- * rare by construction, over a directory that is normally near-empty. Everything about
- * it is best effort: it cannot throw, and a marker it fails to remove is retried next
- * time rather than reported.
- */
-function prunePending(dir: string): void {
-  try {
-    const cutoff = Date.now() - PENDING_TTL_MS
-    for (const name of readdirSync(dir)) {
-      const p = join(dir, name)
-      try {
-        if (statSync(p).mtimeMs < cutoff) rmSync(p, { force: true })
-      } catch {
-        // A marker that vanished under us needs no cleaning.
-      }
-    }
-  } catch {
-    // Cleanup is opportunistic and must never cost a call.
-  }
-}
-
-/** Write the marker that lets PostToolUse attribute an outcome without re-hashing. */
-function markPending(paths: Paths, toolUseId: string, hash: string): void {
-  try {
-    mkdirSync(paths.pending, { recursive: true })
-    prunePending(paths.pending)
-    writeFileSync(pendingPath(paths, toolUseId), hash)
-  } catch {
-    // A missing marker only costs a metric.
-  }
-}
-
-/** Read and remove the marker for a tool call, if this call was warned about. */
-function takePending(paths: Paths, toolUseId: string): string | null {
-  try {
-    const p = pendingPath(paths, toolUseId)
-    if (!existsSync(p)) return null
-    const hash = readFileSync(p, 'utf8').trim()
-    rmSync(p, { force: true })
-    return hash || null
-  } catch {
-    return null
-  }
-}
-
-function record(payload: HookPayload, kind: RecordKind, reason: string | undefined): null {
+async function record(payload: HookPayload, kind: RecordKind, reason: string | undefined): Promise<null> {
   const { tool_name: tool, tool_input: input, cwd, session_id: sessionId, agent_id: agentId } = payload
   if (!tool || !cwd) return null
-  const hash = fingerprint(tool, input)
+  const hash = await fingerprint(nodeIo, tool, input)
   if (!hash) return null
 
-  const paths = pathsFor(cwd)
+  const paths = await pathsFor(nodeIo, cwd)
   const stamp = stateStamp(cwd)
 
   // A state we cannot read is a record we could never safely act on, so do not store it.
@@ -101,7 +48,7 @@ function record(payload: HookPayload, kind: RecordKind, reason: string | undefin
     stateStamp: stamp.value,
     stateKind: stamp.kind,
     sessionId: sessionId ?? '',
-    compactions: compactionCount(paths, sessionId ?? ''),
+    compactions: await compactionCount(nodeIo, paths, sessionId ?? ''),
     errorExcerpt: excerpt(reason),
     agentId,
   })
@@ -109,23 +56,23 @@ function record(payload: HookPayload, kind: RecordKind, reason: string | undefin
 }
 
 /** PostToolUseFailure and PermissionDenied both record, but a warned call also resolves its marker. */
-function onFailure(payload: HookPayload, kind: RecordKind, reason: string | undefined): null {
+async function onFailure(payload: HookPayload, kind: RecordKind, reason: string | undefined): Promise<null> {
   const { cwd, tool_use_id: toolUseId } = payload
   if (cwd && toolUseId) {
-    const paths = pathsFor(cwd)
-    const warned = takePending(paths, toolUseId)
+    const paths = await pathsFor(nodeIo, cwd)
+    const warned = await takePending(nodeIo, paths, toolUseId)
     // It failed again after we warned, so the warning was right and was disregarded.
     if (warned) appendStat(paths, { kind: 'confirmed', hash: warned })
   }
-  return record(payload, kind, reason)
+  return await record(payload, kind, reason)
 }
 
 /** A success on a warned call means the freshness probe missed a real change. */
-function onSuccess(payload: HookPayload): null {
+async function onSuccess(payload: HookPayload): Promise<null> {
   const { cwd, tool_use_id: toolUseId } = payload
   if (!cwd || !toolUseId) return null
-  const paths = pathsFor(cwd)
-  const warned = takePending(paths, toolUseId)
+  const paths = await pathsFor(nodeIo, cwd)
+  const warned = await takePending(nodeIo, paths, toolUseId)
   if (!warned) return null
   appendStat(paths, { kind: 'false_positive', hash: warned })
   deleteRecord(paths, warned)
@@ -133,16 +80,16 @@ function onSuccess(payload: HookPayload): null {
 }
 
 /** The hot path: hash, look up, and only then pay for the freshness probe. */
-function onPreToolUse(payload: HookPayload): string | null {
+async function onPreToolUse(payload: HookPayload): Promise<string | null> {
   const {
     tool_name: tool, tool_input: input, cwd,
     session_id: sessionId, tool_use_id: toolUseId, agent_id: agentId,
   } = payload
   if (!tool || !cwd) return null
-  const hash = fingerprint(tool, input)
+  const hash = await fingerprint(nodeIo, tool, input)
   if (!hash) return null
 
-  const paths = pathsFor(cwd)
+  const paths = await pathsFor(nodeIo, cwd)
   const found = readRecord(paths, hash)
   if (!found) return null
 
@@ -151,10 +98,10 @@ function onPreToolUse(payload: HookPayload): string | null {
 
   const boundary = attributeBoundary(
     { sessionId: found.sessionId, compactions: found.compactions, agentId: found.agentId },
-    { sessionId: sessionId ?? '', compactions: compactionCount(paths, sessionId ?? ''), agentId },
+    { sessionId: sessionId ?? '', compactions: await compactionCount(nodeIo, paths, sessionId ?? ''), agentId },
   )
   appendStat(paths, { kind: 'warned', hash, boundary })
-  if (toolUseId) markPending(paths, toolUseId, hash)
+  if (toolUseId) await markPending(nodeIo, paths, toolUseId, hash)
 
   const what = found.kind === 'denial' ? 'was denied' : 'failed'
   const times = found.count === 1 ? 'once' : `${found.count} times`
@@ -180,19 +127,19 @@ function onPreToolUse(payload: HookPayload): string | null {
  * Route one hook payload. Returns the JSON line to print, or null for silence.
  * Separated from stdin handling so every branch is directly testable.
  */
-export function handle(payload: HookPayload): string | null {
+export async function handle(payload: HookPayload): Promise<string | null> {
   switch (payload.hook_event_name) {
-    case 'PreToolUse': return onPreToolUse(payload)
-    case 'PostToolUse': return onSuccess(payload)
+    case 'PreToolUse': return await onPreToolUse(payload)
+    case 'PostToolUse': return await onSuccess(payload)
     case 'PostToolUseFailure':
       // An interrupt is not a failure of the command. Remembering an aborted call would
       // warn about something that never actually failed, so it is ignored outright.
       if (payload.is_interrupt) return null
-      return onFailure(payload, 'failure', payload.error ?? payload.error_message)
+      return await onFailure(payload, 'failure', payload.error ?? payload.error_message)
     case 'PermissionDenied':
-      return onFailure(payload, 'denial', payload.denial_reason ?? payload.reason)
+      return await onFailure(payload, 'denial', payload.denial_reason ?? payload.reason)
     case 'PostCompact':
-      if (payload.cwd) bumpCompactions(pathsFor(payload.cwd), payload.session_id ?? '')
+      if (payload.cwd) await bumpCompactions(nodeIo, await pathsFor(nodeIo, payload.cwd), payload.session_id ?? '')
       return null
     default: return null
   }
@@ -202,7 +149,7 @@ if (import.meta.main) {
   // Nothing below may throw or exit non-zero. A hook that fails is a session that fails.
   try {
     const raw = await Bun.stdin.text()
-    const out = handle(JSON.parse(raw) as HookPayload)
+    const out = await handle(JSON.parse(raw) as HookPayload)
     if (out) process.stdout.write(`${out}\n`)
   } catch {
     // Unparseable input, unreadable index, anything at all: leave quietly.

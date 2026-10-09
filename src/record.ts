@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { recordPath, type Paths } from './paths'
-import type { FailureRecord } from './types'
+import { recordPath, type Paths } from './core/paths.ts'
+import type { FailureRecord } from './core/types.ts'
 
 /** Fields a caller supplies; count and timestamps are managed here. */
 type RecordSeed = Omit<FailureRecord, 'count' | 'firstSeen' | 'lastSeen'>

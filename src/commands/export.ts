@@ -1,6 +1,6 @@
 import { listRecords } from '../record'
 import { readStats } from '../stats'
-import type { Paths } from '../paths'
+import type { Paths } from '../core/paths.ts'
 
 /** Emit the whole project index as JSON, so you can do your own arithmetic on it. */
 export function exportAll(paths: Paths): number {

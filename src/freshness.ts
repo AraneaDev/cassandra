@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
-import { findRepoRoot } from './paths'
-import type { StateKind, StateStamp } from './types'
+import { dirname, join, resolve } from 'node:path'
+import type { StateKind, StateStamp } from './core/types.ts'
 
 /** Directories the mtime walk never descends into: churn that says nothing about source. */
 const SKIP = new Set(['node_modules', 'dist', 'build', 'target', 'coverage', 'vendor', '__pycache__'])
@@ -127,6 +126,18 @@ function mtimeStamp(root: string): StateStamp | null {
   // readable directory is a valid, stable state, not an unknown one.
   const payload = parts.length === 0 ? ' empty' : parts.join('\n')
   return { kind: 'mtime', value: createHash('sha256').update(payload).digest('hex').slice(0, 16) }
+}
+
+/** Sync copy of `findRepoRoot` for this module until the stamp moves onto Io. */
+function findRepoRoot(cwd: string): string {
+  const start = resolve(cwd)
+  let dir = start
+  for (;;) {
+    if (existsSync(join(dir, '.git'))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) return start
+    dir = parent
+  }
 }
 
 /**

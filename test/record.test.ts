@@ -2,7 +2,8 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { pathsFor, recordPath, type Paths } from '../src/paths'
+import { pathsFor, recordPath, type Paths } from '../src/core/paths.ts'
+import { nodeIo } from '../src/io/node.ts'
 import { deleteRecord, listRecords, readRecord, upsertRecord } from '../src/record'
 
 let tmp: string
@@ -19,22 +20,22 @@ const seed = {
   errorExcerpt: '3 tests failing',
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   tmp = mkdtempSync(join(tmpdir(), 'cass-rec-'))
   process.env.CASSANDRA_HOME = join(tmp, 'home')
-  paths = pathsFor(tmp)
+  paths = await pathsFor(nodeIo, tmp)
 })
 
-afterEach(() => {
+afterEach(async () => {
   delete process.env.CASSANDRA_HOME
   rmSync(tmp, { recursive: true, force: true })
 })
 
-test('a missing record reads as null', () => {
+test('a missing record reads as null', async () => {
   expect(readRecord(paths, 'deadbeefdeadbeef')).toBeNull()
 })
 
-test('upsert creates a record with count 1', () => {
+test('upsert creates a record with count 1', async () => {
   upsertRecord(paths, 'aa11bb22cc33dd44', seed)
   const r = readRecord(paths, 'aa11bb22cc33dd44')
   expect(r?.count).toBe(1)
@@ -42,7 +43,7 @@ test('upsert creates a record with count 1', () => {
   expect(r?.firstSeen).toBe(r?.lastSeen)
 })
 
-test('upsert on an existing record increments and refreshes state, keeping firstSeen', () => {
+test('upsert on an existing record increments and refreshes state, keeping firstSeen', async () => {
   upsertRecord(paths, 'aa11bb22cc33dd44', seed)
   const first = readRecord(paths, 'aa11bb22cc33dd44')!
   upsertRecord(paths, 'aa11bb22cc33dd44', { ...seed, stateStamp: '9c0201', sessionId: 's2' })
@@ -53,7 +54,7 @@ test('upsert on an existing record increments and refreshes state, keeping first
   expect(second.firstSeen).toBe(first.firstSeen)
 })
 
-test('a corrupt record is deleted and reads as null', () => {
+test('a corrupt record is deleted and reads as null', async () => {
   const p = recordPath(paths, 'ffeeddccbbaa9988')
   mkdirSync(join(paths.records, 'ff'), { recursive: true })
   writeFileSync(p, 'not json at all')
@@ -61,7 +62,7 @@ test('a corrupt record is deleted and reads as null', () => {
   expect(existsSync(p)).toBe(false)
 })
 
-test('a record missing required fields is treated as corrupt', () => {
+test('a record missing required fields is treated as corrupt', async () => {
   const p = recordPath(paths, '1122334455667788')
   mkdirSync(join(paths.records, '11'), { recursive: true })
   writeFileSync(p, JSON.stringify({ tool: 'Bash' }))
@@ -69,17 +70,17 @@ test('a record missing required fields is treated as corrupt', () => {
   expect(existsSync(p)).toBe(false)
 })
 
-test('delete removes a record', () => {
+test('delete removes a record', async () => {
   upsertRecord(paths, 'aa11bb22cc33dd44', seed)
   deleteRecord(paths, 'aa11bb22cc33dd44')
   expect(readRecord(paths, 'aa11bb22cc33dd44')).toBeNull()
 })
 
-test('delete on a missing record does not throw', () => {
+test('delete on a missing record does not throw', async () => {
   expect(() => deleteRecord(paths, 'nosuchnosuch1234')).not.toThrow()
 })
 
-test('listRecords returns every stored record across shards', () => {
+test('listRecords returns every stored record across shards', async () => {
   upsertRecord(paths, 'aa11bb22cc33dd44', seed)
   upsertRecord(paths, 'bb11bb22cc33dd44', { ...seed, display: 'bun run build' })
   const all = listRecords(paths)
@@ -87,11 +88,11 @@ test('listRecords returns every stored record across shards', () => {
   expect(all.map((e) => e.record.display).sort()).toEqual(['bun run build', 'bun test'])
 })
 
-test('listRecords on an empty index returns an empty array', () => {
+test('listRecords on an empty index returns an empty array', async () => {
   expect(listRecords(paths)).toEqual([])
 })
 
-test('a record missing newly-required fields (sessionId, compactions, errorExcerpt) is treated as corrupt', () => {
+test('a record missing newly-required fields (sessionId, compactions, errorExcerpt) is treated as corrupt', async () => {
   const p = recordPath(paths, '3344556677889900')
   mkdirSync(join(paths.records, '33'), { recursive: true })
   writeFileSync(p, JSON.stringify({
@@ -108,7 +109,7 @@ test('a record missing newly-required fields (sessionId, compactions, errorExcer
   expect(existsSync(p)).toBe(false)
 })
 
-test('listRecords returns all records even with stray non-directory files present', () => {
+test('listRecords returns all records even with stray non-directory files present', async () => {
   // Create a stray file early in directory order so it's encountered first
   mkdirSync(join(paths.records, '00'), { recursive: true })
   writeFileSync(join(paths.records, '.DS_Store'), 'stray file')
@@ -127,7 +128,7 @@ test('listRecords returns all records even with stray non-directory files presen
 // `recordPath(paths, '../../victim')` landed on `<home>/victim.json`. This is the
 // regression test for that, with a real file created outside the index.
 
-test('readRecord with a traversal hash deletes nothing outside the index', () => {
+test('readRecord with a traversal hash deletes nothing outside the index', async () => {
   const victimDir = join(tmp, 'outside')
   mkdirSync(victimDir, { recursive: true })
   const victim = join(victimDir, 'victim.json')
@@ -149,7 +150,7 @@ test('readRecord with a traversal hash deletes nothing outside the index', () =>
   expect(existsSync(victimDir)).toBe(true)
 })
 
-test('deleteRecord with a traversal hash deletes nothing outside the index', () => {
+test('deleteRecord with a traversal hash deletes nothing outside the index', async () => {
   const victimDir = join(tmp, 'outside2')
   mkdirSync(victimDir, { recursive: true })
   const victim = join(victimDir, 'victim.json')
@@ -162,7 +163,7 @@ test('deleteRecord with a traversal hash deletes nothing outside the index', () 
   expect(existsSync(victim)).toBe(true)
 })
 
-test('a record stored under a non-fingerprint hash still round-trips inside the index', () => {
+test('a record stored under a non-fingerprint hash still round-trips inside the index', async () => {
   // Everything that is not a fingerprint collapses to one fixed name, so writing and
   // reading stay consistent rather than the write landing somewhere the read cannot see.
   upsertRecord(paths, 'not-a-hash', seed)
@@ -175,7 +176,7 @@ test('a record stored under a non-fingerprint hash still round-trips inside the 
 // finished into an unlinked inode: a failure silently forgotten. The write now stages
 // and renames.
 
-test('upsert leaves no staging file behind and listRecords ignores stray ones', () => {
+test('upsert leaves no staging file behind and listRecords ignores stray ones', async () => {
   upsertRecord(paths, 'aa11bb22cc33dd44', seed)
   const shard = join(paths.records, 'aa')
   expect(readdirSync(shard)).toEqual(['aa11bb22cc33dd44.json'])
@@ -189,8 +190,9 @@ test('concurrent writers never lose the record', async () => {
   const script = join(tmp, 'writer.ts')
   writeFileSync(script, `
     import { upsertRecord, readRecord } from ${JSON.stringify(join(import.meta.dir, '..', 'src', 'record.ts'))}
-    import { pathsFor } from ${JSON.stringify(join(import.meta.dir, '..', 'src', 'paths.ts'))}
-    const paths = pathsFor(process.argv[2])
+    import { pathsFor } from ${JSON.stringify(join(import.meta.dir, '..', 'src', 'core', 'paths.ts'))}
+    import { nodeIo } from ${JSON.stringify(join(import.meta.dir, '..', 'src', 'io', 'node.ts'))}
+    const paths = await pathsFor(nodeIo, process.argv[2])
     const seed = ${JSON.stringify(seed)}
     for (let i = 0; i < 40; i += 1) {
       upsertRecord(paths, 'aa11bb22cc33dd44', seed)

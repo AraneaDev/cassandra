@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { run } from '../src/cli'
-import { pathsFor } from '../src/paths'
+import { pathsFor } from '../src/core/paths.ts'
+import { nodeIo } from '../src/io/node.ts'
 import { listRecords, upsertRecord } from '../src/record'
 import { appendStat } from '../src/stats'
 
@@ -18,7 +19,7 @@ const seed = {
   sessionId: 's1', compactions: 0, errorExcerpt: '3 tests failing',
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   tmp = mkdtempSync(join(tmpdir(), 'cass-cli-'))
   process.env.CASSANDRA_HOME = join(tmp, 'home')
   cwd = join(tmp, 'proj')
@@ -28,118 +29,118 @@ beforeEach(() => {
   console.log = (...args: unknown[]) => { out.push(args.join(' ')) }
 })
 
-afterEach(() => {
+afterEach(async () => {
   console.log = originalLog
   delete process.env.CASSANDRA_HOME
   rmSync(tmp, { recursive: true, force: true })
 })
 
-test('list on an empty index says so and exits 0', () => {
-  expect(run(['list', '--cwd', cwd])).toBe(0)
+test('list on an empty index says so and exits 0', async () => {
+  expect(await run(['list', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('No remembered failures')
 })
 
-test('list shows a stored record', () => {
-  upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
-  expect(run(['list', '--cwd', cwd])).toBe(0)
+test('list shows a stored record', async () => {
+  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  expect(await run(['list', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('bun test')
   expect(out.join('\n')).toContain('aa11bb22')
 })
 
-test('list with multiple records sorts and shows every one', () => {
-  const p = pathsFor(cwd)
+test('list with multiple records sorts and shows every one', async () => {
+  const p = await pathsFor(nodeIo, cwd)
   upsertRecord(p, 'aa11bb22cc33dd44', seed)
   upsertRecord(p, 'bb11bb22cc33dd44', { ...seed, display: 'bun typecheck' })
-  expect(run(['list', '--cwd', cwd])).toBe(0)
+  expect(await run(['list', '--cwd', cwd])).toBe(0)
   const text = out.join('\n')
   expect(text).toContain('2 remembered failures')
   expect(text).toContain('bun test')
   expect(text).toContain('bun typecheck')
 })
 
-test('why prints the full record', () => {
-  upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
-  expect(run(['why', 'aa11bb22cc33dd44', '--cwd', cwd])).toBe(0)
+test('why prints the full record', async () => {
+  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  expect(await run(['why', 'aa11bb22cc33dd44', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('3 tests failing')
 })
 
-test('why on an unknown hash exits 1', () => {
-  expect(run(['why', 'deadbeefdeadbeef', '--cwd', cwd])).toBe(1)
+test('why on an unknown hash exits 1', async () => {
+  expect(await run(['why', 'deadbeefdeadbeef', '--cwd', cwd])).toBe(1)
   expect(out.join('\n')).toContain('No record for')
 })
 
 // argv reaches the record path, and a record path lookup can end in a delete. Both
 // commands refuse anything that is not a real fingerprint rather than passing it on.
 
-test('why refuses anything that could reach a path builder, and exits 1', () => {
+test('why refuses anything that could reach a path builder, and exits 1', async () => {
   // The security property: argv that is not pure hex never becomes a path segment.
   for (const bad of ['nope', '../../victim', '', '..', '/etc/passwd', 'a/b']) {
     out.length = 0
-    expect(run(['why', bad, '--cwd', cwd])).toBe(1)
+    expect(await run(['why', bad, '--cwd', cwd])).toBe(1)
     expect(out.join('\n')).toContain('Not a hash')
   }
   // Hex that matches no record is refused too, with a different reason.
   out.length = 0
-  expect(run(['why', 'deadbeef', '--cwd', cwd])).toBe(1)
+  expect(await run(['why', 'deadbeef', '--cwd', cwd])).toBe(1)
   expect(out.join('\n')).toContain('No record matching')
 })
 
-test('why accepts the 8-character prefix that `list` actually prints', () => {
-  upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
+test('why accepts the 8-character prefix that `list` actually prints', async () => {
+  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
   out.length = 0
-  expect(run(['why', 'aa11bb22', '--cwd', cwd])).toBe(0)
+  expect(await run(['why', 'aa11bb22', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('bun test')
 })
 
-test('an ambiguous prefix is refused and names the candidates', () => {
-  upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
-  upsertRecord(pathsFor(cwd), 'aa11ffffcc33dd44', seed)
+test('an ambiguous prefix is refused and names the candidates', async () => {
+  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11ffffcc33dd44', seed)
   out.length = 0
-  expect(run(['why', 'aa11', '--cwd', cwd])).toBe(1)
+  expect(await run(['why', 'aa11', '--cwd', cwd])).toBe(1)
   expect(out.join('\n')).toContain('matches 2 records')
 })
 
-test('forget refuses anything that could reach a path builder, and deletes nothing', () => {
-  upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
+test('forget refuses anything that could reach a path builder, and deletes nothing', async () => {
+  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
   for (const bad of ['nope', '../../victim', '..', 'a/b']) {
     out.length = 0
-    expect(run(['forget', bad, '--cwd', cwd])).toBe(1)
+    expect(await run(['forget', bad, '--cwd', cwd])).toBe(1)
     expect(out.join('\n')).toContain('Not a hash')
   }
   // The record it was given alongside those must still be there.
-  expect(listRecords(pathsFor(cwd))).toHaveLength(1)
+  expect(listRecords(await pathsFor(nodeIo, cwd))).toHaveLength(1)
   out.length = 0
-  expect(run(['list', '--cwd', cwd])).toBe(0)
+  expect(await run(['list', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('bun test')
 })
 
-test('forget removes one record', () => {
-  upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
-  expect(run(['forget', 'aa11bb22cc33dd44', '--cwd', cwd])).toBe(0)
+test('forget removes one record', async () => {
+  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  expect(await run(['forget', 'aa11bb22cc33dd44', '--cwd', cwd])).toBe(0)
   out.length = 0
-  expect(run(['list', '--cwd', cwd])).toBe(0)
+  expect(await run(['list', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('No remembered failures')
 })
 
-test('forget with no hash and no --all exits 1', () => {
-  expect(run(['forget', '--cwd', cwd])).toBe(1)
+test('forget with no hash and no --all exits 1', async () => {
+  expect(await run(['forget', '--cwd', cwd])).toBe(1)
   expect(out.join('\n')).toContain('Pass a hash, or --all')
 })
 
-test('forget --all empties the index', () => {
-  upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
-  upsertRecord(pathsFor(cwd), 'bb11bb22cc33dd44', seed)
-  expect(run(['forget', '--all', '--cwd', cwd])).toBe(0)
+test('forget --all empties the index', async () => {
+  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  upsertRecord(await pathsFor(nodeIo, cwd), 'bb11bb22cc33dd44', seed)
+  expect(await run(['forget', '--all', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('Forgot 2')
 })
 
-test('stats reports the false-positive rate and boundary shares', () => {
-  const p = pathsFor(cwd)
+test('stats reports the false-positive rate and boundary shares', async () => {
+  const p = await pathsFor(nodeIo, cwd)
   appendStat(p, { kind: 'warned', hash: 'a', boundary: 'compaction' })
   appendStat(p, { kind: 'warned', hash: 'b', boundary: 'same_context' })
   appendStat(p, { kind: 'confirmed', hash: 'a' })
   appendStat(p, { kind: 'false_positive', hash: 'b' })
-  expect(run(['stats', '--cwd', cwd])).toBe(0)
+  expect(await run(['stats', '--cwd', cwd])).toBe(0)
   const text = out.join('\n')
   expect(text).toContain('2 warnings')
   expect(text).toContain('50.0%')
@@ -150,26 +151,26 @@ test('stats reports the false-positive rate and boundary shares', () => {
   expect(text).toContain('uninstalling')
 })
 
-test('stats on an empty log exits 0 and says nothing has been measured', () => {
-  expect(run(['stats', '--cwd', cwd])).toBe(0)
+test('stats on an empty log exits 0 and says nothing has been measured', async () => {
+  expect(await run(['stats', '--cwd', cwd])).toBe(0)
   expect(out.join('\n')).toContain('No warnings recorded')
 })
 
-test('export emits parseable JSON', () => {
-  upsertRecord(pathsFor(cwd), 'aa11bb22cc33dd44', seed)
-  expect(run(['export', '--cwd', cwd])).toBe(0)
+test('export emits parseable JSON', async () => {
+  upsertRecord(await pathsFor(nodeIo, cwd), 'aa11bb22cc33dd44', seed)
+  expect(await run(['export', '--cwd', cwd])).toBe(0)
   const parsed = JSON.parse(out.join('\n'))
   expect(parsed.records).toHaveLength(1)
   expect(parsed.records[0].hash).toBe('aa11bb22cc33dd44')
 })
 
-test('no arguments prints usage and exits 1', () => {
-  expect(run([])).toBe(1)
+test('no arguments prints usage and exits 1', async () => {
+  expect(await run([])).toBe(1)
   expect(out.join('\n')).toContain('Usage')
 })
 
-test('an unknown subcommand prints usage and exits 1', () => {
-  expect(run(['nonsense'])).toBe(1)
+test('an unknown subcommand prints usage and exits 1', async () => {
+  expect(await run(['nonsense'])).toBe(1)
 })
 
 // The brief's argv handling computed `cwdFlag + 1` even when `--cwd` was absent
@@ -179,18 +180,18 @@ test('an unknown subcommand prints usage and exits 1', () => {
 // index there will simply be empty, so assertions are on exit code and on the
 // absence of "Usage" rather than on specific record contents.
 
-test('list without --cwd runs the list command, not usage', () => {
-  expect(run(['list'])).toBe(0)
+test('list without --cwd runs the list command, not usage', async () => {
+  expect(await run(['list'])).toBe(0)
   expect(out.join('\n')).not.toContain('Usage')
 })
 
-test('stats without --cwd runs the stats command, not usage', () => {
-  expect(run(['stats'])).toBe(0)
+test('stats without --cwd runs the stats command, not usage', async () => {
+  expect(await run(['stats'])).toBe(0)
   expect(out.join('\n')).not.toContain('Usage')
 })
 
-test('export without --cwd emits parseable JSON, not usage', () => {
-  expect(run(['export'])).toBe(0)
+test('export without --cwd emits parseable JSON, not usage', async () => {
+  expect(await run(['export'])).toBe(0)
   const text = out.join('\n')
   expect(text).not.toContain('Usage')
   expect(() => JSON.parse(text)).not.toThrow()

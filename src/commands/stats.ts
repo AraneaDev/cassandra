@@ -1,5 +1,5 @@
 import { readStats, type Boundary } from '../stats'
-import type { Paths } from '../paths'
+import type { Paths } from '../core/paths.ts'
 
 const BOUNDARIES: Boundary[] = ['compaction', 'session', 'subagent', 'same_context']
 

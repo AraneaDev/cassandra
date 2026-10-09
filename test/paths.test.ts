@@ -2,19 +2,20 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { bumpCompactions, compactionCount } from '../src/session'
-import { dataRoot, findRepoRoot, isFingerprint, pathsFor, pendingPath, projectSlug, recordPath, safeSegment } from '../src/paths'
+import { bumpCompactions, compactionCount } from '../src/core/session.ts'
+import { nodeIo } from '../src/io/node.ts'
+import { dataRoot, findRepoRoot, isFingerprint, pathsFor, pendingPath, projectSlug, recordPath, safeSegment } from '../src/core/paths.ts'
 
 let tmp: string
 let originalHome: string | undefined
 
-beforeEach(() => {
+beforeEach(async () => {
   tmp = mkdtempSync(join(tmpdir(), 'cass-paths-'))
   originalHome = process.env.HOME
   process.env.CASSANDRA_HOME = join(tmp, 'home')
 })
 
-afterEach(() => {
+afterEach(async () => {
   if (originalHome === undefined) delete process.env.HOME
   else process.env.HOME = originalHome
   delete process.env.CLAUDE_PLUGIN_DATA
@@ -22,48 +23,48 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
 })
 
-test('dataRoot honours CASSANDRA_HOME first', () => {
-  expect(dataRoot()).toBe(join(tmp, 'home'))
+test('dataRoot honours CASSANDRA_HOME first', async () => {
+  expect(await dataRoot(nodeIo)).toBe(join(tmp, 'home'))
 })
 
-test('findRepoRoot walks up to the directory containing .git', () => {
+test('findRepoRoot walks up to the directory containing .git', async () => {
   const repo = join(tmp, 'repo')
   const deep = join(repo, 'a', 'b')
   mkdirSync(join(repo, '.git'), { recursive: true })
   mkdirSync(deep, { recursive: true })
-  expect(findRepoRoot(deep)).toBe(repo)
+  expect(await findRepoRoot(nodeIo, deep)).toBe(repo)
 })
 
-test('findRepoRoot returns cwd when there is no .git above it', () => {
+test('findRepoRoot returns cwd when there is no .git above it', async () => {
   const plain = join(tmp, 'plain')
   mkdirSync(plain, { recursive: true })
-  expect(findRepoRoot(plain)).toBe(plain)
+  expect(await findRepoRoot(nodeIo, plain)).toBe(plain)
 })
 
-test('a subdirectory of a repo yields the same slug as its root', () => {
+test('a subdirectory of a repo yields the same slug as its root', async () => {
   const repo = join(tmp, 'repo')
   const deep = join(repo, 'a', 'b')
   mkdirSync(join(repo, '.git'), { recursive: true })
   mkdirSync(deep, { recursive: true })
-  expect(projectSlug(deep)).toBe(projectSlug(repo))
+  expect(await projectSlug(nodeIo, deep)).toBe(await projectSlug(nodeIo, repo))
 })
 
-test('two checkouts with the same basename get different slugs', () => {
+test('two checkouts with the same basename get different slugs', async () => {
   const one = join(tmp, 'x', 'proj')
   const two = join(tmp, 'y', 'proj')
   mkdirSync(join(one, '.git'), { recursive: true })
   mkdirSync(join(two, '.git'), { recursive: true })
-  expect(projectSlug(one)).not.toBe(projectSlug(two))
-  expect(projectSlug(one).startsWith('proj-')).toBe(true)
+  expect(await projectSlug(nodeIo, one)).not.toBe(await projectSlug(nodeIo, two))
+  expect((await projectSlug(nodeIo, one)).startsWith('proj-')).toBe(true)
 })
 
-test('recordPath shards on the first two hash characters', () => {
-  const p = pathsFor(tmp)
+test('recordPath shards on the first two hash characters', async () => {
+  const p = await pathsFor(nodeIo, tmp)
   expect(recordPath(p, 'abcdef0123456789')).toBe(join(p.records, 'ab', 'abcdef0123456789.json'))
 })
 
-test('pendingPath never escapes the pending directory', () => {
-  const p = pathsFor(tmp)
+test('pendingPath never escapes the pending directory', async () => {
+  const p = await pathsFor(nodeIo, tmp)
   for (const id of ['..', '.', '', '../../etc/passwd', 'toolu_01ABC']) {
     expect(pendingPath(p, id).startsWith(p.pending + '/')).toBe(true)
   }
@@ -76,8 +77,8 @@ test('pendingPath never escapes the pending directory', () => {
 
 const HOSTILE_SEGMENTS = ['..', '../../x', '../../../../etc/passwd', '.', '', 'x'.repeat(500), '/abs/path', 'a/b']
 
-test('recordPath keeps every hostile hash inside the records directory', () => {
-  const p = pathsFor(tmp)
+test('recordPath keeps every hostile hash inside the records directory', async () => {
+  const p = await pathsFor(nodeIo, tmp)
   for (const hash of HOSTILE_SEGMENTS) {
     const resolved = resolve(recordPath(p, hash))
     expect(resolved.startsWith(resolve(p.records) + '/')).toBe(true)
@@ -86,16 +87,16 @@ test('recordPath keeps every hostile hash inside the records directory', () => {
   }
 })
 
-test('recordPath accepts only a real fingerprint and files everything else under one fixed name', () => {
-  const p = pathsFor(tmp)
+test('recordPath accepts only a real fingerprint and files everything else under one fixed name', async () => {
+  const p = await pathsFor(nodeIo, tmp)
   expect(recordPath(p, 'abcdef0123456789')).toBe(join(p.records, 'ab', 'abcdef0123456789.json'))
   for (const hash of ['ABCDEF0123456789', 'abcdef012345678', 'abcdef01234567890', 'zzzzzzzzzzzzzzzz', '../../victim']) {
     expect(recordPath(p, hash)).toBe(join(p.records, 'in', 'invalid.json'))
   }
 })
 
-test('pendingPath keeps every hostile tool_use_id inside the pending directory', () => {
-  const p = pathsFor(tmp)
+test('pendingPath keeps every hostile tool_use_id inside the pending directory', async () => {
+  const p = await pathsFor(nodeIo, tmp)
   for (const id of HOSTILE_SEGMENTS) {
     const resolved = resolve(pendingPath(p, id))
     expect(resolved.startsWith(resolve(p.pending) + '/')).toBe(true)
@@ -104,14 +105,14 @@ test('pendingPath keeps every hostile tool_use_id inside the pending directory',
   }
 })
 
-test('counterPath keeps every hostile session id inside the sessions directory', () => {
-  // counterPath is private to src/session.ts, so it is exercised through the two
+test('counterPath keeps every hostile session id inside the sessions directory', async () => {
+  // counterPath is private to src/core/session.ts, so it is exercised through the two
   // functions that use it: a hostile id must write and read inside sessions/ and nowhere else.
-  const p = pathsFor(tmp)
+  const p = await pathsFor(nodeIo, tmp)
   const sessions = join(p.root, 'sessions')
   for (const id of HOSTILE_SEGMENTS.filter((s) => s !== '')) {
-    bumpCompactions(p, id)
-    expect(compactionCount(p, id)).toBeGreaterThan(0)
+    await bumpCompactions(nodeIo, p, id)
+    expect(await compactionCount(nodeIo, p, id)).toBeGreaterThan(0)
   }
   // Everything written landed as a direct child of sessions/, so nothing escaped.
   const written = readdirSync(sessions)
@@ -123,10 +124,10 @@ test('counterPath keeps every hostile session id inside the sessions directory',
     expect(existsSync(join(sessions, name))).toBe(true)
   }
   expect(existsSync(join(p.root, 'passwd'))).toBe(false)
-  expect(existsSync(join(dataRoot(), 'passwd'))).toBe(false)
+  expect(existsSync(join(await dataRoot(nodeIo), 'passwd'))).toBe(false)
 })
 
-test('safeSegment strips separators, caps length and refuses the three escaping names', () => {
+test('safeSegment strips separators, caps length and refuses the three escaping names', async () => {
   // Dots survive, since a dot is legal in a filename. Separators do not, which is what
   // makes the result a single segment that `resolve` cannot walk out of.
   expect(safeSegment('../../etc/passwd')).toBe('..-..-etc-passwd')
@@ -139,7 +140,7 @@ test('safeSegment strips separators, caps length and refuses the three escaping 
   expect(safeSegment('toolu_01ABC')).toBe('toolu_01ABC')
 })
 
-test('isFingerprint accepts exactly 16 lowercase hex characters', () => {
+test('isFingerprint accepts exactly 16 lowercase hex characters', async () => {
   expect(isFingerprint('abcdef0123456789')).toBe(true)
   expect(isFingerprint('ABCDEF0123456789')).toBe(false)
   expect(isFingerprint('abcdef012345678')).toBe(false)
@@ -148,7 +149,7 @@ test('isFingerprint accepts exactly 16 lowercase hex characters', () => {
   expect(isFingerprint('../../victim')).toBe(false)
 })
 
-test('a hook writing under CLAUDE_PLUGIN_DATA leaves a pointer the CLI can follow', () => {
+test('a hook writing under CLAUDE_PLUGIN_DATA leaves a pointer the CLI can follow', async () => {
   const pluginData = join(tmp, 'plugin-data')
   mkdirSync(pluginData, { recursive: true })
   const home = join(tmp, 'fakehome')
@@ -158,14 +159,14 @@ test('a hook writing under CLAUDE_PLUGIN_DATA leaves a pointer the CLI can follo
   delete process.env.CASSANDRA_HOME
   process.env.CLAUDE_PLUGIN_DATA = pluginData
   process.env.HOME = home
-  expect(dataRoot()).toBe(pluginData)
+  expect(await dataRoot(nodeIo)).toBe(pluginData)
 
   // A plain shell: no plugin environment at all. It must still find the same directory.
   delete process.env.CLAUDE_PLUGIN_DATA
-  expect(dataRoot()).toBe(pluginData)
+  expect(await dataRoot(nodeIo)).toBe(pluginData)
 })
 
-test('a stale or non-absolute pointer is ignored rather than followed', () => {
+test('a stale or non-absolute pointer is ignored rather than followed', async () => {
   const home = join(tmp, 'fakehome2')
   mkdirSync(join(home, '.cassandra'), { recursive: true })
   process.env.HOME = home
@@ -173,8 +174,30 @@ test('a stale or non-absolute pointer is ignored rather than followed', () => {
   delete process.env.CLAUDE_PLUGIN_DATA
 
   writeFileSync(join(home, '.cassandra', 'data-root'), '/nonexistent/gone')
-  expect(dataRoot()).toBe(join(home, '.cassandra'))
+  expect(await dataRoot(nodeIo)).toBe(join(home, '.cassandra'))
 
   writeFileSync(join(home, '.cassandra', 'data-root'), 'not-absolute')
-  expect(dataRoot()).toBe(join(home, '.cassandra'))
+  expect(await dataRoot(nodeIo)).toBe(join(home, '.cassandra'))
+})
+
+test('the mod session marker is written, seen, and cleared', async () => {
+  const { markModSession, isModSession, clearModSession } = await import('../src/core/session.ts')
+  expect(await isModSession(nodeIo, 's-1')).toBe(false)
+  expect(await markModSession(nodeIo, 's-1')).toBe(true)
+  expect(await isModSession(nodeIo, 's-1')).toBe(true)
+  expect(existsSync(join(tmp, 'home', 'sessions', 's-1.mod'))).toBe(true)
+  await clearModSession(nodeIo, 's-1')
+  expect(await isModSession(nodeIo, 's-1')).toBe(false)
+})
+
+test('a hostile session id cannot place a marker outside the sessions directory', async () => {
+  const { markModSession } = await import('../src/core/session.ts')
+  await markModSession(nodeIo, '../../escape')
+  expect(readdirSync(join(tmp, 'home', 'sessions'))).toEqual(['..-..-escape.mod'])
+})
+
+test('an empty session id is never a mod session', async () => {
+  const { markModSession, isModSession } = await import('../src/core/session.ts')
+  expect(await markModSession(nodeIo, '')).toBe(false)
+  expect(await isModSession(nodeIo, '')).toBe(false)
 })

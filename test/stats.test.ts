@@ -2,28 +2,29 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { appendFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { pathsFor, type Paths } from '../src/paths'
+import { pathsFor, type Paths } from '../src/core/paths.ts'
+import { nodeIo } from '../src/io/node.ts'
 import { appendStat, attributeBoundary, readStats } from '../src/stats'
 
 let tmp: string
 let paths: Paths
 
-beforeEach(() => {
+beforeEach(async () => {
   tmp = mkdtempSync(join(tmpdir(), 'cass-stats-'))
   process.env.CASSANDRA_HOME = join(tmp, 'home')
-  paths = pathsFor(tmp)
+  paths = await pathsFor(nodeIo, tmp)
 })
 
-afterEach(() => {
+afterEach(async () => {
   delete process.env.CASSANDRA_HOME
   rmSync(tmp, { recursive: true, force: true })
 })
 
-test('reading an absent log yields an empty array', () => {
+test('reading an absent log yields an empty array', async () => {
   expect(readStats(paths)).toEqual([])
 })
 
-test('appended events round-trip in order', () => {
+test('appended events round-trip in order', async () => {
   appendStat(paths, { kind: 'warned', hash: 'aaaa', boundary: 'compaction' })
   appendStat(paths, { kind: 'confirmed', hash: 'aaaa' })
   const events = readStats(paths)
@@ -34,77 +35,77 @@ test('appended events round-trip in order', () => {
   expect(events[0]!.t).toBeString()
 })
 
-test('a corrupt line is skipped rather than failing the read', () => {
+test('a corrupt line is skipped rather than failing the read', async () => {
   appendStat(paths, { kind: 'warned', hash: 'aaaa' })
   appendFileSync(paths.stats, 'not json at all\n')
   appendStat(paths, { kind: 'confirmed', hash: 'aaaa' })
   expect(readStats(paths)).toHaveLength(2)
 })
 
-test('a subagent warning is attributed to the subagent boundary', () => {
+test('a subagent warning is attributed to the subagent boundary', async () => {
   expect(attributeBoundary(
     { sessionId: 's1', compactions: 0 },
     { sessionId: 's1', compactions: 0, agentId: 'a1' },
   )).toBe('subagent')
 })
 
-test('a warning in a later session is attributed to the session boundary', () => {
+test('a warning in a later session is attributed to the session boundary', async () => {
   expect(attributeBoundary(
     { sessionId: 's1', compactions: 0 },
     { sessionId: 's2', compactions: 0 },
   )).toBe('session')
 })
 
-test('a warning after a compaction is attributed to compaction', () => {
+test('a warning after a compaction is attributed to compaction', async () => {
   expect(attributeBoundary(
     { sessionId: 's1', compactions: 0 },
     { sessionId: 's1', compactions: 1 },
   )).toBe('compaction')
 })
 
-test('a warning inside one intact context is attributed to same_context', () => {
+test('a warning inside one intact context is attributed to same_context', async () => {
   expect(attributeBoundary(
     { sessionId: 's1', compactions: 2 },
     { sessionId: 's1', compactions: 2 },
   )).toBe('same_context')
 })
 
-test('the same agent retrying inside the same context is same_context, not subagent', () => {
+test('the same agent retrying inside the same context is same_context, not subagent', async () => {
   expect(attributeBoundary(
     { sessionId: 's1', compactions: 0, agentId: 'a1' },
     { sessionId: 's1', compactions: 0, agentId: 'a1' },
   )).toBe('same_context')
 })
 
-test('a different agent is a subagent boundary', () => {
+test('a different agent is a subagent boundary', async () => {
   expect(attributeBoundary(
     { sessionId: 's1', compactions: 0, agentId: 'a1' },
     { sessionId: 's1', compactions: 0, agentId: 'a2' },
   )).toBe('subagent')
 })
 
-test('an agentId on current only is a subagent boundary', () => {
+test('an agentId on current only is a subagent boundary', async () => {
   expect(attributeBoundary(
     { sessionId: 's1', compactions: 0 },
     { sessionId: 's1', compactions: 0, agentId: 'a1' },
   )).toBe('subagent')
 })
 
-test('an agentId on recorded only is a subagent boundary', () => {
+test('an agentId on recorded only is a subagent boundary', async () => {
   expect(attributeBoundary(
     { sessionId: 's1', compactions: 0, agentId: 'a1' },
     { sessionId: 's1', compactions: 0 },
   )).toBe('subagent')
 })
 
-test('a subagent in a later session is subagent (most specific boundary wins)', () => {
+test('a subagent in a later session is subagent (most specific boundary wins)', async () => {
   expect(attributeBoundary(
     { sessionId: 's1', compactions: 0, agentId: 'a1' },
     { sessionId: 's2', compactions: 0, agentId: 'a2' },
   )).toBe('subagent')
 })
 
-test('appended timestamp cannot be overridden by event payload', () => {
+test('appended timestamp cannot be overridden by event payload', async () => {
   const beforeTime = Date.now()
   appendStat(paths, { kind: 'warned', hash: 'xxxx', t: 'old-time' } as any)
   const afterTime = Date.now()
@@ -116,7 +117,7 @@ test('appended timestamp cannot be overridden by event payload', () => {
   expect(events[0]!.t).not.toBe('old-time')
 })
 
-test('invalid json shapes are skipped without breaking the read', () => {
+test('invalid json shapes are skipped without breaking the read', async () => {
   appendStat(paths, { kind: 'warned', hash: 'aaaa' })
   appendFileSync(paths.stats, '42\n')
   appendFileSync(paths.stats, '"string"\n')

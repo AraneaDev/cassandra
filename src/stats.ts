@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
-import type { Paths } from './paths'
+import type { Paths } from './core/paths.ts'
 
 /** Which boundary a warning crossed. `same_context` means the model could already see the failure. */
 export type Boundary = 'compaction' | 'session' | 'subagent' | 'same_context'

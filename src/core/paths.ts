@@ -1,16 +1,19 @@
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import type { Io } from './io.ts'
+import { basename, dirname, isAbsolute, join, normalize } from './path.ts'
 
-/** Where every project's index lives. Tests set CASSANDRA_HOME; the plugin gets CLAUDE_PLUGIN_DATA. */
-export function dataRoot(): string {
-  const explicit = process.env.CASSANDRA_HOME ?? process.env.CLAUDE_PLUGIN_DATA
+/**
+ * Where every project's index lives. Tests set CASSANDRA_HOME; the plugin gets
+ * CLAUDE_PLUGIN_DATA. Rejects when there is neither an explicit root nor a home
+ * directory to fall back on, which every caller treats as silence.
+ */
+export async function dataRoot(io: Io): Promise<string> {
+  const explicit = (await io.env('CASSANDRA_HOME')) ?? (await io.env('CLAUDE_PLUGIN_DATA'))
   if (explicit) {
-    rememberDataRoot(explicit)
+    await rememberDataRoot(io, explicit)
     return explicit
   }
-  return readRememberedDataRoot() ?? join(homeBase(), '.cassandra')
+  const home = await homeBase(io)
+  return (await readRememberedDataRoot(io, home)) ?? join(home, '.cassandra')
 }
 
 /**
@@ -19,16 +22,19 @@ export function dataRoot(): string {
  * Node's `os.homedir()` consults `$HOME` first on POSIX, but Bun's resolves from the
  * passwd entry and ignores the environment, so a changed `HOME` is invisible to it.
  * Reading the variable first matches what a user expects from a CLI and keeps the two
- * runtimes agreeing.
+ * runtimes agreeing. The mod has no OS lookup at all, so `HOME` is all it has.
  */
-function homeBase(): string {
-  const h = process.env.HOME
-  return h && isAbsolute(h) ? h : homedir()
+async function homeBase(io: Io): Promise<string> {
+  const h = await io.env('HOME')
+  if (h && isAbsolute(h)) return h
+  const os = await io.homeDir()
+  if (!os) throw new Error('cassandra: no home directory to resolve a data root from')
+  return os
 }
 
 /** Where the pointer lives. Fixed, so a shell with no plugin environment can still find it. */
-function pointerPath(): string {
-  return join(homeBase(), '.cassandra', 'data-root')
+function pointerPath(home: string): string {
+  return join(home, '.cassandra', 'data-root')
 }
 
 /**
@@ -37,42 +43,41 @@ function pointerPath(): string {
  * Claude Code sets `CLAUDE_PLUGIN_DATA` for a plugin hook but not for a shell, so the CLI
  * would otherwise resolve a different directory from the one the hooks use and report an
  * empty index while the plugin was actively warning. The hook leaves this pointer behind
- * so `cassandra list`, `stats` and the rest read the same place. Best effort throughout:
- * losing the pointer costs discoverability, never correctness.
+ * so `cassandra list`, `stats` and the rest read the same place, and so does a mod that
+ * cannot see the variable. Best effort throughout: losing the pointer costs
+ * discoverability, never correctness.
  */
-function rememberDataRoot(root: string): void {
+async function rememberDataRoot(io: Io, root: string): Promise<void> {
   try {
-    const p = pointerPath()
-    if (existsSync(p) && readFileSync(p, 'utf8').trim() === root) return
-    mkdirSync(dirname(p), { recursive: true })
-    writeFileSync(p, root)
+    const p = pointerPath(await homeBase(io))
+    if ((await io.readText(p))?.trim() === root) return
+    await io.writeText(p, root)
   } catch {
     // A read-only home is not a reason to fail a tool call.
   }
 }
 
 /** Read the pointer a hook left behind, or null when there is none worth trusting. */
-function readRememberedDataRoot(): string | null {
+async function readRememberedDataRoot(io: Io, home: string): Promise<string | null> {
   try {
-    const p = pointerPath()
-    if (!existsSync(p)) return null
-    const v = readFileSync(p, 'utf8').trim()
-    return v && isAbsolute(v) && existsSync(v) ? v : null
+    const v = (await io.readText(pointerPath(home)))?.trim()
+    return v && isAbsolute(v) && (await io.exists(v)) ? v : null
   } catch {
     return null
   }
 }
 
 /**
- * Nearest ancestor containing `.git`, else the directory itself. Pure filesystem
- * probes rather than `git rev-parse`, because this runs on the hot path and a
- * subprocess there would cost more than the lookup it serves.
+ * Nearest ancestor containing `.git`, else the directory itself. Filesystem probes rather
+ * than `git rev-parse`, because this runs on the hot path and a subprocess there would
+ * cost more than the lookup it serves. `cwd` is absolute: both front ends hand over the
+ * harness's own absolute working directory, and the CLI resolves its flag first.
  */
-export function findRepoRoot(cwd: string): string {
-  const start = resolve(cwd)
+export async function findRepoRoot(io: Io, cwd: string): Promise<string> {
+  const start = normalize(cwd)
   let dir = start
   for (;;) {
-    if (existsSync(join(dir, '.git'))) return dir
+    if (await io.exists(join(dir, '.git'))) return dir
     const parent = dirname(dir)
     if (parent === dir) return start
     dir = parent
@@ -80,10 +85,10 @@ export function findRepoRoot(cwd: string): string {
 }
 
 /** Stable per-project directory name. Two checkouts of one repo never share an index. */
-export function projectSlug(cwd: string): string {
-  const root = findRepoRoot(cwd)
+export async function projectSlug(io: Io, cwd: string): Promise<string> {
+  const root = await findRepoRoot(io, cwd)
   const name = basename(root).replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 40) || 'project'
-  const digest = createHash('sha256').update(root).digest('hex').slice(0, 8)
+  const digest = (await io.sha256(root)).slice(0, 8)
   return `${name}-${digest}`
 }
 
@@ -96,8 +101,8 @@ export interface Paths {
 }
 
 /** Resolve every path Cassandra needs for the project containing `cwd`. */
-export function pathsFor(cwd: string): Paths {
-  const root = join(dataRoot(), projectSlug(cwd))
+export async function pathsFor(io: Io, cwd: string): Promise<Paths> {
+  const root = join(await dataRoot(io), await projectSlug(io, cwd))
   return {
     root,
     records: join(root, 'records'),

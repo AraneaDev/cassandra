@@ -1,5 +1,5 @@
 import { listRecords } from '../record'
-import type { Paths } from '../paths'
+import type { Paths } from '../core/paths.ts'
 
 /** Print every remembered failure for this project, most recent first. */
 export function list(paths: Paths): number {

@@ -1,5 +1,5 @@
 import { readRecord } from '../record'
-import { type Paths } from '../paths'
+import { type Paths } from '../core/paths.ts'
 import { explainResolution, resolveHash } from './resolve'
 
 /**

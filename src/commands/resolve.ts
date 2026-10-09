@@ -1,5 +1,5 @@
 import { listRecords } from '../record'
-import { isFingerprint, type Paths } from '../paths'
+import { isFingerprint, type Paths } from '../core/paths.ts'
 
 /** What a prefix lookup produced: exactly one match, nothing, or several. */
 export type Resolution =
