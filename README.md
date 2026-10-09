@@ -125,7 +125,9 @@ resolve. A high M means `resolve` is used to silence warnings rather than to rep
 Like the other two, that is a reason to distrust the feature, not to tune it.
 
 The `fix notes` block reads `fixes remembered N, offered again M`. N counts fix notes
-recorded. M counts warnings that carried a fix sentence.
+recorded. M counts warnings that carried a fix sentence: the call failed again after a
+fix was remembered. A high M means fixes keep being undone, for example by reverts or by
+switching branches.
 
 ## How it decides whether to warn
 
@@ -140,15 +142,18 @@ On `PreToolUse`:
 A briefing uses the same rule: a record goes into the note only if the workspace is
 provably unchanged since it failed.
 
-Any success of a remembered call now forgets it, not only a success after a warning.
+Any success of a remembered call forgets it, not only a success after a warning.
 
 ### Fix notes
 
 In a git repository, when a remembered failure later succeeds, Cassandra keeps which
 files changed in between: committed changes since the failure's `HEAD`, plus files whose
-uncommitted state flipped. It then forgets the failure. If nothing inside the repository
-changed, the note says the fix was elsewhere. If the failure's commit is no longer
-reachable, the note says history was rewritten. There is one note per call (the latest),
+uncommitted state flipped. It then forgets the failure. If git saw no change in the
+repository, the note says the fix was elsewhere (ignored directories such as
+`node_modules` are invisible to it). If the failure's commit no longer exists in the
+repository, for example after garbage collection, the note says history was rewritten, and
+it may still list files. After a rebase the old commit usually still exists, so the note
+lists the changed files. There is one note per call (the latest),
 at most 10 names, sanitised. Outside git there are no fix notes.
 
 If the call fails again, the warning, the briefing line and `query` add one sentence, for
@@ -252,6 +257,9 @@ measurable, and that is the trade being made.
 
 Known gaps and differences:
 
+- The fingerprint does not include the working directory. In a monorepo, a success of the
+  same command in another package forgets the failure, and its note says the fix was
+  elsewhere.
 - A fix note does not name an edit to a file that already had uncommitted changes when
   the call failed.
 - A user MCP server named `cassandra` that itself exposes a `query` or `resolve` tool
