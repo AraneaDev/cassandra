@@ -82,7 +82,23 @@ test('stats match the numbers cassandra stats reads', async () => {
   }
   const r = warningRates(await readStats(io, paths))
   expect(r.fpRate).toBe(25)
-  expect((await paneModel(io, cwd, view, 10)).stats).toBe('fp 25% · same_context 50%')
+  expect((await paneModel(io, cwd, view, 10)).stats).toBe('fp 25.0% · same_context 50.0%')
+})
+
+test('stats show one decimal, like cassandra stats', async () => {
+  await seed('one', '2026-01-01T00:00:01.000Z')
+  const paths = await pathsFor(io, cwd)
+  const log: Array<Parameters<typeof appendStat>[2]> = [
+    { kind: 'warned', hash: 'h', boundary: 'same_context' },
+    { kind: 'warned', hash: 'h', boundary: 'session' },
+    { kind: 'warned', hash: 'h', boundary: 'session' },
+    { kind: 'false_positive', hash: 'h' },
+    { kind: 'confirmed', hash: 'h' },
+    { kind: 'confirmed', hash: 'h' },
+  ]
+  for (const e of log) await appendStat(io, paths, e)
+  // 1 of 3 resolved is a false positive; 1 of 3 warnings is same_context.
+  expect((await paneModel(io, cwd, view, 10)).stats).toBe('fp 33.3% · same_context 33.3%')
 })
 
 test('maxRows caps the rows and counts the rest', async () => {

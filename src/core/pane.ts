@@ -40,7 +40,7 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
     const rates = warningRates(events)
     const stats = rates.warned === 0
       ? null
-      : `fp ${rates.fpRate.toFixed(0)}% · same_context ${rates.sameContextRate.toFixed(0)}%`
+      : `fp ${rates.fpRate.toFixed(1)}% · same_context ${rates.sameContextRate.toFixed(1)}%`
     if (all.length === 0) return { ...empty, stats }
 
     const stamp = await stateStamp(io, cwd)
@@ -58,11 +58,13 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
       stale,
     }))
 
-    // A selection that vanished falls back to the first row.
+    // A selection that vanished, or sits past maxRows, falls back to the first shown row on
+    // purpose: the pane has no scrolling.
     const chosen = shown.find((r) => r.hash === view.selected) ?? shown[0]
     let detail: PaneDetail | null = null
     if (chosen) {
       const note = await readFix(io, paths, chosen.hash)
+      // A record's stateKind is never 'none': the record writer refuses to store a 'none' stamp.
       const kind = chosen.record.stateKind
       detail = {
         reason: chosen.record.errorExcerpt ? 'stored excerpt (tool output)' : '(none captured)',
