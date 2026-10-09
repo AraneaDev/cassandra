@@ -21,7 +21,11 @@ test('the mod loads and passes a failing Bash call through untouched', async ($,
   }
 })
 
+// The test kit's `$` has no `fs`, so the answer is the mod's own fallback text. This proves
+// the call is routed to Cassandra's hook and answered without `next`, not a real query;
+// the real answer is covered by test/mod.spec.ts and the end-to-end run.
 test('the query tool is answered through the real engine', async ($) => {
   const r = await $.tool.call({ tool: 'mcp__cassandra__query' })
-  expect(typeof r.result === 'string' || typeof r.text === 'string').toBe(true)
+  expect(r.isError).not.toBe(true)
+  expect(String(r.result)).toBe('cassandra: could not answer.')
 })

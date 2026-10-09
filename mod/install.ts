@@ -265,13 +265,18 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     try {
-      await $.tool.register(QUERY_TOOL)
-      await $.tool.register(RESOLVE_TOOL)
       const io = wrapIo(modIo(hostOf($)))
       await pruneModMarkers(io)
       await claim(io, await $.session.id())
     } catch {
       // The first tool call claims the session instead.
+    }
+    // Apart from the claim: an engine that refuses the tools costs only the tools.
+    try {
+      await $.tool.register(QUERY_TOOL)
+      await $.tool.register(RESOLVE_TOOL)
+    } catch {
+      // The session goes on without Cassandra's tools.
     }
     return started
   })

@@ -15,6 +15,8 @@ export interface NodeHostOptions {
   appendDenies?: string
   /** Tools the mod registered with `$.tool.register`, recorded in order. */
   registered?: Array<{ name: string; description: string }>
+  /** Make `$.tool.register` reject, as an engine without tools or with a clashing name would. */
+  registerRejects?: boolean
 }
 
 /** The slice of `$` the mod uses beyond `ModHost`. */
@@ -92,6 +94,7 @@ export function nodeHost(opts: NodeHostOptions = {}): NodeHost {
     },
     tool: {
       async register(spec: { name: string; description: string }) {
+        if (opts.registerRejects) throw new Error('cannot register')
         ;(opts.registered ??= []).push({ name: spec.name, description: spec.description })
         return {}
       },

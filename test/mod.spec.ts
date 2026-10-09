@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { install, type ModEngine, type Next, type ToolCallEvent, type ToolCallOutcome } from '../mod/install.ts'
@@ -17,6 +17,8 @@ let tmp: string
 let cwd: string
 let opts: NodeHostOptions
 let hooks: Map<string, Hook>
+/** The matcher each `tool.call` hook was registered with, by the key it is stored under. */
+let matchers: Map<string, RegExp>
 let host: ModEngine
 let wrap: (io: Io) => Io
 
@@ -30,10 +32,13 @@ beforeEach(() => {
   opts = { sessionId: 's1', cwd, env: { CASSANDRA_HOME: join(tmp, 'home'), HOME: tmp } }
   host = nodeHost(opts)
   hooks = new Map()
+  matchers = new Map()
   wrap = (i) => i
   const on = ((event: string, a: unknown, b?: unknown) => {
     const own = event === 'tool.call' && (a as { tool: RegExp }).tool.source.startsWith('^mcp__cassandra__')
-    hooks.set(own ? 'tool.call:cassandra' : event, (b ?? a) as Hook)
+    const key = own ? 'tool.call:cassandra' : event
+    if (event === 'tool.call') matchers.set(key, (a as { tool: RegExp }).tool)
+    hooks.set(key, (b ?? a) as Hook)
   }) as unknown as Parameters<typeof install>[0]
   install(on, (i) => wrap(i))
 })
@@ -594,6 +599,32 @@ test("the tracking matcher excludes Cassandra's own tools and nothing else", asy
   expect(TRACKED.test('mcp__srv__do')).toBe(true)
   expect(TRACKED.test('Bash')).toBe(true)
   expect(TRACKED.test('Read')).toBe(false)
+  expect(TRACKED.test('mcp__cassandra_x__y')).toBe(true)
+  expect(TRACKED.test('mcp__srv__cassandra__x')).toBe(true)
+  expect(TRACKED.test('Bash2')).toBe(false)
+})
+
+test("the tools hook matches Cassandra's two tools and nothing else", () => {
+  const m = matchers.get('tool.call:cassandra')!
+  expect(m.test('mcp__cassandra__query')).toBe(true)
+  expect(m.test('mcp__cassandra__resolve')).toBe(true)
+  expect(m.test('mcp__cassandra__queryx')).toBe(false)
+  expect(m.test('mcp__cassandra__other')).toBe(false)
+})
+
+test('a refused tool registration still lets session.start prune and claim', async () => {
+  opts.registerRejects = true
+  const stale = join(tmp, 'home', 'sessions', 'old.mod')
+  mkdirSync(join(tmp, 'home', 'sessions'), { recursive: true })
+  writeFileSync(stale, 'x')
+  const long = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+  utimesSync(stale, long, long)
+  const started = { ok: true }
+  const r = await (hooks.get('session.start') as unknown as ($: ModEngine, e: unknown, n: () => Promise<unknown>) => Promise<unknown>)(host, {}, async () => started)
+  expect(r).toBe(started)
+  expect(existsSync(join(tmp, 'home', 'sessions', 's1.mod'))).toBe(true)
+  expect(existsSync(stale)).toBe(false)
+  expect(opts.registered ?? []).toEqual([])
 })
 
 test('a tool the core cannot serve is still answered, without next', async () => {
