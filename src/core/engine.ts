@@ -1,5 +1,5 @@
 import { digestText, liveRecords } from './digest.ts'
-import { history, reason, scopeOf } from './describe.ts'
+import { warningText } from './describe.ts'
 import { computeFix, dirtyHashes, fixSentence, readFix, writeFix } from './fixes.ts'
 import { displayFor, fingerprint } from './fingerprint.ts'
 import { stateStamp, unchanged } from './freshness.ts'
@@ -62,6 +62,8 @@ export interface Call {
   cwd: string
   sessionId: string
   agentId?: string
+  /** True when the front end has a Cassandra pane the user can open; the binary leaves it unset. */
+  paneAvailable?: boolean
 }
 
 /**
@@ -103,13 +105,9 @@ export async function check(io: Io, call: Call): Promise<Warning | null> {
     { sessionId: found.sessionId, compactions: found.compactions, agentId: found.agentId },
     { sessionId: call.sessionId, compactions: await compactionCount(io, paths, call.sessionId), agentId: call.agentId },
   )
-  // `none` never reaches this point, since `unchanged` refuses it.
-  const scope = scopeOf(found.stateKind as Exclude<typeof found.stateKind, 'none'>)
-  let text = `cassandra: ${history(found)} before, most recently ${found.lastSeen}. `
-    + `Nothing in ${scope} has changed since.${reason(found)}`
   // What made this call work last time, when a past success left a note.
   const note = await readFix(io, paths, hash)
-  if (note) text += ` ${fixSentence(note)}`
+  const text = warningText(found, { id: hash.slice(0, 8), boundary, now: io.now(), fix: note ? fixSentence(note) : null, paneAvailable: call.paneAvailable === true })
   await appendStat(io, paths, note ? { kind: 'warned', hash, boundary, sessionId: call.sessionId, fixNote: true } : { kind: 'warned', hash, boundary, sessionId: call.sessionId })
   return { hash, text }
 }

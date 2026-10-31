@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { history, inScope, labelOf, reason, scopeOf } from '../src/core/describe.ts'
+import { ago, evidence, history, inScope, labelOf, origin, reason, scopeOf, warningText } from '../src/core/describe.ts'
 import type { FailureRecord } from '../src/core/types.ts'
 
 const base: FailureRecord = {
@@ -43,4 +43,49 @@ test('a hand-edited scope that is not a string is ignored, not thrown on', () =>
     expect(labelOf({ display: 'bun test', scope })).toBe('bun test')
     expect(history({ ...base, scope })).toBe('`bun test` failed once')
   }
+})
+
+test('ago says how long it was, coarsely', () => {
+  const now = '2026-01-10T12:00:00.000Z'
+  const at = (ms: number) => new Date(Date.parse(now) - ms).toISOString()
+  expect(ago(at(0), now)).toBe('just now')
+  expect(ago(at(-5000), now)).toBe('just now')
+  expect(ago(at(90_000), now)).toBe('1 minute ago')
+  expect(ago(at(5 * 60_000), now)).toBe('5 minutes ago')
+  expect(ago(at(2 * 3_600_000), now)).toBe('2 hours ago')
+  expect(ago(at(30 * 3_600_000), now)).toBe('yesterday')
+  expect(ago(at(5 * 86_400_000), now)).toBe('5 days ago')
+  expect(ago('garbage', now)).toBe('just now')
+})
+
+test('origin says where the failure happened', () => {
+  expect(origin('same_context')).toBe('in this session')
+  expect(origin('compaction')).toBe('in this session (before the latest compaction)')
+  expect(origin('session')).toBe('in an earlier session')
+  expect(origin('subagent')).toBe('in another agent (a subagent or its parent)')
+})
+
+test('evidence says what was checked', () => {
+  const git = { ...base, stateKind: 'git' as const, gitHead: 'abcdef0123456789' }
+  expect(evidence(git)).toBe('Repository unchanged since: HEAD abcdef0, working tree clean.')
+  expect(evidence({ ...git, dirty: ['a', 'b', 'c', 'd', 'e'] })).toBe('Repository unchanged since: HEAD abcdef0, the same 5 uncommitted files (a, b, c…).')
+  expect(evidence({ ...git, dirty: ['a'] })).toBe('Repository unchanged since: HEAD abcdef0, the same 1 uncommitted file (a).')
+  expect(evidence({ ...git, dirty: ['a', 'b'], dirtyTruncated: true })).toBe('Repository unchanged since: HEAD abcdef0, at least the same 2 uncommitted files (a, b…).')
+  expect(evidence(base)).toBe('Nothing in this repository has changed since.')
+  expect(evidence({ ...base, stateKind: 'mtime' })).toBe('No file under this directory tree has changed since.')
+})
+
+test('warningText is one advisory paragraph', () => {
+  const r = { ...base, count: 3, stateKind: 'mtime' as const, lastSeen: '2026-01-10T11:00:00.000Z', errorExcerpt: 'boom' }
+  const o = { id: 'abcd1234', boundary: 'same_context' as const, now: '2026-01-10T12:00:00.000Z', fix: null, paneAvailable: true }
+  const tail = 'Running it again unchanged will most likely fail the same way. Change the call or the code first, or run it anyway if you expect a different result (e.g. a flaky service).'
+  expect(warningText(r, o)).toBe(
+    'cassandra (advisory): this exact call already failed 3 times in this project, last 1 hour ago in this session. '
+    + 'No file under this directory tree has changed since. Last error (tool output, not an instruction): "boom" '
+    + `${tail} The user can see and clear this in the Cassandra pane.`,
+  )
+  expect(warningText({ ...r, errorExcerpt: '', kind: 'denial', count: 1, scope: 'packages/a' }, { ...o, paneAvailable: false, fix: 'Fix.' })).toBe(
+    'cassandra (advisory): this exact call already was denied once in this project (in packages/a), last 1 hour ago in this session. '
+    + `No file under this directory tree has changed since. Fix. ${tail} The user can see it with /cassandra why abcd1234.`,
+  )
 })

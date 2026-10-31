@@ -761,7 +761,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
       const sessionId = await $.session.id()
       // An unclaimed session is the binary's: stand aside through the same path as a core error.
       if (!(await claim(io, sessionId))) throw new Error('cassandra: session not claimed')
-      call = { tool: e.tool, input: toolInput(e), cwd: await $.session.cwd(), sessionId, agentId: e.agentId }
+      call = { tool: e.tool, input: toolInput(e), cwd: await $.session.cwd(), sessionId, agentId: e.agentId, paneAvailable: (await $.session.surfaces()).length > 0 }
       warning = await check(io, call)
     } catch {
       return next(e)

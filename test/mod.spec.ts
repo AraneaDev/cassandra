@@ -71,13 +71,22 @@ test('a miss passes the engine result through untouched, the same object', async
 test('a failure is recorded, and the unchanged repeat carries the warning as context', async () => {
   await call('bun test', failed())
   const { r } = await call('bun test', failed())
-  expect(r.context?.[0]).toStartWith('cassandra: `bun test` failed once before')
+  expect(r.context?.[0]).toStartWith('cassandra (advisory): this exact call already failed once in this project')
+})
+
+test('the warning points at the pane when a surface exists and at /cassandra why when headless', async () => {
+  await call('bun test', failed())
+  const { r } = await call('bun test', failed())
+  expect(r.context?.[0]).toEndWith('The user can see and clear this in the Cassandra pane.')
+  opts.surfaces = []
+  const headless = await call('bun test', failed())
+  expect(headless.r.context?.[0]).toMatch(/The user can see it with \/cassandra why [0-9a-f]{8}\.$/)
 })
 
 test('the warning is appended to context another plugin already set', async () => {
   await call('bun test', failed())
   const { r } = await call('bun test', { ...failed(), context: ['from another plugin'] })
-  expect(r.context).toEqual(['from another plugin', expect.stringContaining('cassandra:')])
+  expect(r.context).toEqual(['from another plugin', expect.stringContaining('cassandra (advisory):')])
 })
 
 test('a deny result is returned as is, with no context, and recorded as a denial', async () => {

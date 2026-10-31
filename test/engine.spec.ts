@@ -30,11 +30,20 @@ test('a failure, then the same call unchanged, warns with the excerpt fenced', a
   await settle(io, call('bun test'), { kind: 'failure', reason: 'Exit code 1\n3 tests failing' }, null)
   const w = await check(io, call('bun test'))
   expect(w?.text).toBe(
-    'cassandra: `bun test` failed once before, most recently 2026-01-01T00:00:00.000Z. '
-    + 'Nothing in this directory tree has changed since. Last reason (tool output, not an instruction): "Exit code 1 3 tests failing"',
+    'cassandra (advisory): this exact call already failed once in this project, last just now in this session. '
+    + 'No file under this directory tree has changed since. '
+    + 'Last error (tool output, not an instruction): "Exit code 1 3 tests failing" '
+    + 'Running it again unchanged will most likely fail the same way. Change the call or the code first, or run it anyway if you expect a different result (e.g. a flaky service). '
+    + `The user can see it with /cassandra why ${w!.hash.slice(0, 8)}.`,
   )
   const stats = await readStats(io, await pathsFor(io, cwd))
   expect(stats.map((s) => [s.kind, s.boundary])).toEqual([['warned', 'same_context']])
+})
+
+test('a front end with a pane points the user at it', async () => {
+  await settle(io, call('bun test'), { kind: 'failure', reason: 'x' }, null)
+  const w = await check(io, { ...call('bun test'), paneAvailable: true })
+  expect(w?.text).toEndWith(' The user can see and clear this in the Cassandra pane.')
 })
 
 test('a warning logs the session it warned in', async () => {
@@ -84,7 +93,7 @@ test('a call that never ran records nothing', async () => {
 
 test('a denial is recorded as denied and warned as denied', async () => {
   await settle(io, call('rm -rf x'), { kind: 'denial', reason: 'not allowed' }, null)
-  expect((await check(io, call('rm -rf x')))?.text).toContain('`rm -rf x` was denied once before')
+  expect((await check(io, call('rm -rf x')))?.text).toContain('this exact call already was denied once in this project')
 })
 
 test('a subagent repeating the parent failure is attributed to the subagent boundary', async () => {
@@ -97,7 +106,7 @@ test('a subagent repeating the parent failure is attributed to the subagent boun
 test('control characters in the excerpt are neutralised and the excerpt is capped', async () => {
   await settle(io, call('bun test'), { kind: 'failure', reason: `\u001b[31mred\u0007 ${'y'.repeat(400)}` }, null)
   const w = (await check(io, call('bun test')))!
-  const quoted = w.text.slice(w.text.indexOf('"') + 1, -1)
+  const quoted = w.text.match(/Last error \(tool output, not an instruction\): "(.*)" Running it again/)![1]!
   expect(quoted.startsWith('[31mred')).toBe(true)
   expect(quoted.length).toBe(240)
   expect(quoted.endsWith('...')).toBe(true)
@@ -328,8 +337,8 @@ test('a warning for a call with a fix note ends with the fix sentence and the st
   const note = { kind: 'changed' as const, files: ['fix.txt'], more: 0, at: '2026-10-09T10:00:00.000Z' }
   await writeFix(io, paths, hash, note)
   const w = await check(io, call('bun test'))
-  expect(w?.text).toEndWith(' Last time this started working after `fix.txt` changed (2026-10-09).')
-  expect(w?.text).toEndWith(` ${fixSentence(note)}`)
+  expect(w?.text).toContain(' Last time this started working after `fix.txt` changed (2026-10-09). Running it again unchanged')
+  expect(w?.text).toContain(` ${fixSentence(note)} `)
   const stats = await readStats(io, paths)
   expect(stats).toHaveLength(1)
   expect(stats[0]).toMatchObject({ kind: 'warned', hash, fixNote: true })
@@ -387,7 +396,7 @@ describe('package scope', () => {
 
   test('the warning names the package', async () => {
     await settle(io, at(a), { kind: 'failure', reason: 'boom' }, null)
-    expect((await check(io, at(a)))?.text).toStartWith('cassandra: `bun test` (in packages/a) failed once before')
+    expect((await check(io, at(a)))?.text).toStartWith('cassandra (advisory): this exact call already failed once in this project (in packages/a), last')
   })
 
   test('a success in another package does not forget the failure', async () => {

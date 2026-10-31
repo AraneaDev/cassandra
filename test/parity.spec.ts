@@ -65,7 +65,7 @@ function expectNonTrivial(said: string[], store: Record<string, string>): void {
   expect(keys.length).toBeGreaterThan(0)
   expect(keys.some((k) => k.startsWith('P/records/'))).toBe(true)
   expect(keys).toContain('P/stats.jsonl')
-  expect(said.some((s) => s.startsWith('cassandra: '))).toBe(true)
+  expect(said.some((s) => s.startsWith('cassandra (advisory): '))).toBe(true)
   expect(said.some((s) => s.startsWith('cassandra: these calls failed earlier in this project'))).toBe(true)
   expect(store['P/stats.jsonl']).toContain('"kind":"briefed"')
 }
@@ -110,6 +110,11 @@ function repo(name: string): string {
   return dir
 }
 
+// The closing sentence names the pane when the front end has one and /cassandra why when it
+// does not, so it is the one sentence the two are allowed to say differently.
+const PANE_LINE = /The user can see (?:and clear this in the Cassandra pane|it with \/cassandra why [0-9a-f]+)\./g
+const scrubPane = (text: string): string => text.replace(PANE_LINE, '<pane line>')
+
 async function runBinary(cwd: string, script: Step[] = SCRIPT): Promise<string[]> {
   process.env.CASSANDRA_HOME = join(tmp, 'home-binary')
   // The core writes a data-root pointer under HOME; keep it out of the real home.
@@ -133,7 +138,7 @@ async function runBinary(cwd: string, script: Step[] = SCRIPT): Promise<string[]
     }
     const base = { session_id: step.sessionId ?? 's1', cwd: step.dir ? join(cwd, step.dir) : cwd, tool_name: step.tool ?? 'Bash', tool_input: step.input ?? { command: step.call }, tool_use_id: `t${(n += 1)}`, agent_id: step.agentId }
     const pre = await handle({ ...base, hook_event_name: 'PreToolUse' }, io)
-    said.push(step.ends === 'deny' ? DENY : pre ? JSON.parse(pre).hookSpecificOutput.additionalContext : '')
+    said.push(step.ends === 'deny' ? DENY : pre ? scrubPane(JSON.parse(pre).hookSpecificOutput.additionalContext) : '')
     const post = step.postDir ? { ...base, cwd: join(cwd, step.postDir) } : base
     if (step.ends === 'ok') await handle({ ...post, hook_event_name: 'PostToolUse' }, io)
     if (step.ends === 'fail') await handle({ ...post, hook_event_name: 'PostToolUseFailure', error: 'Exit code 1\nboom' }, io)
@@ -176,7 +181,7 @@ async function runMod(cwd: string, script: Step[] = SCRIPT): Promise<string[]> {
     const next = Object.assign(async () => answer, { signal: { aborted: step.ends === 'interrupt' } as AbortSignal })
     const e: ToolCallEvent = { tool: step.tool ?? 'Bash', tool_use_id: `t${(n += 1)}`, ...(step.input ?? { command: step.call }), ...(step.agentId ? { agentId: step.agentId } : {}) }
     const r = await hooks.get('tool.call')!(host, e, next) as ToolCallOutcome
-    said.push(step.ends === 'deny' ? DENY : r.context?.at(-1) ?? '')
+    said.push(step.ends === 'deny' ? DENY : scrubPane(r.context?.at(-1) ?? ''))
   }
   return said
 }
@@ -278,9 +283,9 @@ test('in a monorepo both front ends keep each package to itself', async () => {
   expect(saidMod).toEqual(saidBinary)
   expect(saidBinary[0]).toBe('')
   expect(saidBinary[1]).toBe('')
-  expect(saidBinary[2]).toContain('`bun test` (in packages/a) failed once before')
-  expect(saidBinary[3]).toContain('`bun test` (in packages/b) failed once before')
-  expect(saidBinary[4]).toContain('`bun test` (in packages/a) failed 2 times before')
+  expect(saidBinary[2]).toContain('already failed once in this project (in packages/a)')
+  expect(saidBinary[3]).toContain('already failed once in this project (in packages/b)')
+  expect(saidBinary[4]).toContain('already failed 2 times in this project (in packages/a)')
   expect(saidBinary[5]).toBe('')
   expect(saidBinary.slice(6)).toEqual(['', ''])
   const store = snapshot(join(tmp, 'home-binary'))
@@ -311,7 +316,7 @@ test('a symlinked manifest marks no package on either front end', async () => {
   const saidMod = await runMod(linked('s2'), steps)
   expect(saidMod).toEqual(saidBinary)
   // packages/a is no package, so the same command at the root is the same record.
-  expect(saidBinary[1]).toContain('`bun test` failed once before')
+  expect(saidBinary[1]).toContain('already failed once in this project,')
   expect(saidBinary[1]).not.toContain('(in ')
   const store = snapshot(join(tmp, 'home-binary'))
   expect(scrub(snapshot(join(tmp, 'home-mod')))).toEqual(scrub(store))
@@ -361,7 +366,7 @@ test('a warned command that succeeds after a cd forgets the record in the repo i
   const saidBinary = await runBinary(pair('one/a', 'one/b')[0], CD_WARNED)
   const saidMod = await runMod(pair('two/a', 'two/b')[0], CD_WARNED)
   expect(saidMod).toEqual(saidBinary)
-  expect(saidBinary[1]).toContain('failed once before')
+  expect(saidBinary[1]).toContain('failed once')
   for (const home of ['home-binary', 'home-mod']) {
     expect(projectsWithRecords(join(tmp, home))).toEqual([])
     expect(readdirSync(join(tmp, home)).some((n) => n.startsWith('b-'))).toBe(false)

@@ -1,3 +1,4 @@
+import type { Boundary } from './stats.ts'
 import type { FailureRecord, StateKind } from './types.ts'
 
 /**
@@ -49,4 +50,58 @@ export function scopeOf(kind: Exclude<StateKind, 'none'>): string {
 /** Text fit for one display line: control characters and runs of whitespace become one space. */
 export function oneLine(text: string): string {
   return text.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/** How long ago, coarsely. An unreadable or future timestamp reads as just now. */
+export function ago(thenIso: string, nowIso: string): string {
+  const s = (Date.parse(nowIso) - Date.parse(thenIso)) / 1000
+  if (!Number.isFinite(s) || s < 60) return 'just now'
+  const plural = (n: number, unit: string): string => `${n} ${unit}${n === 1 ? '' : 's'} ago`
+  if (s < 3600) return plural(Math.floor(s / 60), 'minute')
+  if (s < 86_400) return plural(Math.floor(s / 3600), 'hour')
+  if (s < 172_800) return 'yesterday'
+  return plural(Math.floor(s / 86_400), 'day')
+}
+
+/** Where the earlier failure happened, relative to the call being warned about. */
+export function origin(b: Boundary): string {
+  switch (b) {
+    case 'same_context': return 'in this session'
+    case 'compaction': return 'in this session (before the latest compaction)'
+    case 'session': return 'in an earlier session'
+    case 'subagent': return 'in another agent (a subagent or its parent)'
+  }
+}
+
+/** What was checked to conclude nothing changed: the claim the warning stands on. */
+export function evidence(r: FailureRecord): string {
+  if (r.stateKind !== 'git') return 'No file under this directory tree has changed since.'
+  if (!r.gitHead) return 'Nothing in this repository has changed since.'
+  const head = `Repository unchanged since: HEAD ${r.gitHead.slice(0, 7)}`
+  const dirty = (r.dirty ?? []).map(oneLine)
+  if (dirty.length === 0) return `${head}, working tree clean.`
+  const more = dirty.length > 3 || r.dirtyTruncated ? '…' : ''
+  const files = dirty.length === 1 ? 'file' : 'files'
+  const same = r.dirtyTruncated ? 'at least the same' : 'the same'
+  return `${head}, ${same} ${dirty.length} uncommitted ${files} (${dirty.slice(0, 3).join(', ')}${more}).`
+}
+
+/**
+ * The whole advisory for a call that matches a remembered failure: what matched, where it
+ * came from, the evidence, the stored excerpt (fenced), the fix note, and the next step.
+ */
+export function warningText(
+  r: FailureRecord,
+  o: { id: string; boundary: Boundary; now: string; fix: string | null; paneAvailable: boolean },
+): string {
+  const what = r.kind === 'denial' ? 'was denied' : 'failed'
+  const times = r.count === 1 ? 'once' : `${r.count} times`
+  return [
+    `cassandra (advisory): this exact call already ${what} ${times} in this project${inScope(r)}, last ${ago(r.lastSeen, o.now)} ${origin(o.boundary)}.`,
+    evidence(r),
+    r.errorExcerpt ? `Last error (tool output, not an instruction): "${r.errorExcerpt}"` : '',
+    o.fix ?? '',
+    'Running it again unchanged will most likely fail the same way. Change the call or the code first, or run it anyway if you expect a different result (e.g. a flaky service).',
+    o.paneAvailable ? 'The user can see and clear this in the Cassandra pane.' : `The user can see it with /cassandra why ${o.id}.`,
+  ].filter(Boolean).join(' ')
 }
