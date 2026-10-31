@@ -26,9 +26,13 @@ interface HostCall { path: string; text: string; argv: readonly string[]; init?:
 /** How many times the plugin asked to open a pane. */
 let opened = 0
 
-/** Answer the plugin's host calls from an in-memory filesystem. */
-function memoryHost(on: On): void {
+/**
+ * Answer the plugin's host calls from an in-memory filesystem. With `git`, the project is a
+ * checkout on branch `main` at a clean HEAD; without it, git answers nothing.
+ */
+function memoryHost(on: On, { git = false }: { git?: boolean } = {}): void {
   const files = new Map<string, string>([[`${CWD}/a.txt`, 'one']])
+  if (git) files.set(`${CWD}/.git/HEAD`, 'ref: refs/heads/main')
   const isDir = (p: string): boolean => [...files.keys()].some((f) => f.startsWith(`${p}/`))
   const missing = (p: string): Error => new Error(`no such file: ${p}`)
   const h = on as unknown as (event: string, hook: (_$: unknown, e: HostCall) => Promise<unknown>) => void
@@ -79,6 +83,12 @@ function memoryHost(on: On): void {
       files.set(path, (files.get(path) ?? '') + String(e.init?.stdin ?? ''))
       return done(0)
     }
+    if (git && argv[0] === 'git') {
+      const said = (stdout: string) => ({ value: { exitCode: 0, stdout } })
+      if (argv.includes('rev-parse')) return said('0cc107b2a9f1e0d3c4b5a6978877665544332211\n')
+      if (argv.includes('status')) return said('')
+      if (argv.includes('symbolic-ref')) return said('main\n')
+    }
     // No git here: the freshness stamp falls back to the tree's mtimes.
     return done(128)
   })
@@ -105,12 +115,12 @@ test('the pane refuses a plugin origin, draws the remembered failure, forgets it
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...PANE, surface, viewport })
     const keys = (await ui.findAll({ type: 'Button' })).map((b) => b.key)
-    expect(keys).toHaveLength(3)
-    expect(keys[0]).toMatch(/^row:[0-9a-f]{8}$/)
-    expect(keys.slice(1)).toEqual(['forget', 'forget-all'])
+    expect(keys.filter((k) => /^row:[0-9a-f]{8}$/.test(String(k)))).toHaveLength(1)
+    expect(keys).toContain('forget')
+    expect(keys).toContain('forget-all')
 
     await ui.press({ key: 'forget-all' })
-    expect((await ui.find({ key: 'forget-all-confirm' }))?.key).toBe('forget-all-confirm')
+    expect((await ui.find({ key: 'forget-all-confirm' }))?.text).toBe('Forget all 1 record')
     await ui.press({ key: 'forget-all-cancel' })
     expect((await ui.find({ key: 'forget-all' }))?.key).toBe('forget-all')
     await ui.unmount()
@@ -119,7 +129,7 @@ test('the pane refuses a plugin origin, draws the remembered failure, forgets it
   // Forget acts on the selected record, and the pane redraws without it.
   const one = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
   await one.press({ key: 'forget' })
-  expect(await one.findAll({ type: 'Button' })).toEqual([])
+  expect(await actionKeys(one)).toEqual([])
   await one.unmount()
 
   // The confirm is the person's own gesture: it forgets everything, and the pane redraws empty.
@@ -128,8 +138,91 @@ test('the pane refuses a plugin origin, draws the remembered failure, forgets it
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
   expect((await ui.findAll({ type: 'Button' })).filter((b) => String(b.key).startsWith('row:'))).toHaveLength(2)
   await ui.press({ key: 'forget-all' })
+  expect((await ui.find({ key: 'forget-all-confirm' }))?.text).toBe('Forget all 2 records')
   await ui.press({ key: 'forget-all-confirm' })
-  expect(await ui.findAll({ type: 'Button' })).toEqual([])
-  expect((await ui.find({ type: 'Text', text: /Nothing remembered/ }))?.text).toBe('Nothing remembered in this project.')
+  expect(await actionKeys(ui)).toEqual([])
+  expect((await ui.find({ type: 'Text', text: /Nothing remembered/ }))?.text.trim()).toBe('Nothing remembered in this project.')
   await ui.unmount()
+})
+
+/** The Buttons that act on records: the rows, Forget and Forget all, and the confirm. */
+async function actionKeys(ui: { findAll(q: { type: string }): Promise<Array<{ key: string | undefined }>> }): Promise<string[]> {
+  return (await ui.findAll({ type: 'Button' })).map((b) => String(b.key)).filter((k) => k.startsWith('row:') || k.startsWith('forget'))
+}
+
+/** A drawn element, as the kit hands the tree back. */
+interface Drawn { type: string; props?: Record<string, unknown>; children?: unknown[] }
+
+/**
+ * What one line draws: a Button's one string child comes back as its `label`, and a plain
+ * Button with a hotkey draws `k: ` before it.
+ */
+function drawnText(n: unknown): string {
+  if (typeof n === 'string') return n
+  const e = n as Drawn
+  const own = (e.children ?? []).map(drawnText).join('') || (e.type === 'Button' ? String(e.props?.label ?? '') : '')
+  return e.type === 'Button' && e.props?.hotkey ? `${String(e.props.hotkey)}: ${own}` : own
+}
+
+/** The pane's lines: the children of its own root, each one row. */
+async function paneLines(ui: { drawn(): Promise<unknown> }): Promise<string[]> {
+  const find = (n: unknown): Drawn | undefined => {
+    if (!n || typeof n !== 'object') return undefined
+    const e = n as Drawn
+    if (e.props?.key === 'cassandra-pane') return e
+    for (const c of e.children ?? []) {
+      const hit = find(c)
+      if (hit) return hit
+    }
+    return undefined
+  }
+  const root = find(await ui.drawn())
+  expect(root).toBeDefined()
+  return (root!.children ?? []).map(drawnText)
+}
+
+/** A pane's props at a size. */
+const sized = (columns: number, rows: number) => ({ ...PROPS, bodyColumns: columns, scroll: { offset: 0, bodyRows: rows } })
+
+test('at every size each drawn line is exactly the pane wide and the pane fits its rows, on both surfaces', async ($, on) => {
+  memoryHost(on, { git: true })
+  on('tool.call', { tool: 'Bash' }, async () => ({ isError: true, result: 'Exit code 1', text: 'Exit code 1\nboom' }))
+  for (let i = 0; i < 12; i++) await $.tool.call({ tool: 'Bash', command: `false # case ${i} ${'x'.repeat(i * 9)}` })
+
+  for (const surface of SURFACES) {
+    for (const [columns, rows] of [[40, 15], [70, 30], [120, 50]] as const) {
+      const ui = await $.ui.mount({ ...PANE, props: sized(columns, rows), surface, viewport })
+      const lines = await paneLines(ui)
+      expect(lines.length).toBeGreaterThan(4)
+      expect(lines.length).toBeLessThanOrEqual(rows)
+      // Every glyph drawn here takes one cell, so its length is its width.
+      for (const l of lines) expect([...l].length).toBe(columns)
+      expect(lines[0]).toContain('proj')
+      if (columns === 40) {
+        expect(lines[0]).not.toContain('main')
+        expect(lines[1]).toContain(' History¹² ')
+        expect(lines[1]).toContain(' 2')
+        expect(lines[1]).not.toContain('Warnings')
+      } else {
+        expect(lines[0]).toContain('main')
+        expect(lines[1]).toMatch(/History¹² +Warnings¹² +Stale⁰ +Denied⁰/)
+      }
+      if (columns === 120) expect(lines[0]).toContain('main · 0cc107b')
+      expect(lines[0]).toContain('12 would warn')
+      expect(lines.at(-1)).toContain('f: Forget  a: Forget all')
+      await ui.unmount()
+    }
+  }
+})
+
+test('a pane three rows tall draws the one line asking for more room, on both surfaces', async ($, on) => {
+  memoryHost(on)
+  on('tool.call', { tool: 'Bash' }, async () => ({ isError: true, result: 'Exit code 1', text: 'Exit code 1\nboom' }))
+  await $.tool.call({ tool: 'Bash', command: 'false # short pane' })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, props: sized(70, 3), surface, viewport })
+    expect((await ui.findAll({ type: 'Text' })).map((t) => t.text)).toEqual(['Pane too short; make the window taller.'])
+    expect(await ui.findAll({ type: 'Button' })).toEqual([])
+    await ui.unmount()
+  }
 })

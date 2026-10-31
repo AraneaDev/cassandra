@@ -356,14 +356,14 @@ nothing is forgotten. On builds without mods, `/cassandra` is the plugin's markd
 command, which takes your request in plain words and runs the CLI through Bun. On mod
 builds that command is still reachable as `/cassandra:cassandra`.
 
-`/cassandra pane` opens a pane beside the conversation with the project's records: a list, the
-selected record in detail, and the same figures as `stats`. The selected row is marked
-with a leading `▸`, and a stale row is dimmed and suffixed `stale`. Move with the arrow
+`/cassandra pane` opens a pane beside the conversation with the project's records: a header
+with a status pill, tabs, the counters, and the records grouped by day. The selected row is
+tinted, a stale row is suffixed `stale` and a denied one `denied`. Move with the arrow
 keys or Tab, and select with Enter or by focusing the row. `f` forgets the selected
 record. `a` asks for a second press, offering "Forget all N records" or Cancel, before it
 drops everything. Forget all forgets exactly the records counted on its button: a record
 written after the pane last drew is kept, and the notice says how many were forgotten and
-kept. A body too short to draw the pane (under 6 lines) shows a single line asking for a
+kept. A body too short to draw the pane (under 4 lines) shows a single line asking for a
 taller window. Esc closes the pane. The pane needs a mod build and an interactive
 session; with no interactive surface, as in `claude -p`, `/cassandra pane` answers "The
 pane needs an interactive session." and exits 1. Only your own command opens it: from

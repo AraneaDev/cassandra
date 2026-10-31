@@ -795,7 +795,10 @@ const PANE = { component: 'Pane', requestId: 'cassandra' }
 const render = async (props: Record<string, unknown> = { bodyColumns: 100, scroll: { offset: 0, bodyRows: 30 } }, surface = 'terminal') =>
   walk(await paneHook('ui.render')(host, { ...PANE, surface, props, viewport: { columns: 120, rows: 40 } }, async () => ({})))
 const rowKeys = async () => (await render()).filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
-const selectedKey = async () => (await render()).filter((n) => n.type === 'Button' && textOf(n).startsWith('▸')).map((n) => String(n.props.key))[0]
+/** The row drawn as selected: the one on the marked row's ground. */
+const selectedKey = async () => (await render())
+  .filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:') && walk(n).some((t) => t.props?.backgroundColor === 'userMessageBackground'))
+  .map((n) => String(n.props.key))[0]
 const press = async (element: string, surface = 'terminal') => {
   let passed = 0
   const r = await paneHook('ui.press')(host, { ...PANE, plugin: 'cassandra', element, surface }, async (e) => { passed += 1; return { element: e.element } })
@@ -1027,25 +1030,28 @@ test('a press or a focus move that fails beneath never rejects', async () => {
 
 // ---- final fix wave ----
 
-const { PANE_CHROME_LINES } = await import('../mod/pane.tsx')
 const sized = (bodyRows: number, bodyColumns = 100) => render({ bodyColumns, scroll: { offset: 0, bodyRows } })
 const shownRows = (drawn: Drawn[]) => drawn.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
-const drawnLines = (drawn: Drawn[]) =>
-  drawn.filter((n) => n.type === 'Text').length + shownRows(drawn).length + drawn.filter((n) => n.props?.key === 'action-row' || n.props?.key === 'confirm-row').length
+/** The lines the pane drew: its root's children, or the one line of a pane that draws only that. */
+const drawnLines = (drawn: Drawn[]) => drawn.find((n) => n.props?.key === 'cassandra-pane')?.children.length ?? 1
+/** Header, tabs, the History title and the key bar: the rows a short pane spends besides its list. */
+const CHROME = 4
 
-test('forget acts on the row the pane shows selected, never on a selection pushed out of view', async () => {
+test('the window follows the selection: newer records push it down, and forget still acts on it', async () => {
   await seedFailure('bun test')
   await seedFailure('npm test')
-  const two = PANE_CHROME_LINES + 2
+  // The chrome, a day label and two rows.
+  const two = CHROME + 3
   const before = shownRows(await sized(two))
   expect(before).toHaveLength(2)
   await press(before[1]!)
   await seedFailure('make')
-  const after = shownRows(await sized(two))
-  expect(after).not.toContain(before[1])
+  // The newest record goes above the window; the selected row stays in it.
+  expect(shownRows(await sized(two))).toEqual(before)
   await press('forget')
-  const left = (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`).sort()
-  expect(left).toEqual([after[1]!, before[1]!].sort())
+  const left = (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)
+  expect(left).not.toContain(before[1])
+  expect(left).toHaveLength(2)
 })
 
 test('/cassandra pane opens only for the person\'s own origins', async () => {
@@ -1071,7 +1077,7 @@ test('with hundreds of records and a fix note, the rows and the action row fit t
     const drawn = await sized(bodyRows)
     expect(drawnLines(drawn)).toBeLessThanOrEqual(bodyRows)
     expect(drawn.some((n) => n.props?.key === 'action-row')).toBe(true)
-    expect(drawn.map((n) => (n.type === 'Text' ? textOf(n) : '')).some((l) => l.startsWith('fix '))).toBe(true)
+    expect(drawn.some((n) => n.props?.key === 'forget')).toBe(true)
   }
 }, 30_000)
 
@@ -1111,21 +1117,22 @@ test('a newer record recorded between the draw and the press is not forgotten: t
   expect(await idsLeft()).toEqual([...keys.filter((k) => k !== drawnSel), newest].sort())
 })
 
-test('two surfaces with different windows each forget their own shown selection', async () => {
+test('two surfaces with different windows each keep the selection in view; a forget on one takes no other row on the other', async () => {
   await seedFailure('bun test')
   await seedFailure('npm test')
   await seedFailure('make')
   const all = await rowKeys()
   const oldest = all[2]!
   await press(oldest)
-  const terminal = shownRows(await render({ bodyColumns: 100, scroll: { offset: 0, bodyRows: PANE_CHROME_LINES + 3 } }, 'terminal'))
-  const desktop = shownRows(await render({ bodyColumns: 100, scroll: { offset: 0, bodyRows: PANE_CHROME_LINES + 1 } }, 'desktop'))
-  expect(terminal).toContain(oldest)
-  expect(desktop).toEqual([all[0]!])
+  const terminal = shownRows(await render({ bodyColumns: 100, scroll: { offset: 0, bodyRows: 30 } }, 'terminal'))
+  const desktop = shownRows(await render({ bodyColumns: 100, scroll: { offset: 0, bodyRows: CHROME + 2 } }, 'desktop'))
+  expect(terminal).toEqual(all)
+  expect(desktop).toEqual([oldest])
   await press('forget', 'desktop')
-  expect(await idsLeft()).toEqual([all[1]!, oldest].sort())
+  expect(await idsLeft()).toEqual([all[0]!, all[1]!].sort())
+  // The row the terminal drew as selected is gone: its forget takes nothing else.
   await press('forget', 'terminal')
-  expect(await idsLeft()).toEqual([all[1]!])
+  expect(await idsLeft()).toEqual([all[0]!, all[1]!].sort())
 })
 
 test('focus a drawn row, then f with no redraw between: the focused row is forgotten', async () => {
@@ -1221,7 +1228,7 @@ test('a record hidden under the more line is forgotten by the confirm', async ()
   for (const c of ['one', 'two', 'three', 'four']) await seedFailure(c)
   await press('forget-all')
   const drawn = await sized(6)
-  expect(drawn.some((n) => n.type === 'Text' && /^…\d+ more$/.test(textOf(n)))).toBe(true)
+  expect(drawn.some((n) => n.type === 'Text' && /^ *\d+ more ↓ *$/.test(textOf(n)))).toBe(true)
   await press('forget-all-confirm')
   expect(await remembered()).toHaveLength(0)
   expect(state('notice')).toBeNull()
@@ -1268,9 +1275,9 @@ test('a record delete that fails quietly gives the could-not-forget notice', asy
   expect(await remembered()).toHaveLength(2)
 })
 
-test('a body under six lines draws the single too-short line', async () => {
+test('a body under four lines draws the single too-short line', async () => {
   await seedFailure()
-  for (const bodyRows of [1, 3, 5]) {
+  for (const bodyRows of [1, 2, 3]) {
     const drawn = await sized(bodyRows)
     expect(drawn.filter((n) => n.type === 'Text').map(textOf)).toEqual(['Pane too short; make the window taller.'])
     expect(drawn.some((n) => n.type === 'Button')).toBe(false)
@@ -1309,38 +1316,25 @@ test('a confirm whose store cannot be counted deletes nothing and says so; on an
   expect(Number(state('rev'))).toBe(rev + 1)
 })
 
-// ---- short panes: the detail goes first, then the stats ----
+// ---- short panes: the list gives way, the key bar stays ----
 
-test('a pane shorter than the full chrome drops the detail, then the stats, and keeps rows and the action row', async () => {
-  const paths = await pathsFor(io(), cwd)
+test('a short pane keeps a row and the key bar, never outgrows its body, and keeps the confirm row', async () => {
   for (let i = 0; i < 12; i++) await seedFailure(`false ${i}`)
-  // A repeat warns, so the stats line shows.
-  await seedFailure('false 11')
-  const { writeFix } = await import('../src/core/fixes.ts')
-  for (const r of await remembered()) await writeFix(io(), paths, r.hash, { kind: 'elsewhere', at: '2026-10-09T00:00:00Z', files: [], more: 0 } as never)
   opts.state = new Map<string, unknown>([['notice', 'Could not forget the selected record.']])
-  const textLines = (drawn: Drawn[]) => drawn.filter((n) => n.type === 'Text').map(textOf)
-  const tall = textLines(await sized(30))
-  expect(tall.some((l) => l.startsWith('fix '))).toBe(true)
-  expect(tall.some((l) => l.startsWith('fp '))).toBe(true)
   const shown: Record<number, number> = {}
-  for (const bodyRows of [6, 8, 10]) {
+  for (const bodyRows of [4, 5, 6, 8, 10]) {
     const drawn = await sized(bodyRows)
     expect(drawn.some((n) => n.props?.key === 'action-row')).toBe(true)
     expect(shownRows(drawn).length).toBeGreaterThanOrEqual(1)
     expect(drawnLines(drawn)).toBeLessThanOrEqual(bodyRows)
-    expect(textLines(drawn).some((l) => l.startsWith('reason ') || l.startsWith('probe ') || l.startsWith('fix '))).toBe(false)
     shown[bodyRows] = shownRows(drawn).length
   }
-  // The room the detail left goes to rows; the stats go only when even that is short.
-  expect(shown).toEqual({ 6: 1, 8: 2, 10: 4 })
-  expect(textLines(await sized(6)).some((l) => l.startsWith('fp '))).toBe(false)
-  expect(textLines(await sized(8)).some((l) => l.startsWith('fp '))).toBe(true)
-  // The confirm row stays on screen too.
+  // Each row past the chrome goes to the list: a day label, then rows, the last one to `n more ↓`.
+  expect(shown).toEqual({ 4: 1, 5: 1, 6: 1, 8: 2, 10: 4 })
   opts.state.set('confirmAll', true)
-  const confirming = await sized(6)
+  const confirming = await sized(4)
   expect(confirming.some((n) => n.props?.key === 'confirm-row')).toBe(true)
-  expect(drawnLines(confirming)).toBeLessThanOrEqual(6)
+  expect(drawnLines(confirming)).toBeLessThanOrEqual(4)
 })
 
 // ---- Forget all, Cancel, Forget; and a hot reload ----

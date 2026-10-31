@@ -2,7 +2,7 @@ import { forget } from '../src/commands/forget.ts'
 import { runCommand, type CommandResult } from '../src/commands/run.ts'
 import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
-import { legacyPaneModel as paneModel, legacyUnreadableModel as unreadableModel, type LegacyPaneModel as PaneModel, type LegacyPaneView as PaneView } from '../src/core/pane.ts'
+import { paneModel, unreadableModel, type PaneModel, type PaneView } from '../src/core/pane.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { statusText } from '../src/core/status.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
@@ -11,7 +11,8 @@ import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from
 import { listRecords } from '../src/core/record.ts'
 import { resolveHash } from '../src/core/resolve.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
-import { KEY_CANCEL, KEY_CONFIRM, KEY_FORGET, KEY_FORGET_ALL, ROW_KEY_PREFIX, drawPane, paneLayout, type Elements } from './pane.tsx'
+import { layoutOf } from './layout.ts'
+import { KEY_CANCEL, KEY_CONFIRM, KEY_FORGET, KEY_FORGET_ALL, ROW_KEY_PREFIX, drawPane, type Elements } from './pane.tsx'
 
 /** A user-role row a plugin appends: text blocks the model reads, in the named loop (main when absent). */
 export interface AppendArgs {
@@ -330,12 +331,16 @@ async function dropEmptyConfirm($: ModEngine, io: Io): Promise<void> {
   }
 }
 
-/** What the pane remembers, read fresh. Rejects when the state cannot be read. */
+/**
+ * What the pane remembers, read fresh. Rejects when the state cannot be read. The tab, the
+ * open row, the full output, the search, a pending retest and the latest warning are not
+ * kept yet, so they read as a fresh pane's.
+ */
 async function readView($: ModEngine): Promise<PaneView> {
   const selected = (await $.state.get(SELECTED)).value ?? null
   const confirmAll = (await $.state.get(CONFIRM_ALL)).value ?? false
   const notice = (await $.state.get(NOTICE)).value ?? null
-  return { selected, confirmAll, notice }
+  return { tab: 'history', selected, expanded: false, confirmAll, confirmRetest: null, showFull: false, query: '', notice, lastWarning: null }
 }
 
 /**
@@ -358,17 +363,19 @@ async function openPane($: ModEngine): Promise<{ text: string; exitCode: number 
 async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRenderEvent, unknown>, wrapIo: (io: Io) => Io, drawn: DrawnBySurface): Promise<unknown> {
   try {
     const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
-    const layout = paneLayout(e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24)
+    const bodyRows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24
     let model: PaneModel
     try {
       // Read so that a bump of the revision draws the pane again.
       await $.state.get(REV)
-      model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), layout.maxRows)
+      model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), await $.session.id())
     } catch {
       model = unreadableModel()
     }
+    const layout = layoutOf(model, columns, bodyRows)
+    const { start, count } = layout.list
     // Not state: a render may not write it, and a press only needs this session's own drawing.
-    drawn.set(e.surface ?? '', { selected: model.selected, hashes: new Set(model.rows.map((r) => r.hash)), counted: new Set(model.hashes) })
+    drawn.set(e.surface ?? '', { selected: model.selected, hashes: new Set(model.rows.slice(start, start + count).map((r) => r.hash)), counted: new Set(model.hashes) })
     return drawPane($.ui.resolve(e), model, columns, layout)
   } catch {
     return next(e)
