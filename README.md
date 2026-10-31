@@ -102,7 +102,9 @@ what it matched, the reason it failed, the evidence and the fix note. `d` dismis
 Open a row with Enter and it shows, in place, why the call failed (with its exit code),
 whether it would warn now with the workspace then and now, when it was first and last seen,
 which session it failed in, its fix note, and why a retest is not offered when it is not.
-`o` adds the full output the record kept.
+`o` adds the full output the record kept. Output longer than the pane shows a page at a
+time, under a dim `lines A–B of N`; `n` and `p` turn the pages, and moving the marker,
+switching tab or closing the row starts it again from its first page.
 
 | Key | Does |
 |---|---|
@@ -110,6 +112,7 @@ which session it failed in, its fix note, and why a retest is not offered when i
 | `j` `k`, arrows | move the marker |
 | Enter | open or close the marked row |
 | `o` | the marked record's full output, in the open row (it opens the row) |
+| `n` `p` | the next or previous page of the full output, when it runs to more than one |
 | `s` | search the calls; Enter applies, `x` clears |
 | `h` | the key list, which also holds the warning rates (false-positive and `same_context`) |
 | `r` | retest the marked call |

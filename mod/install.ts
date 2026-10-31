@@ -14,7 +14,7 @@ import { resolveHash } from '../src/core/resolve.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
 import { layoutOf, type PaneExtras } from './layout.ts'
 import {
-  KEY_CANCEL, KEY_CONFIRM, KEY_DISMISS, KEY_DOWN, KEY_FORGET, KEY_FORGET_ALL, KEY_FULL, KEY_HELP, KEY_RETEST, KEY_RETEST_CANCEL, KEY_RETEST_CONFIRM, KEY_SEARCH,
+  KEY_CANCEL, KEY_CONFIRM, KEY_DISMISS, KEY_DOWN, KEY_FORGET, KEY_FORGET_ALL, KEY_FULL, KEY_HELP, KEY_NEXT_PAGE, KEY_PREV_PAGE, KEY_RETEST, KEY_RETEST_CANCEL, KEY_RETEST_CONFIRM, KEY_SEARCH,
   KEY_SEARCH_CLEAR, KEY_SEARCH_FIELD, KEY_TABKEY_PREFIX, KEY_TAB_PREFIX, KEY_TWIN_PREFIX, KEY_UP, ROW_KEY_PREFIX, drawPane, keyListRows, twinTarget,
   type Elements,
 } from './pane.tsx'
@@ -41,6 +41,7 @@ export interface PaneState {
   tab: PaneTab
   expanded: boolean
   showFull: boolean
+  fullPage: number
   query: string
   confirmRetest: string | null
   lastWarning: LastWarning | null
@@ -327,6 +328,8 @@ const TAB = { plugin: 'cassandra', key: 'tab' } as const
 const EXPANDED = { plugin: 'cassandra', key: 'expanded' } as const
 /** Whether the marked record's full output shows. */
 const SHOW_FULL = { plugin: 'cassandra', key: 'showFull' } as const
+/** The page of the full output that shows, from 0. */
+const FULL_PAGE = { plugin: 'cassandra', key: 'fullPage' } as const
 /** The search the list is filtered by, '' for none. */
 const QUERY = { plugin: 'cassandra', key: 'query' } as const
 /** The hash of the record whose retest waits for its confirm. */
@@ -355,6 +358,8 @@ export interface DrawnPane {
   confirming: string | null
   /** The digest of the call that confirm showed (callDigest), so Run runs that call or nothing. */
   shown: string | null
+  /** How many pages of the full output this surface could show, 0 when it drew none. */
+  fullPages: number
 }
 
 /** What each surface last drew, by surface. Forget acts only on rows the person saw. */
@@ -422,18 +427,20 @@ async function readView($: ModEngine): Promise<PaneView> {
   }
 }
 
-/** Whether the search field and the key list are open, for a model. Rejects when the state cannot be read. */
+/** Whether the search field and the key list are open, and the full output's page, for a model. Rejects when the state cannot be read. */
 async function readExtras($: ModEngine, model: PaneModel): Promise<PaneExtras> {
   return {
     searching: (await $.state.get(SEARCHING)).value ?? false,
     showKeys: (await $.state.get(SHOW_KEYS)).value ?? false,
     keyRows: keyListRows(model).length,
+    fullPage: (await $.state.get(FULL_PAGE)).value ?? 0,
   }
 }
 
 /**
  * Open the pane, unless nothing can show one. Neither confirmation survives into a fresh
- * open, nor an open search field, nor an old notice. Rejects on a host failure.
+ * open, nor an open search field, nor an old notice, nor a later page of the full output.
+ * Rejects on a host failure.
  */
 async function openPane($: ModEngine): Promise<{ text: string; exitCode: number }> {
   if ((await $.session.surfaces()).length === 0) return { text: PANE_HEADLESS, exitCode: 1 }
@@ -441,6 +448,7 @@ async function openPane($: ModEngine): Promise<{ text: string; exitCode: number 
   await $.state.set(CONFIRM_RETEST, null)
   await $.state.set(SEARCHING, false)
   await $.state.set(NOTICE, null)
+  await $.state.set(FULL_PAGE, 0)
   await $.ui.open({ id: PANE_ID, title: 'Cassandra', focus: true, closeOnEscape: true })
   return { text: PANE_OPENED, exitCode: 0 }
 }
@@ -478,6 +486,7 @@ async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRende
       confirming: confirming ? model.selected : null,
       shown: confirming && model.detail?.retest.ok === true
         ? await callDigest(io, model.detail.retest.tool, model.detail.retest.input, model.detail.retest.cwd) : null,
+      fullPages: layout.full?.pages ?? 0,
     })
     return drawPane($.ui.resolve(e), model, columns, layout)
   } catch {
@@ -491,12 +500,17 @@ async function rowHash($: ModEngine, io: Io, key: string): Promise<string | null
   return r.ok ? r.hash : null
 }
 
-/** Select the row a key names, when it is a row still remembered. Never throws. */
+/**
+ * Select the row a key names, when it is a row still remembered; another row than the one
+ * selected starts the full output from its first page. Never throws.
+ */
 async function selectRow($: ModEngine, wrapIo: (io: Io) => Io, key: string | undefined): Promise<void> {
   if (!key?.startsWith(ROW_KEY_PREFIX)) return
   try {
     const hash = await rowHash($, wrapIo(modIo(hostOf($))), key)
-    if (hash !== null) await $.state.set(SELECTED, hash)
+    if (hash === null) return
+    if (hash !== ((await $.state.get(SELECTED)).value ?? null)) await $.state.set(FULL_PAGE, 0)
+    await $.state.set(SELECTED, hash)
   } catch {
     // The selection stays where it was.
   }
@@ -513,11 +527,13 @@ async function markedRow($: ModEngine, drawn: DrawnPane): Promise<string | null>
 
 /**
  * Enter on a row, or a click: the marked row opens or closes in place; another row is
- * marked instead (the focus hook has usually marked it already). Rejects on a state failure.
+ * marked instead (the focus hook has usually marked it already). Either way the full output
+ * starts from its first page. Rejects on a state failure.
  */
 async function pressRow($: ModEngine, io: Io, key: string, drawn: DrawnPane | undefined): Promise<void> {
   const hash = await rowHash($, io, key)
   if (hash === null) return
+  await $.state.set(FULL_PAGE, 0)
   if (drawn && hash === (await markedRow($, drawn))) {
     await $.state.set(SELECTED, hash)
     await $.state.set(EXPANDED, !((await $.state.get(EXPANDED)).value ?? false))
@@ -541,23 +557,38 @@ async function moveMarker($: ModEngine, drawn: DrawnPane | undefined, by: 1 | -1
   const to = drawn.rows[Math.min(drawn.rows.length - 1, Math.max(0, (from < 0 ? 0 : from) + by))]!
   await $.state.set(SELECTED, to)
   await $.state.set(SHOW_FULL, false)
+  await $.state.set(FULL_PAGE, 0)
   await $.state.set(CONFIRM_RETEST, null)
   return `${ROW_KEY_PREFIX}${to.slice(0, 8)}`
 }
 
 /**
  * Switch the list to `tab`: the marked row stays marked when the new tab lists it, else the
- * tab's first row is marked, closed. A waiting retest is dropped. Rejects on a host failure.
+ * tab's first row is marked, closed. A waiting retest is dropped, and the full output starts
+ * from its first page. Rejects on a host failure.
  */
 async function switchTab($: ModEngine, io: Io, cwd: string, tab: PaneTab): Promise<void> {
   const view = await readView($)
   const model = await paneModel(io, cwd, { ...view, tab }, await $.session.id())
   await $.state.set(TAB, tab)
   await $.state.set(CONFIRM_RETEST, null)
+  await $.state.set(FULL_PAGE, 0)
   if (model.selected === view.selected) return
   await $.state.set(SELECTED, model.selected)
   await $.state.set(EXPANDED, false)
   await $.state.set(SHOW_FULL, false)
+}
+
+/**
+ * `n` or `p`: show the next or previous page of the full output this surface drew, stopping
+ * at its first and last page. Nothing drawn here, or no full output drawn, turns nothing.
+ * Rejects on a state failure.
+ */
+async function turnPage($: ModEngine, drawn: DrawnPane | undefined, by: 1 | -1): Promise<void> {
+  if (!drawn || drawn.fullPages === 0) return
+  const last = drawn.fullPages - 1
+  const at = Math.min(last, Math.max(0, (await $.state.get(FULL_PAGE)).value ?? 0))
+  await $.state.set(FULL_PAGE, Math.min(last, Math.max(0, at + by)))
 }
 
 /** The tab a tab's Button or its hidden twin names; null for any other key. */
@@ -742,9 +773,16 @@ async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, 
       case KEY_FULL: {
         const full = !((await $.state.get(SHOW_FULL)).value ?? false)
         await $.state.set(SHOW_FULL, full)
+        await $.state.set(FULL_PAGE, 0)
         if (full) await $.state.set(EXPANDED, true)
         return done
       }
+      case KEY_NEXT_PAGE:
+        await turnPage($, here, 1)
+        return done
+      case KEY_PREV_PAGE:
+        await turnPage($, here, -1)
+        return done
       case KEY_HELP:
         await $.state.set(SHOW_KEYS, !((await $.state.get(SHOW_KEYS)).value ?? false))
         return done

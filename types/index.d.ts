@@ -14,6 +14,7 @@ declare module 'claude-code' {
       tab: 'history' | 'warnings' | 'stale' | 'denied'
       expanded: boolean
       showFull: boolean
+      fullPage: number
       query: string
       confirmRetest: CassandraHash | null
       lastWarning: { hash: CassandraHash; at: string; count?: number; lastSeen?: string; evidence?: string } | null

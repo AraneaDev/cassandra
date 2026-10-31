@@ -93,14 +93,21 @@ export interface PaneLayout {
    * retest waiting for the marked record.
    */
   retest: { lines: LabelledLine[] } | 'too-small' | null
-  /** The open detail's full output: the first `lines` of it, and how many more a dim line counts; null when not shown. */
-  full: { lines: string[]; more: number } | null
+  /**
+   * The open detail's full output, one page of it: its `lines`, the index of the first of
+   * them in the whole (`first` of `total` lines), and which `page` of `pages` this is. More
+   * than one page and a dim line counts the lines shown. Null when not shown.
+   */
+  full: { lines: string[]; first: number; total: number; page: number; pages: number } | null
 }
 
-/** What the pane shows beside the model, from its own state: an open search field, an open key list. */
-export interface PaneExtras { searching: boolean; showKeys: boolean; keyRows: number }
+/**
+ * What the pane shows beside the model, from its own state: an open search field, an open
+ * key list, and the page of the full output asked for (clamped to the pages there are).
+ */
+export interface PaneExtras { searching: boolean; showKeys: boolean; keyRows: number; fullPage: number }
 
-const NO_EXTRAS: PaneExtras = { searching: false, showKeys: false, keyRows: 0 }
+const NO_EXTRAS: PaneExtras = { searching: false, showKeys: false, keyRows: 0, fullPage: 0 }
 
 /** Which records a list of some rows holds. */
 type Window = Omit<PaneLayout['list'], 'rows'>
@@ -245,15 +252,18 @@ export function layoutOf(model: PaneModel, columns: number, rows: number, extras
   }
   let taken = detail === 'full' ? fullRows : detail === 'compact' ? COMPACT_DETAIL_ROWS : 0
   // The full output opens under the detail: its title and as many lines as leave one list
-  // row, the rest counted on a line of its own.
+  // row. Output that does not fit is paged, a line of its own counting the lines shown.
   let full: PaneLayout['full'] = null
   if (model.view.showFull && detail !== 'none' && model.detail !== null) {
     const body = fullBody(model.detail, innerOf(columns))
     const room = available - taken - FULL_TITLE_ROWS - 1
-    const shown = body.length <= room ? body.length : room - FULL_MORE_ROWS
-    if (shown >= 1) {
-      full = { lines: body.slice(0, shown), more: body.length - shown }
-      taken += FULL_TITLE_ROWS + shown + (full.more > 0 ? FULL_MORE_ROWS : 0)
+    const per = body.length <= room ? body.length : room - FULL_MORE_ROWS
+    if (per >= 1) {
+      const pages = Math.ceil(body.length / per)
+      const page = Math.min(pages - 1, Math.max(0, Math.trunc(extras.fullPage) || 0))
+      const lines = body.slice(page * per, (page + 1) * per)
+      full = { lines, first: page * per, total: body.length, page, pages }
+      taken += FULL_TITLE_ROWS + lines.length + (pages > 1 ? FULL_MORE_ROWS : 0)
     }
   }
   return {

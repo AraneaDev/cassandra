@@ -1436,6 +1436,72 @@ test('dismiss clears the last warning; o and h toggle the full output and the ke
   expect(state('showKeys')).toBe(false)
 })
 
+test('n and p page through the full output this surface drew, clamped to its first and last page', async () => {
+  const long = Array.from({ length: 80 }, (_, i) => `out ${i}`).join('\n')
+  await call('bun test', failed(`Exit code 1\n${long}`))
+  // Nothing drawn here yet: nothing to page.
+  await press('next-page')
+  expect(state('fullPage')).toBeUndefined()
+  await press('full')
+  await render()
+  await press('prev-page')
+  expect(state('fullPage')).toBe(0)
+  await press('next-page')
+  expect(state('fullPage')).toBe(1)
+  await render()
+  await press('twin:prev-page')
+  expect(state('fullPage')).toBe(0)
+  for (let i = 0; i < 40; i++) {
+    await render()
+    await press('next-page')
+  }
+  const last = state('fullPage') as number
+  expect(last).toBeGreaterThan(1)
+  await render()
+  await press('next-page')
+  expect(state('fullPage')).toBe(last)
+  // A page left past the end, as from a drawing of a longer output, steps back from the last.
+  opts.state!.set('fullPage', last + 5)
+  await press('prev-page')
+  expect(state('fullPage')).toBe(last - 1)
+})
+
+test('the full output goes back to its first page when the marker moves, the tab switches, the row closes, o toggles or the pane opens', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  const paged = () => opts.state!.set('fullPage', 3)
+  paged()
+  await press('down')
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await press('up')
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await press('tabkey:warnings')
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await press('full')
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await render()
+  const marked = (await selectedKey())!
+  await press(marked)
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await press(keys.find((k) => k !== marked)!)
+  expect(state('fullPage')).toBe(0)
+  // The focus marking another row is the marker moving; landing on the marked one is not.
+  paged()
+  await focus(marked)
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await focus(marked)
+  expect(state('fullPage')).toBe(3)
+  await command('pane')
+  expect(state('fullPage')).toBe(0)
+})
+
 test('r marks the selected record as waiting for its retest confirm, and only a retestable one', async () => {
   await seedFailure('bun test')
   await press('retest')

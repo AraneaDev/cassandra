@@ -24,6 +24,10 @@ export const KEY_RETEST_CONFIRM = 'retest-confirm'
 export const KEY_RETEST_CANCEL = 'retest-cancel'
 /** Key of the Full output button. */
 export const KEY_FULL = 'full'
+/** Key of the button that shows the full output's next page. */
+export const KEY_NEXT_PAGE = 'next-page'
+/** Key of the button that shows the full output's previous page. */
+export const KEY_PREV_PAGE = 'prev-page'
 /** Key of the button that dismisses the Just warned card. */
 export const KEY_DISMISS = 'dismiss'
 /** Key of the Search button. */
@@ -385,14 +389,18 @@ const NO_RETEST: Record<Extract<PaneDetail['retest'], { ok: false }>['why'], str
   'too-large': 'not possible: the call\'s input was too large to keep',
 }
 
-/** The open detail's full output, on the marked row's ground: its title, its lines, and how many more did not fit. */
+/**
+ * The open detail's full output, on the marked row's ground: its title, the page of its lines
+ * the layout gave it, and, when it runs to more than one page, which lines of how many show.
+ */
 function fullLines(f: Frame, full: NonNullable<PaneLayout['full']>): Line[] {
   const bg = { bg: MARKED_BG }
   const indent: Seg = { text: spaces(FULL_INDENT_CELLS) }
+  const range = `lines ${full.first + 1}–${full.first + full.lines.length} of ${full.total}`
   return [
     line(f, 'full-title', [indent, { text: 'full output', color: SECONDARY, bold: true }], bg),
     ...full.lines.map((t, i) => line(f, `full-${i}`, [indent, { text: t }], bg)),
-    ...(full.more > 0 ? [line(f, 'full-more', [indent, { text: plural(full.more, 'more line', 'more lines'), color: SECONDARY }], bg)] : []),
+    ...(full.pages > 1 ? [line(f, 'full-more', [indent, { text: range, color: SECONDARY }], bg)] : []),
   ]
 }
 
@@ -510,6 +518,10 @@ function keyBar(f: Frame, model: PaneModel, layout: PaneLayout): Line {
   if (model.selected !== null) keys.push({ seg: key(KEY_FORGET, 'Forget', 'f'), keep: 0 })
   if (model.total > 0) keys.push({ seg: key(KEY_FORGET_ALL, 'Forget all', 'a'), keep: 1 })
   if (model.detail !== null) keys.push({ seg: key(KEY_FULL, 'Full output', 'o'), keep: 4 })
+  // Paging the full output, only towards a page there is.
+  const full = layout.full
+  if (full !== null && full.page < full.pages - 1) keys.push({ seg: key(KEY_NEXT_PAGE, 'Next page', 'n'), keep: 2.5 })
+  if (full !== null && full.page > 0) keys.push({ seg: key(KEY_PREV_PAGE, 'Previous page', 'p'), keep: 2.5 })
   if (model.total > 0) keys.push({ seg: key(KEY_SEARCH, 'Search', 's'), keep: 5 })
   // A search applied where the pane has no row for it: clearing it stays in reach.
   if (model.view.query && layout.search === null) keys.push({ seg: key(KEY_SEARCH_CLEAR, 'Clear search', 'x'), keep: 1.5 })
@@ -543,6 +555,7 @@ export function keyListRows(model: PaneModel): string[] {
     'f      forget the marked record',
     'a      forget every record (asks first)',
     'o      the marked record\'s full output',
+    'n p    the next or previous page of the full output',
     's      search the calls; Enter applies it',
     'x      clear the search',
     'd      dismiss the Just warned card',

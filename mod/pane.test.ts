@@ -249,3 +249,40 @@ test('h opens the key list, rates first, within the pane; h again closes it', as
     await ui.unmount()
   }
 })
+
+test('n and p page through the full output, its note counting the lines shown, and o closed and reopened starts it from the first page', async ($, on) => {
+  memoryHost(on)
+  const output = Array.from({ length: 70 }, (_, i) => `line ${i + 1}`).join('\n')
+  on('tool.call', { tool: 'Bash' }, async () => ({ isError: true, result: 'Exit code 1', text: `Exit code 1\n${output}` }))
+  await $.tool.call({ tool: 'Bash', command: 'bun test # paged output' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  await ui.press({ key: 'full' })
+  const note = async (): Promise<[number, number, number]> => {
+    const lines = await paneLines(ui)
+    for (const l of lines) expect([...l].length).toBe(lines[0]!.length)
+    const m = lines.map((l) => /lines (\d+)–(\d+) of (\d+)/.exec(l)).find((x) => x !== null)
+    expect(m).toBeDefined()
+    return [Number(m![1]), Number(m![2]), Number(m![3])]
+  }
+  const [from, to, total] = await note()
+  expect([from, total]).toEqual([1, 71])
+  expect(await ui.find({ key: 'prev-page' })).toBeFalsy()
+  expect((await ui.find({ key: 'next-page' }))?.props.hotkey).toBe('n')
+
+  await ui.press({ key: 'next-page' })
+  expect(await note()).toEqual([to + 1, 2 * to, 71])
+  expect((await paneLines(ui)).some((l) => l.trim() === `line ${to}`)).toBe(true)
+  expect((await ui.find({ key: 'prev-page' }))?.props.hotkey).toBe('p')
+
+  await ui.press({ key: 'prev-page' })
+  expect(await note()).toEqual([1, to, 71])
+
+  // Closed and opened again, the output starts from its first page. While n and p show, o
+  // may have only its hidden twin left in the bar.
+  const pressKey = async (key: string) => ui.press({ key: (await ui.find({ key })) ? key : `twin:${key}` })
+  await ui.press({ key: 'next-page' })
+  await pressKey('full')
+  await pressKey('full')
+  expect(await note()).toEqual([1, to, 71])
+  await ui.unmount()
+})

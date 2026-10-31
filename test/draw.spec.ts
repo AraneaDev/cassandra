@@ -255,13 +255,66 @@ describe('drawPane', () => {
     const full = Array.from({ length: 60 }, (_, i) => `out ${i}`).join('\n')
     const { texts, layout } = draw(model({ detail: { ...detail, full } }, { expanded: true, showFull: true }), 70, 30)
     expect(texts).toHaveLength(30)
-    expect(layout.full!.more).toBeGreaterThan(0)
+    expect(layout.full!.pages).toBeGreaterThan(1)
     expect(texts.some((t) => t.trim() === 'full output')).toBe(true)
-    expect(texts.some((t) => t.trim() === `${layout.full!.more} more lines`)).toBe(true)
+    expect(texts.some((t) => t.trim() === `lines 1–${layout.full!.lines.length} of 60`)).toBe(true)
     for (const t of texts) expect(cells(t)).toBe(70)
     // All of it when it fits, and no count.
     const small = draw(model({ detail: { ...detail, full: 'one\ntwo' } }, { expanded: true, showFull: true }), 70, 30)
-    expect(small.layout.full).toEqual({ lines: ['one', 'two'], more: 0 })
+    expect(small.layout.full).toEqual({ lines: ['one', 'two'], first: 0, total: 2, page: 0, pages: 1 })
+    expect(small.texts.some((t) => /lines \d/.test(t))).toBe(false)
+  })
+
+  describe('paging the full output', () => {
+    const full = Array.from({ length: 60 }, (_, i) => `out ${i}`).join('\n')
+    const paged = (fullPage: number, columns = 70, over: Partial<PaneView> = {}) => {
+      const m = model({ detail: { ...detail, full } }, { expanded: true, showFull: true, ...over })
+      const layout = layoutOf(m, columns, 30, { searching: false, showKeys: false, keyRows: 0, fullPage })
+      const root = pane.drawPane(el, m, columns, layout) as Node
+      const lines = root.children as Node[]
+      return { all: walk(root), texts: lines.map(drawnText), layout }
+    }
+    const barKeys = (all: Node[]) => buttons(all).map((b) => String(b.props.key))
+
+    test('the note counts the lines shown of the whole, on every page, each line the pane wide', () => {
+      const { layout } = paged(0)
+      const per = layout.full!.lines.length
+      const last = layout.full!.pages - 1
+      for (const [page, from, to] of [[0, 1, per], [1, per + 1, 2 * per], [last, last * per + 1, 60]] as const) {
+        const { texts } = paged(page)
+        expect(texts.some((t) => t.trim() === `lines ${from}–${to} of 60`)).toBe(true)
+        expect(texts.some((t) => t.trim() === `out ${from - 1}`)).toBe(true)
+        for (const t of texts) expect(cells(t)).toBe(70)
+      }
+    })
+
+    test('n shows only when a next page exists, p only when a previous one does', () => {
+      // Offered: drawn in the bar, or kept on a hidden twin when the bar has no room.
+      const offered = (all: Node[]) => barKeys(all).map((k) => k.replace(pane.KEY_TWIN_PREFIX, ''))
+      const last = paged(0).layout.full!.pages - 1
+      expect(offered(paged(0).all)).toContain(pane.KEY_NEXT_PAGE)
+      expect(offered(paged(0).all)).not.toContain(pane.KEY_PREV_PAGE)
+      expect(offered(paged(1).all)).toEqual(expect.arrayContaining([pane.KEY_NEXT_PAGE, pane.KEY_PREV_PAGE]))
+      expect(offered(paged(last).all)).toContain(pane.KEY_PREV_PAGE)
+      expect(offered(paged(last).all)).not.toContain(pane.KEY_NEXT_PAGE)
+      // With room for both, the bar draws them.
+      const wide = paged(1, 160).texts.at(-1)!
+      expect(wide).toContain('n: Next page')
+      expect(wide).toContain('p: Previous page')
+      // No paging keys while the full output is closed, or when it fits on one page.
+      expect(offered(paged(0, 70, { showFull: false }).all).filter((k) => k.endsWith('-page'))).toEqual([])
+      const small = model({ detail: { ...detail, full: 'one' } }, { expanded: true, showFull: true })
+      expect(offered(draw(small, 70, 30).all).filter((k) => k.endsWith('-page'))).toEqual([])
+    })
+
+    test('dropped for width, the paging keys keep their hotkeys on hidden twins', () => {
+      const { all, texts } = paged(1, 24)
+      for (const t of texts) expect(cells(t)).toBe(24)
+      const next = byKey(all, `${pane.KEY_TWIN_PREFIX}${pane.KEY_NEXT_PAGE}`)
+      const prev = byKey(all, `${pane.KEY_TWIN_PREFIX}${pane.KEY_PREV_PAGE}`)
+      expect(next?.props.hotkey).toBe('n')
+      expect(prev?.props.hotkey).toBe('p')
+    })
   })
 
   test('a pending retest for the marked row draws its whole call above Run and Cancel', () => {
@@ -359,7 +412,7 @@ describe('drawPane', () => {
 describe('search, the key list and the hidden twins', () => {
   const withInput = { ...el, Input: 'Input' }
   const drawWith = (m: PaneModel, columns: number, rows: number, extras: { searching?: boolean; showKeys?: boolean }) => {
-    const layout = layoutOf(m, columns, rows, { searching: extras.searching ?? false, showKeys: extras.showKeys ?? false, keyRows: pane.keyListRows(m).length })
+    const layout = layoutOf(m, columns, rows, { searching: extras.searching ?? false, showKeys: extras.showKeys ?? false, keyRows: pane.keyListRows(m).length, fullPage: 0 })
     const root = pane.drawPane(withInput, m, columns, layout) as Node
     const lines = root.children as Node[]
     return { all: walk(root), lines, texts: lines.map(drawnText), layout }

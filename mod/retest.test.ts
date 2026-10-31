@@ -268,7 +268,7 @@ test('o shows the full output in the open row, wrapped and windowed; a record wi
   expect(title).toBeGreaterThan(0)
   expect(lines[title + 1]).toContain('Exit code 1')
   expect(lines[title + 2]).toContain('line 1 ')
-  expect(lines.join('\n')).toMatch(/\d+ more lines/)
+  expect(lines.join('\n')).toMatch(/lines 1–\d+ of \d+/)
   expect(lines.slice(title).join('\n')).not.toContain('…')
   await ui.press({ key: 'full' })
   expect((await paneLines(ui)).join('\n')).not.toContain('full output')

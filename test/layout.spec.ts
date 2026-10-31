@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { visible, wrapCells } from '../mod/draw-text.ts'
 import { FULL_NOT_KEPT, fullBody, fullDetailRows, layoutOf, PANE_MIN_LINES, retestBody, ROWS } from '../mod/layout.ts'
 import { unreadableModel, type JustWarned, type PaneDetail, type PaneModel, type PaneRow } from '../src/core/pane.ts'
@@ -123,7 +123,7 @@ test('an unknown selection windows from the top', () => {
 })
 
 test('an open search field or an applied query takes one row from the list, before the notice', () => {
-  const extras = { searching: true, showKeys: false, keyRows: 0 }
+  const extras = { searching: true, showKeys: false, keyRows: 0, fullPage: 0 }
   const open = layoutOf(model(20), 70, 30, extras)
   expect(open.search).toBe('field')
   expect(open.list.rows).toBe(layoutOf(model(20), 70, 30).list.rows - 1)
@@ -134,14 +134,14 @@ test('an open search field or an applied query takes one row from the list, befo
 })
 
 test('the key list takes its title and rows from the list, leaves one list row, and is not drawn as a bare title', () => {
-  const keys = (rows: number) => layoutOf(model(20), 70, rows, { searching: false, showKeys: true, keyRows: 12 })
+  const keys = (rows: number) => layoutOf(model(20), 70, rows, { searching: false, showKeys: true, keyRows: 12, fullPage: 0 })
   expect(keys(40).keys).toBe(13)
   expect(keys(40).list.rows).toBe(layoutOf(model(20), 70, 40).list.rows - 13)
   expect(keys(12).keys).toBe(layoutOf(model(20), 70, 12).list.rows - 1)
   expect(keys(12).list.rows).toBe(1)
   // Room for the title alone: no key list.
   expect(keys(6).keys).toBe(0)
-  expect(layoutOf(model(20), 70, 40, { searching: false, showKeys: false, keyRows: 12 }).keys).toBe(0)
+  expect(layoutOf(model(20), 70, 40, { searching: false, showKeys: false, keyRows: 12, fullPage: 0 }).keys).toBe(0)
 })
 
 test('wrapCells cuts by cells and loses nothing; visible draws control characters as pictures', () => {
@@ -204,4 +204,50 @@ test('the retest confirm budgets a blank row above its title', () => {
   expect(layout.retest).not.toBe('too-small')
   const lines = (layout.retest as { lines: unknown[] }).lines.length
   expect(layoutOf(base, 70, 30).list.rows - layout.list.rows).toBe(ROWS.retestGap + ROWS.retestTitle + lines)
+})
+
+describe('paging the full output', () => {
+  const d: PaneDetail = {
+    exitCode: 1, reason: 'boom', full: Array.from({ length: 60 }, (_, i) => `out ${i}`).join('\n'), warnsNow: true, evidenceThen: 'x', evidenceNow: 'x',
+    firstSeen: 'x', lastSeen: 'x', tries: 1, session: 's', fix: null, retest: { ok: true, tool: 'Bash', input: { command: 'cmd 0' }, cwd: '/p' },
+  }
+  const base = model(10, { selected: 0, expanded: true })
+  const showing = { ...base, detail: d, view: { ...base.view, showFull: true } }
+  const at = (fullPage: number, detail: PaneDetail = d) =>
+    layoutOf({ ...showing, detail }, 70, 30, { searching: false, showKeys: false, keyRows: 0, fullPage }).full!
+
+  test('each page windows the next lines, and the last page holds what is left', () => {
+    const first = at(0)
+    const per = first.lines.length
+    expect(per).toBeGreaterThan(1)
+    expect(per).toBeLessThan(60)
+    expect(first).toEqual({ lines: Array.from({ length: per }, (_, i) => `out ${i}`), first: 0, total: 60, page: 0, pages: Math.ceil(60 / per) })
+    expect(at(1).lines).toEqual(Array.from({ length: per }, (_, i) => `out ${per + i}`))
+    expect(at(1).first).toBe(per)
+    const pages = first.pages
+    const last = at(pages - 1)
+    expect(last.page).toBe(pages - 1)
+    expect(last.first).toBe((pages - 1) * per)
+    expect(last.lines).toEqual(Array.from({ length: 60 - (pages - 1) * per }, (_, i) => `out ${(pages - 1) * per + i}`))
+    expect(last.lines.length).toBeGreaterThan(0)
+  })
+
+  test('a page past either end clamps to the first or the last, never an empty window', () => {
+    const pages = at(0).pages
+    expect(at(-3)).toEqual(at(0))
+    expect(at(pages)).toEqual(at(pages - 1))
+    expect(at(999).lines.length).toBeGreaterThan(0)
+  })
+
+  test('output that fits is one page; without extras the first page shows', () => {
+    const small = at(4, { ...d, full: 'one\ntwo' })
+    expect(small).toEqual({ lines: ['one', 'two'], first: 0, total: 2, page: 0, pages: 1 })
+    expect(layoutOf(showing, 70, 30).full).toEqual(at(0))
+  })
+
+  test('the list keeps the rows the page does not take: the paged block costs its title, its lines and the note', () => {
+    const closed = layoutOf({ ...showing, view: { ...showing.view, showFull: false } }, 70, 30)
+    const page = layoutOf(showing, 70, 30)
+    expect(closed.list.rows - page.list.rows).toBe(ROWS.fullTitle + page.full!.lines.length + ROWS.fullMore)
+  })
 })
