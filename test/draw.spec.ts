@@ -161,19 +161,22 @@ describe('drawPane', () => {
     expect(walk(lines[at]!).find((n) => n.type === 'Text' && text(n).startsWith('──'))!.props.color).toBe('subtle')
   })
 
-  test('the Just warned card takes its six rows: what ran, what matched, because, still bad, the fix', () => {
+  test('the Just warned card takes its seven rows: what ran, what matched, because, still bad, the fix, a blank', () => {
     const m = model({ justWarned: { ...warned, fix: 'Use bun run test.' } })
     const { texts, all } = draw(m, 70, 30)
     const at = texts.findIndex((t) => t.includes('! Just warned'))
     expect(texts[at]).toContain('d: Dismiss ──')
-    expect(texts.slice(at + 1, at + ROWS.justWarned).map((t) => t.trim().split(/\s{2,}| /)[0])).toEqual(['you', 'matched', 'because', 'still', 'fix'])
+    expect(texts.slice(at + 1, at + ROWS.justWarned - 1).map((t) => t.trim().split(/\s{2,}| /)[0])).toEqual(['you', 'matched', 'because', 'still', 'fix'])
     expect(texts[at + 1]).toContain('bun test case-0')
     expect(texts[at + 2]).toContain('the same call, 3× before')
+    expect(texts[at + ROWS.justWarned - 1]!.trim()).toBe('')
     expect(texts[at + ROWS.justWarned]).toContain('◷ History')
     expect(byKey(all, pane.KEY_DISMISS)?.props.hotkey).toBe('d')
-    // Without a fix note, a blank line keeps the card's rows.
+    // Without a fix note, blank lines keep the card's rows.
     const plain = draw(model({ justWarned: warned }), 70, 30).texts
-    expect(plain[plain.findIndex((t) => t.includes('! Just warned')) + 5]!.trim()).toBe('')
+    const top = plain.findIndex((t) => t.includes('! Just warned'))
+    expect(plain.slice(top + 5, top + ROWS.justWarned).map((t) => t.trim())).toEqual(['', ''])
+    expect(plain[top + ROWS.justWarned]).toContain('◷ History')
   })
 
   test('day groups under bold labels, a blank line between them, the marked row tinted', () => {
@@ -247,15 +250,28 @@ describe('drawPane', () => {
     expect(text(byKey(draw(one, 70, 30).all, pane.KEY_CONFIRM)!)).toBe('Forget all 1 record')
   })
 
-  test('a pending retest shows the exact call it would run, and Cancel', () => {
-    const m = model({}, { confirmRetest: row(0).hash })
-    const { all } = draw(m, 70, 30)
-    expect(text(byKey(all, pane.KEY_RETEST_CONFIRM)!)).toBe('Run again: bun test case-0')
-    expect(text(byKey(all, pane.KEY_RETEST_CANCEL)!)).toBe('Cancel')
+  test('a pending retest draws no confirm here yet: its block is Task 8\'s', () => {
+    const { all } = draw(model({}, { confirmRetest: row(0).hash }), 70, 30)
+    expect([pane.KEY_RETEST_CONFIRM, pane.KEY_RETEST_CANCEL]).toEqual(['retest-confirm', 'retest-cancel'])
+    expect(byKey(all, pane.KEY_RETEST_CONFIRM)).toBeUndefined()
+    expect(byKey(all, pane.KEY_RETEST_CANCEL)).toBeUndefined()
+    expect(byKey(all, 'action-row')).toBeDefined()
   })
 
-  test('the notice sits in the key bar after the keys', () => {
-    expect(draw(model({}, { notice: 'Forgot 1.' }), 120, 50).texts.at(-1)).toContain('h: Keys  Forgot 1.')
+  test('a notice gets its own row above the key bar, whole at 40 columns, and the pane stays its height', () => {
+    const notice = 'Could not forget the selected record.'
+    const many = Array.from({ length: 20 }, (_, i) => row(i))
+    const { texts, lines } = draw(model({ rows: many, total: 20 }, { notice }), 40, 15)
+    expect(texts).toHaveLength(15)
+    expect(texts.at(-2)).toBe(` ${notice} `.padEnd(40))
+    expect(texts.at(-2)).toContain(notice)
+    expect(lines.at(-2)!.props.key).toBe('notice')
+    expect(texts.at(-1)).not.toContain('Could not')
+    for (const t of texts) expect(cells(t)).toBe(40)
+    // Where the layout has no row for it, it follows the keys in the bar.
+    const least = draw(model({}, { notice: 'Forgot 1.' }), 120, PANE_MIN_LINES)
+    expect(least.layout.notice).toBe(false)
+    expect(least.texts.at(-1)).toContain('h: Keys  Forgot 1.')
   })
 
   test('more records below the window end the list with n more ↓; the tightest pane drops it, then the label and the title', () => {

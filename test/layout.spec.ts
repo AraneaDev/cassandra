@@ -17,21 +17,21 @@ function model(n: number, over: { selected?: number; expanded?: boolean; warned?
 test('narrow and short: no branch, short counters inside the header, digit tabs', () => {
   expect(layoutOf(model(20), 40, 15)).toEqual({
     tier: 'narrow', tooShort: false, header: { branch: false, commit: false }, counters: 'in-header',
-    tabs: 'digits', justWarned: false, historyTitle: true, list: { start: 0, count: 9, more: 11, rows: 11 }, detail: 'none',
+    tabs: 'digits', justWarned: false, historyTitle: true, notice: false, list: { start: 0, count: 9, more: 11, rows: 11 }, detail: 'none',
   })
 })
 
 test('medium: branch, short counters, tab names', () => {
   expect(layoutOf(model(10, { warned: true }), 70, 30)).toEqual({
     tier: 'medium', tooShort: false, header: { branch: true, commit: false }, counters: 'short',
-    tabs: 'names', justWarned: true, historyTitle: true, list: { start: 0, count: 10, more: 0, rows: 19 }, detail: 'none',
+    tabs: 'names', justWarned: true, historyTitle: true, notice: false, list: { start: 0, count: 10, more: 0, rows: 18 }, detail: 'none',
   })
 })
 
 test('wide: branch, commit and tile counters', () => {
   expect(layoutOf(model(10, { selected: 0, expanded: true }), 120, 50)).toEqual({
     tier: 'wide', tooShort: false, header: { branch: true, commit: true }, counters: 'tiles',
-    tabs: 'names', justWarned: false, historyTitle: true, list: { start: 0, count: 10, more: 0, rows: 34 }, detail: 'full',
+    tabs: 'names', justWarned: false, historyTitle: true, notice: false, list: { start: 0, count: 10, more: 0, rows: 34 }, detail: 'full',
   })
 })
 
@@ -39,7 +39,7 @@ test('below the minimum height only the one-line fallback is left', () => {
   expect(PANE_MIN_LINES).toBe(4)
   expect(layoutOf(model(10), 120, 3)).toEqual({
     tier: 'wide', tooShort: true, header: { branch: false, commit: false }, counters: 'in-header',
-    tabs: 'digits', justWarned: false, historyTitle: false, list: { start: 0, count: 0, more: 10, rows: 0 }, detail: 'none',
+    tabs: 'digits', justWarned: false, historyTitle: false, notice: false, list: { start: 0, count: 0, more: 10, rows: 0 }, detail: 'none',
   })
 })
 
@@ -77,7 +77,7 @@ test('day-group labels and the blank line between groups cost rows inside the wi
 test('Just warned keeps its rows and the list gives way', () => {
   const plain = layoutOf(model(40), 70, 30)
   const warned = layoutOf(model(40, { warned: true }), 70, 30)
-  expect(plain.list.count - warned.list.count).toBe(6)
+  expect(plain.list.count - warned.list.count).toBe(7)
   // without room for it next to one list row, the card is dropped
   expect(layoutOf(model(40, { warned: true }), 70, 8).justWarned).toBe(false)
 })
@@ -95,6 +95,17 @@ test('an expanded detail on a short pane drops to compact before the list loses 
 
 test('an empty list has an empty window', () => {
   expect(layoutOf(model(0), 70, 30).list).toEqual({ start: 0, count: 0, more: 0, rows: 25 })
+})
+
+test('a notice takes its own row from the list, while one list row is left', () => {
+  const m = (notice: string | null) => ({ ...model(20), view: { ...model(20).view, notice } })
+  const plain = layoutOf(m(null), 40, 15)
+  const noticed = layoutOf(m('Could not forget the selected record.'), 40, 15)
+  expect([plain.notice, noticed.notice]).toEqual([false, true])
+  expect(plain.list.rows - noticed.list.rows).toBe(1)
+  expect(layoutOf(m('x'), 40, PANE_MIN_LINES).notice).toBe(false)
+  expect(layoutOf(m('x'), 40, PANE_MIN_LINES + 1).notice).toBe(false)
+  expect(layoutOf(m('x'), 40, PANE_MIN_LINES + 2).notice).toBe(true)
 })
 
 test('at the minimum height the History title gives its row to the one list row', () => {

@@ -360,25 +360,23 @@ function listLines(f: Frame, model: PaneModel, layout: PaneLayout): Line[] {
 /** One key in the bar: its segment, and how much it matters when the bar is short of room (lower stays). */
 interface BarKey { seg: Seg; keep: number }
 
+/** The last action's notice on a row of its own, above the key bar. */
+const noticeLine = (f: Frame, notice: string): Line => line(f, 'notice', [{ text: notice, color: WARNING }])
+
 /**
  * The footer key bar on its faint ground. Normally the keys that act here, in order, the
- * ones that matter least left out when the width is short, and the last action's notice
- * after them. While a Forget all or a retest waits for its answer, the confirm and Cancel.
+ * ones that matter least left out when the width is short. While a Forget all waits for its
+ * answer, the confirm and Cancel. A notice the layout gave no row of its own follows the keys.
+ * A pending retest is not drawn here: its confirm, with the whole call, is Task 8's block.
  */
-function keyBar(f: Frame, model: PaneModel): Line {
+function keyBar(f: Frame, model: PaneModel, layout: PaneLayout): Line {
   const bg = { bg: BAR_BG }
-  const notice: Seg[] = model.view.notice ? [{ text: '  ' }, { text: model.view.notice, color: WARNING }] : []
+  const notice: Seg[] = model.view.notice && !layout.notice ? [{ text: '  ' }, { text: model.view.notice, color: WARNING }] : []
   if (model.view.confirmAll && model.total > 0) {
     const confirm = key(KEY_CONFIRM, `Forget all ${plural(model.total, 'record', 'records')}`)
     return line(f, 'confirm-row', [...joined([[confirm], [key(KEY_CANCEL, 'Cancel')]], 2), ...notice], bg)
   }
   const retest = model.detail?.retest
-  if (retest?.ok && model.view.confirmRetest !== null && model.view.confirmRetest === model.selected) {
-    const cancel = key(KEY_RETEST_CANCEL, 'Cancel')
-    const shown = model.rows.find((r) => r.hash === model.selected)?.display ?? retest.tool
-    const confirm = key(KEY_RETEST_CONFIRM, fit(`Run again: ${shown}`, Math.max(1, f.inner - width([cancel]) - 2)))
-    return line(f, 'retest-row', joined([[confirm], [cancel]], 2), bg)
-  }
   const keys: BarKey[] = []
   if (retest?.ok) keys.push({ seg: key(KEY_RETEST, 'Retest', 'r'), keep: 2 })
   if (model.selected !== null) keys.push({ seg: key(KEY_FORGET, 'Forget', 'f'), keep: 0 })
@@ -477,7 +475,8 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, layout
     ...(layout.justWarned ? justWarned(f, model) : []),
     ...(layout.historyTitle ? [titleRule(f, 'history-title', glyph, tab, [{ text: plural(model.rows.length, 'record', 'records'), color: SECONDARY }])] : []),
     ...listLines(f, model, layout),
-    keyBar(f, model),
+    ...(layout.notice && model.view.notice ? [noticeLine(f, model.view.notice)] : []),
+    keyBar(f, model, layout),
   ]
 
   const drawSeg = (s: Seg): unknown =>

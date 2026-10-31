@@ -12,6 +12,8 @@ export interface PaneLayout {
   justWarned: boolean
   /** Whether the History card's title rule has a row; on the shortest pane it gives it to the list. */
   historyTitle: boolean
+  /** Whether the last action's notice has its own row above the key bar, taken from the list. */
+  notice: boolean
   /**
    * Records `start` .. `start + count` of `model.rows`; `more` records follow the window.
    * `rows` is what the list may take: day labels, blanks and the `n more` line, not the detail.
@@ -32,7 +34,7 @@ const WIDE_FROM = 100
 
 /** Rows each part of the pane costs: the layout budgets these, and the drawing draws exactly these. */
 export const ROWS = {
-  header: 1, tabs: 1, tiles: 3, shortCounters: 1, justWarned: 6, historyTitle: 1, keyBar: 1,
+  header: 1, tabs: 1, tiles: 3, shortCounters: 1, justWarned: 7, historyTitle: 1, notice: 1, keyBar: 1,
   fullDetail: 9, compactDetail: 3,
 } as const
 const HEADER_ROWS = ROWS.header
@@ -41,6 +43,7 @@ const TILES_ROWS = ROWS.tiles
 const SHORT_COUNTERS_ROWS = ROWS.shortCounters
 const JUST_WARNED_ROWS = ROWS.justWarned
 const HISTORY_TITLE_ROWS = ROWS.historyTitle
+const NOTICE_ROWS = ROWS.notice
 const KEY_BAR_ROWS = ROWS.keyBar
 const FULL_DETAIL_ROWS = ROWS.fullDetail
 const COMPACT_DETAIL_ROWS = ROWS.compactDetail
@@ -105,7 +108,7 @@ export function layoutOf(model: PaneModel, columns: number, rows: number): PaneL
   if (tooShort) {
     return {
       tier, tooShort, header: { branch: false, commit: false }, counters, tabs, justWarned: false,
-      historyTitle: false, list: { start: 0, count: 0, more: model.rows.length, rows: 0 }, detail: 'none',
+      historyTitle: false, notice: false, list: { start: 0, count: 0, more: model.rows.length, rows: 0 }, detail: 'none',
     }
   }
   const counterRows = counters === 'tiles' ? TILES_ROWS : counters === 'short' ? SHORT_COUNTERS_ROWS : 0
@@ -117,6 +120,9 @@ export function layoutOf(model: PaneModel, columns: number, rows: number): PaneL
   // With nothing left the history title gives up its row to the one list row.
   const historyTitle = available >= 1
   if (!historyTitle) available += HISTORY_TITLE_ROWS
+  // The notice takes its row from the list, as long as one list row is left.
+  const notice = Boolean(model.view.notice) && available - NOTICE_ROWS >= 1
+  if (notice) available -= NOTICE_ROWS
   let detail: PaneLayout['detail'] = 'none'
   if (model.view.expanded) {
     if (available - FULL_DETAIL_ROWS >= 1) detail = 'full'
@@ -125,6 +131,6 @@ export function layoutOf(model: PaneModel, columns: number, rows: number): PaneL
   const taken = detail === 'full' ? FULL_DETAIL_ROWS : detail === 'compact' ? COMPACT_DETAIL_ROWS : 0
   return {
     tier, tooShort, header: { branch: tier !== 'narrow', commit: tier === 'wide' },
-    counters, tabs, justWarned, historyTitle, list: { ...windowOf(model, available - taken), rows: available - taken }, detail,
+    counters, tabs, justWarned, historyTitle, notice, list: { ...windowOf(model, available - taken), rows: available - taken }, detail,
   }
 }

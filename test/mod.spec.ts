@@ -1329,8 +1329,11 @@ test('a short pane keeps a row and the key bar, never outgrows its body, and kee
     expect(drawnLines(drawn)).toBeLessThanOrEqual(bodyRows)
     shown[bodyRows] = shownRows(drawn).length
   }
-  // Each row past the chrome goes to the list: a day label, then rows, the last one to `n more ↓`.
-  expect(shown).toEqual({ 4: 1, 5: 1, 6: 1, 8: 2, 10: 4 })
+  // Each row past the chrome and the notice goes to the list: a day label, then rows, the last one to `n more ↓`.
+  expect(shown).toEqual({ 4: 1, 5: 1, 6: 1, 8: 1, 10: 3 })
+  // The notice has its own row once one list row is left beside it.
+  expect((await sized(6)).some((n) => n.props?.key === 'notice')).toBe(true)
+  expect((await sized(5)).some((n) => n.props?.key === 'notice')).toBe(false)
   opts.state.set('confirmAll', true)
   const confirming = await sized(4)
   expect(confirming.some((n) => n.props?.key === 'confirm-row')).toBe(true)
