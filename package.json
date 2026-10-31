@@ -13,6 +13,7 @@
   "scripts": {
     "bench:mod": "bun run scripts/bench-mod.ts",
     "build:hook": "bun run scripts/build-hook.ts",
+    "docs:images": "bun run scripts/readme-images.ts",
     "test": "bun run scripts/make-fixtures.ts && bun test",
     "test:coverage": "bun run scripts/make-fixtures.ts && bun test --coverage",
     "typecheck": "tsc --noEmit",

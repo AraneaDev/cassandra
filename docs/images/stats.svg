@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1129" height="481" viewBox="0 0 1129 481" font-family="ui-monospace, SFMono-Regular, &#34;SF Mono&#34;, Menlo, Consolas, &#34;DejaVu Sans Mono&#34;, monospace" font-size="13">
+  <rect width="1129" height="481" rx="8" fill="#10151d"/>
+  <rect x="0.5" y="0.5" width="1128" height="480" rx="8" fill="none" stroke="#26303d"/>
+  <line x1="22" y1="46" x2="1107" y2="46" stroke="#26303d" stroke-width="1"/>
+  <text x="22" y="36" xml:space="preserve"><tspan fill="#7a8593">$ </tspan><tspan fill="#ece5d5">cassandra stats</tspan></text>
+  <text x="22" y="55" xml:space="preserve"></text>
+  <text x="22" y="74" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold">18 warnings issued</tspan></text>
+  <text x="22" y="93" xml:space="preserve"><tspan fill="#b8c0cb"></tspan></text>
+  <text x="22" y="112" xml:space="preserve"><tspan fill="#b8c0cb">  confirmed        11</tspan><tspan fill="#7a8593">  (failed again, warning was right)</tspan></text>
+  <text x="22" y="131" xml:space="preserve"><tspan fill="#b8c0cb">  false positives  1</tspan><tspan fill="#7a8593">  (succeeded, probe missed a change)</tspan></text>
+  <text x="22" y="150" xml:space="preserve"><tspan fill="#b8c0cb">  false-positive rate 8.3%</tspan></text>
+  <text x="22" y="169" xml:space="preserve"><tspan fill="#b8c0cb"></tspan></text>
+  <text x="22" y="188" xml:space="preserve"><tspan fill="#b8c0cb">  by boundary:</tspan></text>
+  <text x="22" y="207" xml:space="preserve"><tspan fill="#b8c0cb">    compaction       4   22.2%</tspan></text>
+  <text x="22" y="226" xml:space="preserve"><tspan fill="#b8c0cb">    session          8   44.4%</tspan></text>
+  <text x="22" y="245" xml:space="preserve"><tspan fill="#b8c0cb">    subagent         4   22.2%</tspan></text>
+  <text x="22" y="264" xml:space="preserve"><tspan fill="#b8c0cb">    same_context     2   11.1%</tspan><tspan fill="#7a8593">  &lt;- redundant, the model could already see these; a high share here is the case for uninstalling, not tuning</tspan></text>
+  <text x="22" y="283" xml:space="preserve"><tspan fill="#b8c0cb"></tspan></text>
+  <text x="22" y="302" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold">3 briefings sent</tspan></text>
+  <text x="22" y="321" xml:space="preserve"><tspan fill="#b8c0cb"></tspan></text>
+  <text x="22" y="340" xml:space="preserve"><tspan fill="#b8c0cb">    subagent         2</tspan></text>
+  <text x="22" y="359" xml:space="preserve"><tspan fill="#b8c0cb">    compaction       1</tspan></text>
+  <text x="22" y="378" xml:space="preserve"><tspan fill="#b8c0cb">  repeated after briefing  2 of 3</tspan><tspan fill="#7a8593">  (briefed, then retried across a boundary anyway)</tspan></text>
+  <text x="22" y="397" xml:space="preserve"><tspan fill="#b8c0cb"></tspan></text>
+  <text x="22" y="416" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold">fix notes</tspan></text>
+  <text x="22" y="435" xml:space="preserve"><tspan fill="#b8c0cb"></tspan></text>
+  <text x="22" y="454" xml:space="preserve"><tspan fill="#b8c0cb">  fixes remembered  2, offered again 1</tspan></text>
+</svg>
