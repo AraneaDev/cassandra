@@ -371,9 +371,9 @@ the records grouped by day. The selected row is tinted, a stale row is suffixed 
 and a denied one `denied`.
 
 Tabs: History (every record), Warnings (would warn now), Stale (the workspace moved since)
-and Denied. Switch with the digits `1`–4. The counters are warn now, remembered, warnings
-today and cleared by retest. On a narrow or short pane they shrink to one line or move
-into the header. A body under 4 lines draws a single line asking for a taller window.
+and Denied. Switch with the digits `1`–`4`. The counters are warn now, remembered, warnings
+today and cleared by retest; the last two count today only. On a narrow or short pane they
+shrink to one line or move into the header. A body under 4 lines draws a single line asking for a taller window.
 
 When this session was just warned about a call, a Just warned card shows what was run,
 what it matched, the reason it failed, the evidence and the fix note. `d` dismisses it.
@@ -383,7 +383,7 @@ what it matched, the reason it failed, the evidence and the fix note. `d` dismis
 | `1`–`4` | switch tabs |
 | `j` `k`, arrows | move the marker |
 | Enter | open or close the marked row |
-| `o` | the marked record's full output |
+| `o` | the marked record's full output, in the open row (it opens the row) |
 | `s` | search the calls; Enter applies, `x` clears |
 | `h` | the key list, which also holds the warning rates (false-positive and `same_context`) |
 | `r` | retest the marked call |
@@ -406,13 +406,14 @@ shows the exact command and directory, or the MCP tool and its full input. It is
 when the session's directory differs from the one the call ran in, and when your
 permission settings deny the call; then nothing runs. Otherwise the call goes through
 Claude Code's own tool call, so its permission path and sandbox apply. A pass forgets the
-record. A fail updates it.
+record. A fail updates it. On a pane too small to show the whole call there is no Run, and
+the pane says so.
 
 The pane needs a mod build and an interactive session; with no interactive surface, as in
-`claude -p`, `/cassandra pane` answers "The pane needs an interactive session." and exits
-with code 1. Only your own command opens it: from a plugin or a schedule, `/cassandra pane`
-answers "The pane opens only from your own /cassandra command." and exits with code 1. The shell CLI does
-not know `pane`.
+`claude -p`, `/cassandra pane` answers "The pane needs an interactive session." and
+exits 1. Only your own command opens it: from a plugin or a schedule, `/cassandra pane`
+answers "The pane opens only from your own /cassandra command." and exits 1. The shell
+CLI does not know `pane`.
 
 The pane is not live. Records written by other sessions show up when this pane next
 redraws, for instance after this session's own store changes.
