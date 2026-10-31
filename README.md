@@ -12,7 +12,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/AraneaDev/cassandra?label=last%20commit)](https://github.com/AraneaDev/cassandra/commits/main)
 [![Conventional Commits](https://img.shields.io/badge/commits-conventional-fe5196?logo=conventionalcommits&logoColor=white)](https://www.conventionalcommits.org/)
 [![Status](https://img.shields.io/badge/status-pre--release-orange)](#status)
-[![Tests](https://img.shields.io/badge/tests-622%20passing-brightgreen)](#development)
+[![Tests](https://img.shields.io/badge/tests-623%20passing-brightgreen)](#development)
 
 </div>
 
@@ -40,7 +40,7 @@ Type `/cassandra pane` in Claude Code and a pane opens beside the chat. The head
 project, its branch and commit, and how many remembered calls would warn now. Below it sit the
 counters, the warning this session just raised with the evidence it stood on, and every
 remembered call grouped by day. Open a row to see why it failed, whether it would warn now,
-when it was seen and what made it work last time. Press `r` to run it again.
+when it was seen and what made it work last time. Press `r` to run it again; it runs only after you confirm the exact call in the pane.
 
 **TL;DR:** Cassandra remembers failed `Bash` and `mcp__*` calls and warns before an agent
 repeats one without a project change. When a subagent starts or a conversation compacts, it
@@ -128,9 +128,8 @@ the pane has drawn; if that row is gone, the press just redraws the pane.
 The pane fits its size. Under 56 columns the tabs other than the open one fall back to
 their digits and the branch leaves the header; from 100 columns the commit joins it and the
 counters get a tile each. Narrower than that the counters share one line, with shorter
-labels under 56 columns when the usual ones do not fit, under 22 rows
-they move into the header, and a body under 4 lines draws a single line asking for a taller
-window. Long lines are cut with an ellipsis rather than wrapped, except in the retest
+labels under 56 columns when the usual ones do not fit. Under 22 rows they move into the
+header, and a body under 4 lines draws a single line asking for a taller window. Long lines are cut with an ellipsis rather than wrapped, except in the retest
 confirm, which always shows the whole call. The key bar drops the keys that matter least
 first; their letters still work.
 
@@ -463,7 +462,7 @@ it warned about then went on to succeed. Remove the hook and the false-positive 
 probe is working at all. You pay about 31ms on every successful call to keep the tool
 measurable, and that is the trade being made.
 
-### A note on the hook contract
+## A note on the hook contract
 
 Both web renderings of the official Claude Code hooks reference state that
 `additionalContext` is not supported on `PreToolUse`. That is wrong. The changelog adds it

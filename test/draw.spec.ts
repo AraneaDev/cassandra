@@ -544,3 +544,23 @@ describe('spacing and narrow counters', () => {
     expect(texts[2]).toContain('2 warn now   4 remembered   3 today   1 cleared')
   })
 })
+
+test('an open detail draws exactly fullDetailRows lines, with its fix and retest lines, in every combination', () => {
+  const tinted = (d: PaneDetail) => {
+    const { texts, lines } = draw(model({ detail: d }, { expanded: true }), 120, 50)
+    const at = texts.findIndex((t) => t.includes('▾'))
+    let n = 0
+    while (lines[at + 1 + n]?.props.backgroundColor === 'userMessageBackground') n++
+    return texts.slice(at + 1, at + 1 + n)
+  }
+  for (const fix of [null, 'Use bun run test instead.']) {
+    for (const retest of [detail.retest, { ok: false, why: 'denied' } as const]) {
+      const d: PaneDetail = { ...detail, fix, retest }
+      const block = tinted(d)
+      expect(block).toHaveLength(fullDetailRows(d))
+      expect(block.some((t) => t.includes('Use bun run test instead.'))).toBe(fix !== null)
+      expect(block.some((t) => t.includes('not offered for a denied call'))).toBe(!retest.ok)
+      expect(block.every((t) => t.trim() !== '')).toBe(true)
+    }
+  }
+})
