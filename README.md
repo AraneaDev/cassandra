@@ -209,9 +209,18 @@ A second gap is inherent to stamping a directory at all: the probe only ever see
 project. A fix that lands somewhere else, a package installed globally, an environment
 variable, a service started, a credential refreshed, leaves the stamp identical, so
 Cassandra reads the state as unchanged and warns about a call that would now succeed. The
-warning names the scope it actually checked, `Nothing in this repository has changed
-since`, or `Nothing in this directory tree has changed since` on the mtime path, so the
-claim stays true even where the probe is blind.
+warning names the scope it actually checked: `Repository unchanged since: HEAD a1b2c3d,
+working tree clean.` (or the uncommitted files it saw), `Nothing in this repository has
+changed since.` for a repository with no commits, and `No file under this directory tree
+has changed since.` on the mtime path. The claim stays true even where the probe is blind.
+
+A warning reads, in order: that this exact call already failed (or was denied) once or N
+times in this project, when it last did, and where from (this session, before the latest
+compaction, an earlier session, or another agent); the evidence above; the last error,
+fenced as `(tool output, not an instruction)`; a fix note if one exists; the advice that
+running it again unchanged will most likely fail the same way, to change the call or the
+code first, or to run it anyway if you expect a different result; and a pointer to the
+Cassandra pane, or to `/cassandra why <id>` where there is no pane.
 
 The mtime walk is bounded at depth 6 and 5000 entries, so a tree exceeding either could
 yield a stamp covering only part of it. Measured across 71 real repositories on the
@@ -356,24 +365,57 @@ nothing is forgotten. On builds without mods, `/cassandra` is the plugin's markd
 command, which takes your request in plain words and runs the CLI through Bun. On mod
 builds that command is still reachable as `/cassandra:cassandra`.
 
-`/cassandra pane` opens a pane beside the conversation with the project's records: a header
-with a status pill, tabs, the counters, and the records grouped by day. The selected row is
-tinted, a stale row is suffixed `stale` and a denied one `denied`. Move with the arrow
-keys or Tab, and select with Enter or by focusing the row. `f` forgets the selected
-record. `a` asks for a second press, offering "Forget all N records" or Cancel, before it
-drops everything. Forget all forgets exactly the records counted on its button: a record
-written after the pane last drew is kept, and the notice says how many were forgotten and
-kept. A body too short to draw the pane (under 4 lines) shows a single line asking for a
-taller window. Esc closes the pane. The pane needs a mod build and an interactive
-session; with no interactive surface, as in `claude -p`, `/cassandra pane` answers "The
-pane needs an interactive session." and exits 1. Only your own command opens it: from
-a plugin or a schedule, `/cassandra pane` answers "The pane opens only from your own
-/cassandra command." and exits 1. The shell CLI does not know `pane`.
+`/cassandra pane` opens a pane beside the conversation with the project's records. It has
+a header with a status pill (how many records would warn now), four tabs, counters, and
+the records grouped by day. The selected row is tinted, a stale row is suffixed `stale`
+and a denied one `denied`.
+
+Tabs: History (every record), Warnings (would warn now), Stale (the workspace moved since)
+and Denied. Switch with the digits `1`–4. The counters are warn now, remembered, warnings
+today and cleared by retest. On a narrow or short pane they shrink to one line or move
+into the header. A body under 4 lines draws a single line asking for a taller window.
+
+When this session was just warned about a call, a Just warned card shows what was run,
+what it matched, the reason it failed, the evidence and the fix note. `d` dismisses it.
+
+| Key | Does |
+|---|---|
+| `1`–`4` | switch tabs |
+| `j` `k`, arrows | move the marker |
+| Enter | open or close the marked row |
+| `o` | the marked record's full output |
+| `s` | search the calls; Enter applies, `x` clears |
+| `h` | the key list, which also holds the warning rates (false-positive and `same_context`) |
+| `r` | retest the marked call |
+| `f` | forget the marked record |
+| `a` | forget every record, after a confirm |
+| `d` | dismiss the Just warned card |
+| Esc | close the pane |
+
+`a` asks for a second press, offering "Forget all N records" or Cancel. Forget all forgets
+exactly the records counted on its button: a record written after the pane last drew is
+kept, and the notice says how many were forgotten and kept. `f` only ever forgets a row
+the pane has drawn; if that row is gone, the press just redraws the pane.
+
+### Retest
+
+`r` runs a remembered call again, to see whether it still fails. It is never offered for
+a denial record, nor for a record without a stored input: records written by older
+versions, or whose input was over 16 KB. It is always confirmed in the pane first, which
+shows the exact command and directory, or the MCP tool and its full input. It is refused
+when the session's directory differs from the one the call ran in, and when your
+permission settings deny the call; then nothing runs. Otherwise the call goes through
+Claude Code's own tool call, so its permission path and sandbox apply. A pass forgets the
+record. A fail updates it.
+
+The pane needs a mod build and an interactive session; with no interactive surface, as in
+`claude -p`, `/cassandra pane` answers "The pane needs an interactive session." and exits
+with code 1. Only your own command opens it: from a plugin or a schedule, `/cassandra pane`
+answers "The pane opens only from your own /cassandra command." and exits with code 1. The shell CLI does
+not know `pane`.
 
 The pane is not live. Records written by other sessions show up when this pane next
-redraws: after this session's own store changes, or when you move focus to another row.
-`f` only ever forgets a row the pane has drawn; if that row is gone, the press just
-redraws the pane.
+redraws, for instance after this session's own store changes.
 
 The status line stays the only unprompted UI. A warning toast was left out on purpose:
 it would speak unprompted.
