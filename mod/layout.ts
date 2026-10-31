@@ -60,7 +60,7 @@ function fits(model: PaneModel, start: number, budget: number): number {
 }
 
 /** The window onto `model.rows` that holds the selected row, scrolled no further than it must. */
-function windowOf(model: PaneModel, budget: number): PaneLayout['list'] {
+function scrolled(model: PaneModel, budget: number): PaneLayout['list'] {
   const total = model.rows.length
   if (total === 0 || budget < 1) return { start: 0, count: 0, more: total }
   const found = model.rows.findIndex((r) => r.hash === model.selected)
@@ -72,6 +72,15 @@ function windowOf(model: PaneModel, budget: number): PaneLayout['list'] {
     count = fits(model, start, budget)
   }
   return { start, count, more: total - start - count }
+}
+
+/**
+ * The window for `budget` rows. When records remain below it, the `n more` line takes one
+ * of those rows; no line is drawn above the window.
+ */
+function windowOf(model: PaneModel, budget: number): PaneLayout['list'] {
+  const whole = scrolled(model, budget)
+  return whole.more > 0 && budget > 1 ? scrolled(model, budget - 1) : whole
 }
 
 /** Decide what shows for `model` in a pane of `columns` by `rows`. */

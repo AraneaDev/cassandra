@@ -17,7 +17,7 @@ function model(n: number, over: { selected?: number; expanded?: boolean; warned?
 test('narrow and short: no branch, short counters inside the header, digit tabs', () => {
   expect(layoutOf(model(20), 40, 15)).toEqual({
     tier: 'narrow', tooShort: false, header: { branch: false, commit: false }, counters: 'in-header',
-    tabs: 'digits', justWarned: false, list: { start: 0, count: 10, more: 10 }, detail: 'none',
+    tabs: 'digits', justWarned: false, list: { start: 0, count: 9, more: 11 }, detail: 'none',
   })
 })
 
@@ -52,19 +52,26 @@ test('the width tiers switch at 56 and 100 columns', () => {
 
 test('the window follows the selection', () => {
   const layout = layoutOf(model(40, { selected: 35 }), 70, 15)
-  expect(layout.list.count).toBe(10)
+  expect(layout.list.count).toBe(9)
   expect(layout.list.start).toBeLessThanOrEqual(35)
   expect(layout.list.start + layout.list.count).toBeGreaterThan(35)
-  expect(layout.list.start).toBe(26)
+  expect(layout.list.start).toBe(27)
   expect(layout.list.more).toBe(40 - 36)
   expect(layoutOf(model(40, { selected: 39 }), 70, 15).list.more).toBe(0)
+})
+
+test('header, tabs, counters, list, the more line and key bar fit the rows at 40x15', () => {
+  const layout = layoutOf(model(20), 40, 15)
+  // header + tabs (counters sit in the header) + history title + day label + records + more line + key bar
+  const used = 1 + 1 + 0 + 1 + 1 + layout.list.count + (layout.list.more > 0 ? 1 : 0) + 1
+  expect(used).toBeLessThanOrEqual(15)
 })
 
 test('day-group labels and the blank line between groups cost rows inside the window', () => {
   const groups = ['Today', 'Today', 'Yesterday', 'Yesterday', 'Monday', 'Monday']
   // 15 rows, in-header counters: 11 list rows. Today (1+2) + blank+Yesterday (2+2) + blank+Monday (2+2) = 11.
   expect(layoutOf(model(6, { groups }), 70, 15).list).toEqual({ start: 0, count: 6, more: 0 })
-  expect(layoutOf(model(6, { groups }), 70, 14).list).toEqual({ start: 0, count: 5, more: 1 })
+  expect(layoutOf(model(6, { groups }), 70, 14).list).toEqual({ start: 0, count: 4, more: 2 })
 })
 
 test('Just warned keeps its rows and the list gives way', () => {
