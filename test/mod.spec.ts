@@ -2,7 +2,8 @@ import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { install, type ModEngine, type Next, type ToolCallEvent, type ToolCallOutcome } from '../mod/install.ts'
+import type { ModEngine, Next, ToolCallEvent, ToolCallOutcome } from '../mod/engine.ts'
+import { install } from '../mod/install.ts'
 import type { Io } from '../src/core/io.ts'
 import { modIo } from '../src/io/mod.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
@@ -186,7 +187,7 @@ test('a main-loop compaction is counted, a subagent one and a skipped one are no
 })
 
 test('the MCP input the mod fingerprints leaves out the engine reserved keys', async () => {
-  const { toolInput } = await import('../mod/install.ts')
+  const { toolInput } = await import('../mod/calls.ts')
   expect(toolInput({ tool: 'mcp__s__t', tool_use_id: 'x', agentId: 'a', consent: 'c', b: 2, a: 1 })).toEqual({ b: 2, a: 1 })
 })
 
@@ -210,7 +211,7 @@ test('a Bash call a hook blocked before it ran records nothing', async () => {
 })
 
 test('the tool-use-error wrapper means never-run for Bash only', async () => {
-  const { outcomeOf } = await import('../mod/install.ts')
+  const { outcomeOf } = await import('../mod/calls.ts')
   const wrapped = { isError: true, text: '<tool_use_error>server said no</tool_use_error>' }
   expect(outcomeOf(wrapped, false, 'Bash')).toEqual({ kind: 'not_run' })
   expect(outcomeOf(wrapped, false, 'mcp__s__t')).toEqual({ kind: 'failure', reason: wrapped.text })
@@ -616,7 +617,7 @@ test('the tools are answered without next, and calling them records nothing (Rev
 })
 
 test("the tracking matcher excludes Cassandra's own tools and nothing else", async () => {
-  const { TRACKED } = await import('../mod/install.ts')
+  const { TRACKED } = await import('../mod/calls.ts')
   expect(TRACKED.test('mcp__cassandra__query')).toBe(false)
   expect(TRACKED.test('mcp__cassandra__resolve')).toBe(false)
   expect(TRACKED.test('mcp__srv__do')).toBe(true)

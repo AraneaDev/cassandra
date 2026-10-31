@@ -7,7 +7,8 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { install, type ToolCallOutcome } from '../mod/install.ts'
+import type { ToolCallOutcome } from '../mod/engine.ts'
+import { install } from '../mod/install.ts'
 import { nodeHost } from '../test/support/node-host.ts'
 
 const N = 500
