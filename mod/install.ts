@@ -2,7 +2,7 @@ import { forget } from '../src/commands/forget.ts'
 import { runCommand, type CommandResult } from '../src/commands/run.ts'
 import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
-import { paneModel, unreadableModel, type PaneModel, type PaneView } from '../src/core/pane.ts'
+import { paneModel, unreadableModel, type PaneModel, type PaneTab, type PaneView } from '../src/core/pane.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { statusText } from '../src/core/status.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
@@ -11,8 +11,12 @@ import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from
 import { listRecords } from '../src/core/record.ts'
 import { resolveHash } from '../src/core/resolve.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
-import { layoutOf } from './layout.ts'
-import { KEY_CANCEL, KEY_CONFIRM, KEY_FORGET, KEY_FORGET_ALL, ROW_KEY_PREFIX, drawPane, type Elements } from './pane.tsx'
+import { layoutOf, type PaneExtras } from './layout.ts'
+import {
+  KEY_CANCEL, KEY_CONFIRM, KEY_DISMISS, KEY_DOWN, KEY_FORGET, KEY_FORGET_ALL, KEY_FULL, KEY_HELP, KEY_RETEST, KEY_SEARCH,
+  KEY_SEARCH_CLEAR, KEY_SEARCH_FIELD, KEY_TABKEY_PREFIX, KEY_TAB_PREFIX, KEY_TWIN_PREFIX, KEY_UP, ROW_KEY_PREFIX, drawPane, keyListRows, twinTarget,
+  type Elements,
+} from './pane.tsx'
 
 /** A user-role row a plugin appends: text blocks the model reads, in the named loop (main when absent). */
 export interface AppendArgs {
@@ -32,6 +36,14 @@ export interface PaneState {
   confirmAll: boolean
   rev: number
   notice: string | null
+  tab: PaneTab
+  expanded: boolean
+  showFull: boolean
+  query: string
+  confirmRetest: string | null
+  lastWarning: { hash: string; at: string } | null
+  searching: boolean
+  showKeys: boolean
 }
 
 /** A reference to one of the pane's values, as `$.state` takes it. */
@@ -54,7 +66,12 @@ export type ModEngine = ModHost & {
     get<K extends keyof PaneState>(ref: PaneRef<K>): Promise<{ value: PaneState[K] | undefined; version: number }>
     set<K extends keyof PaneState>(ref: PaneRef<K>, value: PaneState[K]): Promise<unknown>
   }
-  ui: { status(text: string | undefined): void; open(args: OpenArgs): Promise<unknown>; resolve(e: PaneRenderEvent): Elements }
+  ui: {
+    status(text: string | undefined): void
+    open(args: OpenArgs): Promise<unknown>
+    resolve(e: PaneRenderEvent): Elements
+    focus(args: { requestId: string; key: string }): Promise<{ deny?: string }>
+  }
 }
 
 /** Which site the pane hooks match: the one pane this plugin opens. */
@@ -83,6 +100,14 @@ export interface PressEvent {
 /** A `ui.focus` input: the key of the element taking the ring, absent for one of the engine's stops. */
 export interface FocusEvent {
   element?: string
+  [key: string]: unknown
+}
+
+/** A `ui.input` input: an edit of, or Enter in, an Input the pane drew. */
+export interface InputEvent {
+  element: string
+  kind: 'change' | 'submit'
+  value: string
   [key: string]: unknown
 }
 
@@ -160,6 +185,7 @@ export interface ModOn {
   (event: 'tool.call', matcher: { tool: RegExp }, hook: ($: ModEngine, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>) => Promise<ToolCallOutcome>): unknown
   (event: 'ui.render', matcher: PaneMatcher, hook: ($: ModEngine, e: PaneRenderEvent, next: Next<PaneRenderEvent, unknown>) => Promise<unknown>): unknown
   (event: 'ui.press', matcher: PaneMatcher, hook: ($: ModEngine, e: PressEvent, next: Next<PressEvent, unknown>) => Promise<unknown>): unknown
+  (event: 'ui.input', matcher: PaneMatcher, hook: ($: ModEngine, e: InputEvent, next: Next<InputEvent, unknown>) => Promise<unknown>): unknown
   (event: 'ui.focus', matcher: PaneMatcher, hook: ($: ModEngine, e: FocusEvent, next: Next<FocusEvent, unknown>) => Promise<unknown>): unknown
 }
 
@@ -274,12 +300,36 @@ const CONFIRM_ALL = { plugin: 'cassandra', key: 'confirmAll' } as const
 const REV = { plugin: 'cassandra', key: 'rev' } as const
 /** The outcome of the last action, when it failed. */
 const NOTICE = { plugin: 'cassandra', key: 'notice' } as const
+/** The tab the list shows. */
+const TAB = { plugin: 'cassandra', key: 'tab' } as const
+/** Whether the marked row is open in place. */
+const EXPANDED = { plugin: 'cassandra', key: 'expanded' } as const
+/** Whether the marked record's full output shows. */
+const SHOW_FULL = { plugin: 'cassandra', key: 'showFull' } as const
+/** The search the list is filtered by, '' for none. */
+const QUERY = { plugin: 'cassandra', key: 'query' } as const
+/** The hash of the record whose retest waits for its confirm. */
+const CONFIRM_RETEST = { plugin: 'cassandra', key: 'confirmRetest' } as const
+/** The warning this session raised last, until dismissed. */
+const LAST_WARNING = { plugin: 'cassandra', key: 'lastWarning' } as const
+/** Whether the search field is open. */
+const SEARCHING = { plugin: 'cassandra', key: 'searching' } as const
+/** Whether the key list is open. */
+const SHOW_KEYS = { plugin: 'cassandra', key: 'showKeys' } as const
 
-/** What one surface last drew: the row it marked selected, every row it showed, and every record it counted. */
+const TAB_IDS: readonly PaneTab[] = ['history', 'warnings', 'stale', 'denied']
+
+/**
+ * What one surface last drew: the row it marked selected, every row it showed, every record
+ * it counted, the whole list the marker walks (the tab and search applied, in order), and
+ * the marked record when it offered a retest.
+ */
 export interface DrawnPane {
   selected: string | null
   hashes: ReadonlySet<string>
   counted: ReadonlySet<string>
+  rows: readonly string[]
+  retestable: string | null
 }
 
 /** What each surface last drew, by surface. Forget acts only on rows the person saw. */
@@ -331,25 +381,39 @@ async function dropEmptyConfirm($: ModEngine, io: Io): Promise<void> {
   }
 }
 
-/**
- * What the pane remembers, read fresh. Rejects when the state cannot be read. The tab, the
- * open row, the full output, the search, a pending retest and the latest warning are not
- * kept yet, so they read as a fresh pane's.
- */
+/** What the pane remembers, read fresh; a value never set reads as a fresh pane's. Rejects when the state cannot be read. */
 async function readView($: ModEngine): Promise<PaneView> {
-  const selected = (await $.state.get(SELECTED)).value ?? null
-  const confirmAll = (await $.state.get(CONFIRM_ALL)).value ?? false
-  const notice = (await $.state.get(NOTICE)).value ?? null
-  return { tab: 'history', selected, expanded: false, confirmAll, confirmRetest: null, showFull: false, query: '', notice, lastWarning: null }
+  const tab = (await $.state.get(TAB)).value
+  return {
+    tab: tab !== undefined && TAB_IDS.includes(tab) ? tab : 'history',
+    selected: (await $.state.get(SELECTED)).value ?? null,
+    expanded: (await $.state.get(EXPANDED)).value ?? false,
+    confirmAll: (await $.state.get(CONFIRM_ALL)).value ?? false,
+    confirmRetest: (await $.state.get(CONFIRM_RETEST)).value ?? null,
+    showFull: (await $.state.get(SHOW_FULL)).value ?? false,
+    query: (await $.state.get(QUERY)).value ?? '',
+    notice: (await $.state.get(NOTICE)).value ?? null,
+    lastWarning: (await $.state.get(LAST_WARNING)).value ?? null,
+  }
+}
+
+/** Whether the search field and the key list are open, for a model. Rejects when the state cannot be read. */
+async function readExtras($: ModEngine, model: PaneModel): Promise<PaneExtras> {
+  return {
+    searching: (await $.state.get(SEARCHING)).value ?? false,
+    showKeys: (await $.state.get(SHOW_KEYS)).value ?? false,
+    keyRows: keyListRows(model).length,
+  }
 }
 
 /**
- * Open the pane, unless nothing can show one. The confirmation never survives into a
- * fresh open, and neither does an old notice. Rejects on a host failure.
+ * Open the pane, unless nothing can show one. Neither confirmation survives into a fresh
+ * open, and neither does an old notice. Rejects on a host failure.
  */
 async function openPane($: ModEngine): Promise<{ text: string; exitCode: number }> {
   if ((await $.session.surfaces()).length === 0) return { text: PANE_HEADLESS, exitCode: 1 }
   await $.state.set(CONFIRM_ALL, false)
+  await $.state.set(CONFIRM_RETEST, null)
   await $.state.set(NOTICE, null)
   await $.ui.open({ id: PANE_ID, title: 'Cassandra', focus: true, closeOnEscape: true })
   return { text: PANE_OPENED, exitCode: 0 }
@@ -365,34 +429,108 @@ async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRende
     const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
     const bodyRows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24
     let model: PaneModel
+    let extras: PaneExtras | undefined
     try {
       // Read so that a bump of the revision draws the pane again.
       await $.state.get(REV)
       model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), await $.session.id())
+      extras = await readExtras($, model)
     } catch {
       model = unreadableModel()
     }
-    const layout = layoutOf(model, columns, bodyRows)
+    const layout = layoutOf(model, columns, bodyRows, extras)
     const { start, count } = layout.list
     // Not state: a render may not write it, and a press only needs this session's own drawing.
-    drawn.set(e.surface ?? '', { selected: model.selected, hashes: new Set(model.rows.slice(start, start + count).map((r) => r.hash)), counted: new Set(model.hashes) })
+    drawn.set(e.surface ?? '', {
+      selected: model.selected,
+      hashes: new Set(model.rows.slice(start, start + count).map((r) => r.hash)),
+      counted: new Set(model.hashes),
+      rows: model.rows.map((r) => r.hash),
+      retestable: model.detail?.retest.ok === true ? model.selected : null,
+    })
     return drawPane($.ui.resolve(e), model, columns, layout)
   } catch {
     return next(e)
   }
 }
 
+/** The record a row key names, when it is a row still remembered; null otherwise. */
+async function rowHash($: ModEngine, io: Io, key: string): Promise<string | null> {
+  const r = await resolveHash(io, await pathsFor(io, await $.session.cwd()), key.slice(ROW_KEY_PREFIX.length))
+  return r.ok ? r.hash : null
+}
+
 /** Select the row a key names, when it is a row still remembered. Never throws. */
 async function selectRow($: ModEngine, wrapIo: (io: Io) => Io, key: string | undefined): Promise<void> {
   if (!key?.startsWith(ROW_KEY_PREFIX)) return
   try {
-    const io = wrapIo(modIo(hostOf($)))
-    const r = await resolveHash(io, await pathsFor(io, await $.session.cwd()), key.slice(ROW_KEY_PREFIX.length))
-    if (r.ok) await $.state.set(SELECTED, r.hash)
+    const hash = await rowHash($, wrapIo(modIo(hostOf($))), key)
+    if (hash !== null) await $.state.set(SELECTED, hash)
   } catch {
     // The selection stays where it was.
   }
 }
+
+/**
+ * The row this surface drew as marked: the selection when it was drawn here, else the row
+ * drawn as selected. Rejects when the state cannot be read.
+ */
+async function markedRow($: ModEngine, drawn: DrawnPane): Promise<string | null> {
+  const selected = (await $.state.get(SELECTED)).value ?? null
+  return selected !== null && drawn.hashes.has(selected) ? selected : drawn.selected
+}
+
+/**
+ * Enter on a row, or a click: the marked row opens or closes in place; another row is
+ * marked instead (the focus hook has usually marked it already). Rejects on a state failure.
+ */
+async function pressRow($: ModEngine, io: Io, key: string, drawn: DrawnPane | undefined): Promise<void> {
+  const hash = await rowHash($, io, key)
+  if (hash === null) return
+  if (drawn && hash === (await markedRow($, drawn))) {
+    await $.state.set(SELECTED, hash)
+    await $.state.set(EXPANDED, !((await $.state.get(EXPANDED)).value ?? false))
+    return
+  }
+  await $.state.set(SELECTED, hash)
+}
+
+/**
+ * `j` or `k`: mark the next or previous row of the list this surface drew, stopping at
+ * either end. Resolves to the key of the row now marked, for the ring to follow; null when
+ * nothing moved. Rejects on a state failure.
+ */
+async function moveMarker($: ModEngine, drawn: DrawnPane | undefined, by: 1 | -1): Promise<string | null> {
+  if (!drawn || drawn.rows.length === 0) return null
+  const from = drawn.rows.indexOf((await markedRow($, drawn)) ?? '')
+  const to = drawn.rows[Math.min(drawn.rows.length - 1, Math.max(0, (from < 0 ? 0 : from) + by))]!
+  await $.state.set(SELECTED, to)
+  await $.state.set(SHOW_FULL, false)
+  return `${ROW_KEY_PREFIX}${to.slice(0, 8)}`
+}
+
+/**
+ * Switch the list to `tab`: the marked row stays marked when the new tab lists it, else the
+ * tab's first row is marked, closed. Rejects on a host failure.
+ */
+async function switchTab($: ModEngine, io: Io, cwd: string, tab: PaneTab): Promise<void> {
+  const view = await readView($)
+  const model = await paneModel(io, cwd, { ...view, tab }, await $.session.id())
+  await $.state.set(TAB, tab)
+  if (model.selected === view.selected) return
+  await $.state.set(SELECTED, model.selected)
+  await $.state.set(EXPANDED, false)
+  await $.state.set(SHOW_FULL, false)
+}
+
+/** The tab a tab's Button or its hidden twin names; null for any other key. */
+function tabOf(key: string): PaneTab | null {
+  const id = key.startsWith(KEY_TAB_PREFIX) ? key.slice(KEY_TAB_PREFIX.length) : key.startsWith(KEY_TABKEY_PREFIX) ? key.slice(KEY_TABKEY_PREFIX.length) : null
+  return TAB_IDS.find((t) => t === id) ?? null
+}
+
+/** What a search field's text is kept as: one line, trimmed. */
+const searchText = (value: string): string => value.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim()
 
 /** Run one forget for the pane: its failure becomes the notice, and any change redraws. Never throws. */
 async function paneForget($: ModEngine, io: Io, run: () => Promise<CommandResult | null>, failure: string): Promise<void> {
@@ -418,7 +556,6 @@ async function paneForget($: ModEngine, io: Io, run: () => Promise<CommandResult
   await refreshStatus($, io)
 }
 
-/** Act on a press in the pane, by the key of the Button pressed. Never throws. */
 /**
  * The record Forget acts on: a row this surface drew. The row focus selected, when it was
  * drawn here (the ring sits on it even before the redraw), else the row drawn as
@@ -426,8 +563,7 @@ async function paneForget($: ModEngine, io: Io, run: () => Promise<CommandResult
  */
 async function forgetTarget($: ModEngine, io: Io, cwd: string, drawn: DrawnPane | undefined): Promise<string | null> {
   if (!drawn) return null
-  const selected = (await $.state.get(SELECTED)).value ?? null
-  const target = selected !== null && drawn.hashes.has(selected) ? selected : drawn.selected
+  const target = await markedRow($, drawn)
   if (target === null) return null
   const stored = await listRecords(io, await pathsFor(io, cwd))
   return stored.some((r) => r.hash === target) ? target : null
@@ -486,36 +622,100 @@ async function confirmForgetAll($: ModEngine, io: Io, cwd: string, drawn: DrawnP
   await refreshStatus($, io)
 }
 
-async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: DrawnBySurface): Promise<void> {
+/**
+ * Act on a press in the pane, by the key of the Button pressed. Resolves to the element the
+ * focus ring should move to once the press is done (the row `j`/`k` marked, the search
+ * field `s` opened), or null. Never throws.
+ */
+async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: DrawnBySurface): Promise<string | null> {
   try {
     const io = wrapIo(modIo(hostOf($)))
     const cwd = await $.session.cwd()
-    switch (e.element) {
+    const here = drawn.get(e.surface ?? '')
+    // A bar key's hidden twin acts as the key itself.
+    const element = e.element.startsWith(KEY_TWIN_PREFIX) ? e.element.slice(KEY_TWIN_PREFIX.length) : e.element
+    const tab = tabOf(element)
+    if (tab !== null) {
+      await switchTab($, io, cwd, tab)
+      return null
+    }
+    switch (element) {
       case KEY_FORGET:
         await paneForget($, io, async () => {
-          const target = await forgetTarget($, io, cwd, drawn.get(e.surface ?? ''))
+          const target = await forgetTarget($, io, cwd, here)
           return target === null ? null : forget(io, await pathsFor(io, cwd), target, false)
         }, 'Could not forget the selected record.')
-        return
+        return null
       // An old failure line must not sit beside the confirm row, nor outlive the cancel.
       case KEY_FORGET_ALL:
         await $.state.set(NOTICE, null)
         // Nothing to confirm on an empty store.
         if ((await listRecords(io, await pathsFor(io, cwd))).length > 0) await $.state.set(CONFIRM_ALL, true)
-        return
+        return null
       case KEY_CANCEL:
         await $.state.set(NOTICE, null)
         await $.state.set(CONFIRM_ALL, false)
-        return
+        return null
       case KEY_CONFIRM:
-        await confirmForgetAll($, io, cwd, drawn.get(e.surface ?? ''))
-        return
+        await confirmForgetAll($, io, cwd, here)
+        return null
+      case KEY_DOWN:
+        return await moveMarker($, here, 1)
+      case KEY_UP:
+        return await moveMarker($, here, -1)
+      // Each reference spelled out: the validator lists state only from literal references.
+      case KEY_FULL:
+        await $.state.set(SHOW_FULL, !((await $.state.get(SHOW_FULL)).value ?? false))
+        return null
+      case KEY_HELP:
+        await $.state.set(SHOW_KEYS, !((await $.state.get(SHOW_KEYS)).value ?? false))
+        return null
+      case KEY_DISMISS:
+        await $.state.set(LAST_WARNING, null)
+        return null
+      case KEY_SEARCH:
+        await $.state.set(SEARCHING, true)
+        return KEY_SEARCH_FIELD
+      case KEY_SEARCH_CLEAR:
+        await $.state.set(QUERY, '')
+        await $.state.set(SEARCHING, false)
+        return null
+      // Only marks the retest as waiting for its confirm; the confirm and the run are Task 8's.
+      case KEY_RETEST:
+        if (here?.retestable) await $.state.set(CONFIRM_RETEST, here.retestable)
+        return null
       default:
-        await selectRow($, wrapIo, e.element).catch(() => undefined)
+        if (element.startsWith(ROW_KEY_PREFIX)) await pressRow($, io, element, here).catch(() => undefined)
+        return null
     }
   } catch {
     // The press changes nothing.
+    return null
   }
+}
+
+/** Enter in the search field: apply what it holds (empty clears) and close it. Never throws. */
+async function onPaneInput($: ModEngine, e: InputEvent): Promise<void> {
+  if (e.element !== KEY_SEARCH_FIELD || e.kind !== 'submit') return
+  try {
+    await $.state.set(QUERY, searchText(e.value))
+    await $.state.set(SEARCHING, false)
+  } catch {
+    // The search stays as it was.
+  }
+}
+
+/**
+ * Remember the warning this call raised, so the pane's Just warned card shows it, and redraw
+ * an open pane. Never throws: a lost card must not cost the warning itself.
+ */
+async function noteWarning($: ModEngine, io: Io, hash: string): Promise<void> {
+  try {
+    await $.state.set(LAST_WARNING, { hash, at: io.now() })
+  } catch {
+    // The card misses this warning; the agent still gets it.
+  }
+  await bumpRev($)
 }
 
 /** What /cassandra shows when it cannot answer; the engine already labels it "cassandra: ". */
@@ -740,21 +940,38 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
 
   // Presses and focus moves run one at a time, in order, so a Forget reads the selection
   // the press or the move before it left.
-  let pressing: Promise<void> = Promise.resolve()
+  let pressing: Promise<unknown> = Promise.resolve()
   on('ui.press', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
     const done = pressing.then(() => onPanePress($, e, wrapIo, drawn))
     pressing = done
-    await done
+    const ring = await done
     // A press that fails beneath still counts as taken here: the action already ran.
-    return next(e).catch(() => ({ element: e.element }))
+    const pressed = await next(e).catch(() => ({ element: e.element }))
+    // After the press, never inside it: the move raises ui.focus, which waits its turn behind this press.
+    if (ring !== null) await $.ui.focus({ requestId: PANE_ID, key: ring }).catch(() => undefined)
+    return pressed
   })
 
+  on('ui.input', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
+    const done = pressing.then(() => onPaneInput($, e))
+    pressing = done
+    await done
+    return next(e).catch(() => ({ element: e.element, value: e.value }))
+  })
+
+  // The element the ring was last moved onto, so a backward walk onto a hidden twin is told apart.
+  let focused: string | null = null
   on('ui.focus', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
-    const done = pressing.then(() => selectRow($, wrapIo, e.element)).catch(() => undefined)
+    const twin = e.element === undefined ? undefined : twinTarget(e.element, focused)
+    // Backward past the first tab: the ring stays where it is.
+    if (twin === null) return {}
+    const element = twin ?? e.element
+    focused = element ?? null
+    const done = pressing.then(() => selectRow($, wrapIo, element)).catch(() => undefined)
     pressing = done
     await done
     // A move that fails beneath leaves the ring where it was.
-    return next(e).catch(() => ({ deny: 'cassandra: the focus could not move.' }))
+    return next(twin === undefined ? e : { ...e, element: twin }).catch(() => ({ deny: 'cassandra: the focus could not move.' }))
   })
 
   on('tool.call', { tool: new RegExp(`^${TOOL_PREFIX}(?:${QUERY_TOOL.name}|${RESOLVE_TOOL.name})$`) }, async ($, e) => answerTool($, wrapIo, e))
@@ -768,11 +985,14 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
       const sessionId = await $.session.id()
       // An unclaimed session is the binary's: stand aside through the same path as a core error.
       if (!(await claim(io, sessionId))) throw new Error('cassandra: session not claimed')
-      call = { tool: e.tool, input: toolInput(e), cwd: await $.session.cwd(), sessionId, agentId: e.agentId, paneAvailable: (await $.session.surfaces()).length > 0 }
+      // A surface list that cannot be read only words the warning without the pane.
+      const surfaces = await $.session.surfaces().catch(() => [])
+      call = { tool: e.tool, input: toolInput(e), cwd: await $.session.cwd(), sessionId, agentId: e.agentId, paneAvailable: surfaces.length > 0 }
       warning = await check(io, call)
     } catch {
       return next(e)
     }
+    if (warning) await noteWarning($, io, warning.hash)
 
     const result = await next(e)
 

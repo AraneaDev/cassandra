@@ -25,6 +25,8 @@ export interface NodeHostOptions {
   surfaces?: readonly string[]
   /** Every pane the mod opened with `$.ui.open`, in order. */
   opened?: unknown[]
+  /** Every element the mod moved the focus ring onto with `$.ui.focus`, by key, in order. */
+  focused?: string[]
   /** The plugin's `$.state`, in memory, by key. */
   state?: Map<string, unknown>
   /** Make `$.state.set` reject. */
@@ -52,6 +54,7 @@ export type NodeHost = ModHost & {
     status(text: string | undefined): void
     open(args: unknown): Promise<{ isPlaced: boolean }>
     resolve(e: unknown): typeof FAKE_ELEMENTS
+    focus(args: { requestId: string; key: string }): Promise<{ deny?: string }>
   }
 }
 
@@ -155,6 +158,10 @@ export function nodeHost(opts: NodeHostOptions = {}): NodeHost {
       },
       resolve() {
         return FAKE_ELEMENTS
+      },
+      async focus(args) {
+        ;(opts.focused ??= []).push(args.key)
+        return {}
       },
     },
   }

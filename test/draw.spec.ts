@@ -32,8 +32,9 @@ function walk(n: any, out: Node[] = []): Node[] {
   return out
 }
 const text = (n: Node): string => n.children.map((c) => (typeof c === 'string' ? c : text(c))).join('')
-/** What a line draws: a plain Button with a hotkey draws `k: ` before its label. */
+/** What a line draws: a plain Button with a hotkey draws `k: ` before its label; a `display="none"` Box nothing. */
 const drawnText = (n: Node): string => {
+  if (n.type === 'Box' && n.props.display === 'none') return ''
   const own = n.children.map((c) => (typeof c === 'string' ? c : drawnText(c))).join('')
   return n.type === 'Button' && n.props.hotkey ? `${n.props.hotkey}: ${own}` : own
 }
@@ -329,6 +330,74 @@ describe('drawPane', () => {
     const colours = new Set(all.flatMap((n) => [n.props.color, n.props.backgroundColor]).filter((c) => c !== undefined))
     const theme = ['text', 'inactive', 'subtle', 'suggestion', 'userMessageBackground', 'claude', 'success', 'warning', 'error', 'inverseText', 'composerSidebarBackground']
     for (const c of colours) expect(theme).toContain(c)
+  })
+})
+
+describe('search, the key list and the hidden twins', () => {
+  const withInput = { ...el, Input: 'Input' }
+  const drawWith = (m: PaneModel, columns: number, rows: number, extras: { searching?: boolean; showKeys?: boolean }) => {
+    const layout = layoutOf(m, columns, rows, { searching: extras.searching ?? false, showKeys: extras.showKeys ?? false, keyRows: pane.keyListRows(m).length })
+    const root = pane.drawPane(withInput, m, columns, layout) as Node
+    const lines = root.children as Node[]
+    return { all: walk(root), lines, texts: lines.map(drawnText), layout }
+  }
+
+  test('the open search field takes the row under the History title, as wide as the row allows, at every width', () => {
+    for (const columns of [40, 70, 120]) {
+      const { all, lines, texts, layout } = drawWith(model({}, { query: 'bun' }), columns, 30, { searching: true })
+      expect(layout.search).toBe('field')
+      // The Input draws no text of its own here: it fills the Box sized for it.
+      const box = byKey(all, `${pane.KEY_SEARCH_FIELD}-box`)!
+      lines.forEach((l, i) => expect(cells(texts[i]!) + (walk(l).includes(box) ? box.props.width : 0)).toBe(columns))
+      const field = byKey(all, pane.KEY_SEARCH_FIELD)!
+      expect(field.type).toBe('Input')
+      expect(field.props.value).toBe('bun')
+      expect(typeof field.props.onSubmit).toBe('function')
+      expect(field.props.onSubmit()).toBeUndefined()
+      const at = texts.findIndex((t) => t.includes('search'))
+      expect(texts[at - 1]).toContain('History')
+      if (columns > 40) expect(byKey(all, pane.KEY_SEARCH_CLEAR)?.props.hotkey).toBe('x')
+    }
+  })
+
+  test('an applied search shows its query and x: Clear; a pane too short for it shows neither', () => {
+    const { texts } = drawWith(model({}, { query: 'bun test' }), 80, 30, {})
+    const line = texts.find((t) => t.includes('search'))!
+    expect(line).toContain('bun test')
+    expect(line).toContain('x: Clear')
+    expect(drawWith(model({}, { query: 'bun' }), 80, 5, {}).layout.search).toBeNull()
+  })
+
+  test('the key list opens under the list, rates first, and never pushes the pane past its rows', () => {
+    for (const [columns, rows] of [[40, 15], [80, 30], [120, 50]] as const) {
+      const { texts, layout } = drawWith(model(), columns, rows, { showKeys: true })
+      expect(texts.length).toBeLessThanOrEqual(rows)
+      for (const t of texts) expect(cells(t)).toBe(columns)
+      const title = texts.findIndex((t) => t.includes('Keys'))
+      expect(texts[title + 1]).toContain('fp 4.0%')
+      expect(texts.slice(title).length - 1).toBe(layout.keys)
+    }
+  })
+
+  test('the tabs carry j, k and each digit on hidden twins; a key the bar has no room for keeps its hotkey on one', () => {
+    const { all, texts } = drawWith(model(), 40, 30, {})
+    const twins = all.filter((n) => n.type === 'Box' && n.props.display === 'none').map((n) => n.children[0] as Node)
+    const hot = Object.fromEntries(twins.map((b) => [b.props.key, b.props.hotkey]))
+    expect(hot).toMatchObject({ down: 'j', up: 'k', 'tabkey:history': '1', 'tabkey:warnings': '2', 'tabkey:stale': '3', 'tabkey:denied': '4' })
+    expect(Object.keys(hot).filter((k) => k.startsWith(pane.KEY_TWIN_PREFIX)).length).toBeGreaterThan(0)
+    for (const t of twins) expect(typeof t.props.label).toBe('string')
+    for (const t of texts) expect(cells(t)).toBe(40)
+  })
+
+  test('twinTarget sends the ring to the tab after a twin, back to the tab before, or nowhere', () => {
+    expect(pane.twinTarget('down', null)).toBe('tab:history')
+    expect(pane.twinTarget('up', 'tab:history')).toBeNull()
+    expect(pane.twinTarget('tabkey:stale', 'tab:warnings')).toBe('tab:stale')
+    expect(pane.twinTarget('tabkey:stale', 'tab:stale')).toBe('tab:warnings')
+    expect(pane.twinTarget('tabkey:history', 'tab:history')).toBeNull()
+    expect(pane.twinTarget('twin:help', null)).toBeNull()
+    expect(pane.twinTarget('tab:stale', null)).toBeUndefined()
+    expect(pane.twinTarget('tabkey:nope', null)).toBeUndefined()
   })
 })
 

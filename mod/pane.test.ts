@@ -155,11 +155,12 @@ interface Drawn { type: string; props?: Record<string, unknown>; children?: unkn
 
 /**
  * What one line draws: a Button's one string child comes back as its `label`, and a plain
- * Button with a hotkey draws `k: ` before it.
+ * Button with a hotkey draws `k: ` before it. A Box with `display="none"` draws nothing.
  */
 function drawnText(n: unknown): string {
   if (typeof n === 'string') return n
   const e = n as Drawn
+  if (e.type === 'Box' && e.props?.display === 'none') return ''
   const own = (e.children ?? []).map(drawnText).join('') || (e.type === 'Button' ? String(e.props?.label ?? '') : '')
   return e.type === 'Button' && e.props?.hotkey ? `${String(e.props.hotkey)}: ${own}` : own
 }
@@ -223,6 +224,172 @@ test('a pane three rows tall draws the one line asking for more room, on both su
     const ui = await $.ui.mount({ ...PANE, props: sized(70, 3), surface, viewport })
     expect((await ui.findAll({ type: 'Text' })).map((t) => t.text)).toEqual(['Pane too short; make the window taller.'])
     expect(await ui.findAll({ type: 'Button' })).toEqual([])
+    await ui.unmount()
+  }
+})
+
+/** The keys of the rows a drawing lists, in order. */
+async function rowKeys(ui: { findAll(q: { type: string }): Promise<Array<{ key: string | undefined }>> }): Promise<string[]> {
+  return (await ui.findAll({ type: 'Button' })).map((b) => String(b.key)).filter((k) => k.startsWith('row:'))
+}
+
+/** A beneath that fails every call, and denies one whose command says `denied`. */
+function failing(on: On): void {
+  const h = on as unknown as (event: string, matcher: { tool: string }, hook: (_$: unknown, e: { command?: string }) => Promise<unknown>) => void
+  h('tool.call', { tool: 'Bash' }, async (_$, e) => (String(e.command).includes('denied') ? { deny: 'blocked by policy' } : { isError: true, result: 'Exit code 1', text: 'Exit code 1\nboom' }))
+}
+
+test('a warned call draws the Just warned card with the call; Dismiss and forgetting its record remove it', async ($, on) => {
+  memoryHost(on)
+  failing(on)
+  await $.tool.call({ tool: 'Bash', command: 'false # warn me' })
+  let ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  expect((await paneLines(ui)).join('\n')).not.toContain('Just warned')
+  await ui.unmount()
+
+  // The same call again: Cassandra warns, and the pane shows what was run.
+  await $.tool.call({ tool: 'Bash', command: 'false # warn me' })
+  ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  let lines = await paneLines(ui)
+  expect(lines.some((l) => l.includes('Just warned'))).toBe(true)
+  expect(lines.find((l) => l.includes('you ran'))).toContain('false # warn me')
+  await ui.press({ key: 'dismiss' })
+  expect((await paneLines(ui)).join('\n')).not.toContain('Just warned')
+  await ui.unmount()
+
+  // Warned again, then the record is forgotten: the card goes with it (Review Focus 5).
+  await $.tool.call({ tool: 'Bash', command: 'false # warn me' })
+  ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  expect((await paneLines(ui)).join('\n')).toContain('Just warned')
+  await ui.press({ key: 'forget' })
+  lines = await paneLines(ui)
+  expect(lines.join('\n')).not.toContain('Just warned')
+  expect(await rowKeys(ui)).toEqual([])
+  await ui.unmount()
+})
+
+test('the tab digits ride on hidden twins: 2 lists only the rows that would warn, 4 only the denials', async ($, on) => {
+  memoryHost(on)
+  failing(on)
+  await $.tool.call({ tool: 'Bash', command: 'false # one' })
+  await $.tool.call({ tool: 'Bash', command: 'echo denied' })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface, viewport })
+    expect(await rowKeys(ui)).toHaveLength(2)
+    expect((await ui.find({ key: 'tabkey:warnings' }))?.props.hotkey).toBe('2')
+    await ui.press({ key: 'tabkey:warnings' })
+    expect(await rowKeys(ui)).toHaveLength(1)
+    let lines = await paneLines(ui)
+    expect(lines.some((l) => l.includes('false # one'))).toBe(true)
+    expect(lines.some((l) => l.includes('echo denied'))).toBe(false)
+    await ui.press({ key: 'tabkey:denied' })
+    lines = await paneLines(ui)
+    expect(await rowKeys(ui)).toHaveLength(1)
+    expect(lines.some((l) => l.includes('echo denied'))).toBe(true)
+    // A press on the tab itself switches too.
+    await ui.press({ key: 'tab:history' })
+    expect(await rowKeys(ui)).toHaveLength(2)
+    // Every line is still the pane's width: the twins draw nothing.
+    for (const l of await paneLines(ui)) expect([...l].length).toBe(80)
+    await ui.unmount()
+  }
+})
+
+test('j moves the marker down and Enter on the marked row opens it in place; k moves it back', async ($, on) => {
+  memoryHost(on)
+  failing(on)
+  await $.tool.call({ tool: 'Bash', command: 'false # older' })
+  await $.tool.call({ tool: 'Bash', command: 'false # newer' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  const keys = await rowKeys(ui)
+  expect(keys).toHaveLength(2)
+  expect((await ui.find({ key: 'down' }))?.props.hotkey).toBe('j')
+  await ui.press({ key: 'down' })
+  // Enter presses the row under the ring, which j moved onto the marked row.
+  await ui.press({ key: keys[1]! })
+  let lines = await paneLines(ui)
+  const at = lines.findIndex((l) => l.includes('false # older'))
+  expect(lines[at + 1]).toContain('why it failed')
+  expect(lines.some((l) => l.includes('false # newer') && l.includes('▸'))).toBe(true)
+  // Enter again closes it.
+  await ui.press({ key: keys[1]! })
+  expect((await paneLines(ui)).join('\n')).not.toContain('why it failed')
+  await ui.press({ key: 'up' })
+  await ui.press({ key: keys[0]! })
+  lines = await paneLines(ui)
+  expect(lines[lines.findIndex((l) => l.includes('false # newer')) + 1]).toContain('why it failed')
+  await ui.unmount()
+})
+
+test('an expanded row with a fix note shows the fix line', async ($, on) => {
+  memoryHost(on, { git: true })
+  let calls = 0
+  // Fails, then passes (a fix note is kept and the record forgotten), then fails again.
+  on('tool.call', { tool: 'Bash' }, async () => (++calls === 2 ? { result: 'ok' } : { isError: true, result: 'Exit code 1', text: 'Exit code 1\nboom' }))
+  for (let i = 0; i < 3; i++) await $.tool.call({ tool: 'Bash', command: 'bun test # fixed once' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  const [key] = await rowKeys(ui)
+  await ui.press({ key: key! })
+  const lines = await paneLines(ui)
+  expect(lines.some((l) => /^\s+fix\s+\S/.test(l))).toBe(true)
+  await ui.unmount()
+})
+
+test('s opens the search; Enter applies it, x clears it; Forget all still forgets every counted record', async ($, on) => {
+  memoryHost(on)
+  failing(on)
+  for (const c of ['bun test # a', 'bun run lint # b', 'npm test # c']) await $.tool.call({ tool: 'Bash', command: c })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  expect(await rowKeys(ui)).toHaveLength(3)
+  expect(await ui.find({ key: 'search-field' })).toBeUndefined()
+  await ui.press({ key: 'search' })
+  expect((await ui.find({ key: 'search-field' }))?.type).toBe('Input')
+  // Typing alone applies nothing; Enter does.
+  await ui.input({ key: 'search-field', text: 'bun', kind: 'change' })
+  expect(await rowKeys(ui)).toHaveLength(3)
+  await ui.input({ key: 'search-field', text: 'bun' })
+  expect(await ui.find({ key: 'search-field' })).toBeUndefined()
+  expect(await rowKeys(ui)).toHaveLength(2)
+  expect((await paneLines(ui)).join('\n')).not.toContain('npm test')
+  expect((await ui.find({ key: 'search-clear' }))?.props.hotkey).toBe('x')
+  await ui.press({ key: 'search-clear' })
+  expect(await rowKeys(ui)).toHaveLength(3)
+  expect(await ui.find({ key: 'search-clear' })).toBeUndefined()
+
+  // With the filter on, the confirm counts and forgets every record, not only those shown.
+  await ui.press({ key: 'search' })
+  await ui.input({ key: 'search-field', text: 'npm' })
+  expect(await rowKeys(ui)).toHaveLength(1)
+  await ui.press({ key: 'forget-all' })
+  expect((await ui.find({ key: 'forget-all-confirm' }))?.text).toBe('Forget all 3 records')
+  await ui.press({ key: 'forget-all-confirm' })
+  expect(await rowKeys(ui)).toEqual([])
+  await ui.unmount()
+  const after = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  await after.press({ key: 'search-clear' }).catch(() => undefined)
+  expect((await after.find({ type: 'Text', text: /Nothing remembered/ }))?.text.trim()).toBe('Nothing remembered in this project.')
+  await after.unmount()
+})
+
+test('h opens the key list, rates first, within the pane; h again closes it', async ($, on) => {
+  memoryHost(on)
+  failing(on)
+  for (let i = 0; i < 6; i++) await $.tool.call({ tool: 'Bash', command: `false # keys ${i}` })
+  for (const [columns, rows] of [[80, 30], [40, 15]] as const) {
+    const ui = await $.ui.mount({ ...PANE, props: sized(columns, rows), surface: 'terminal', viewport })
+    // Where the bar has no room for Keys, its hotkey rides on a hidden twin.
+    const help = columns === 40 ? 'twin:help' : 'help'
+    expect((await ui.find({ key: help }))?.props.hotkey).toBe('h')
+    await ui.press({ key: help })
+    const lines = await paneLines(ui)
+    expect(lines.length).toBeLessThanOrEqual(rows)
+    for (const l of lines) expect([...l].length).toBe(columns)
+    const title = lines.findIndex((l) => l.includes('Keys'))
+    expect(title).toBeGreaterThan(0)
+    expect(lines[title + 1]).toContain('No warning raised yet, so no rates.')
+    expect(await rowKeys(ui)).not.toHaveLength(0)
+    await ui.press({ key: help })
+    expect((await paneLines(ui)).join('\n')).not.toContain('No warning raised yet')
     await ui.unmount()
   }
 })

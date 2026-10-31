@@ -30,6 +30,18 @@ export const KEY_DISMISS = 'dismiss'
 export const KEY_SEARCH = 'search'
 /** Key of the button that shows the key list. */
 export const KEY_HELP = 'help'
+/** Key of the hidden twin whose `j` moves the marker down a row. */
+export const KEY_DOWN = 'down'
+/** Key of the hidden twin whose `k` moves the marker up a row. */
+export const KEY_UP = 'up'
+/** Key prefix of a tab's hidden twin, which carries its digit; the tab follows (`tabkey:warnings`). */
+export const KEY_TABKEY_PREFIX = 'tabkey:'
+/** Key prefix of the hidden twin of a key the bar had no room for; the key follows (`twin:help`). */
+export const KEY_TWIN_PREFIX = 'twin:'
+/** Key of the search field. */
+export const KEY_SEARCH_FIELD = 'search-field'
+/** Key of the button that clears the search. */
+export const KEY_SEARCH_CLEAR = 'search-clear'
 
 // Every colour is a Claude Code theme key, so the pane follows the person's theme.
 /** Headings and the call's own text. */
@@ -67,13 +79,20 @@ const TABS: ReadonlyArray<{ id: PaneTab; name: string; digit: string }> = [
 type Tag = (props: Record<string, unknown>) => unknown
 
 /** The engine's elements, resolved from `$.ui.resolve`. */
-export interface Elements { Box: unknown; Text: unknown; Button: unknown }
+export interface Elements { Box: unknown; Text: unknown; Button: unknown; Input?: unknown }
 
 // A press does nothing here: the real actions run in `ui.press` hooks keyed by element key.
 const noop = (): void => {}
 
-/** A run of text in one style, or a Button when it carries `press`. */
-interface Seg { text: string; color?: string; bg?: string; bold?: boolean; press?: { key: string; hotkey?: string } }
+/**
+ * A run of text in one style; a Button when it carries `press` (out of sight when `hidden`,
+ * there only for its hotkey); a text field `text`'s cells wide when it carries `field`.
+ */
+interface Seg {
+  text: string; color?: string; bg?: string; bold?: boolean
+  press?: { key: string; hotkey?: string; label?: string }; hidden?: true
+  field?: { key: string; value: string; placeholder: string }
+}
 /** One drawn line: its segments across the pane, the ground under all of it, and the Button the whole line is. */
 interface Line { key: string; segs: Seg[]; bg?: string; button?: string }
 
@@ -204,19 +223,48 @@ function figure(n: number, color: string, label: string): Seg[] {
   return [{ text: String(n), bold: true, color: n > 0 ? color : HEADING }, { text: ` ${label}`, color: SECONDARY }]
 }
 
-/** The tabs: each with its count as a superscript, the active one on the accent ground. Digits stand in for the others' names on a narrow pane. */
+/** A Button out of sight, there only for its hotkey: it takes no cells. */
+const twin = (id: string, label: string, hotkey: string): Seg => ({ text: '', hidden: true, press: { key: id, hotkey, label } })
+
+/**
+ * The tabs: each with its count as a superscript, the active one on the accent ground. Digits
+ * stand in for the others' names on a narrow pane. A plain Button with a hotkey draws `1: `
+ * before its name, so each tab's digit rides on a hidden twin just before it, and so do `j`
+ * and `k`, before the first tab; the focus hook moves the ring off a twin (`twinTarget`).
+ */
 function tabs(f: Frame, model: PaneModel, layout: PaneLayout): Line {
   const active = model.view.tab
-  const segs = TABS.map((t): Seg => {
+  const groups = TABS.map((t, i): Seg[] => {
     const on = t.id === active
     const label = layout.tabs === 'names' || on ? t.name : t.digit
-    return {
+    const tab: Seg = {
       text: ` ${label}${superscript(model.tabs[t.id])} `,
       press: { key: `${KEY_TAB_PREFIX}${t.id}` },
       ...(on ? { color: ON_FILL, bg: ACCENT, bold: true } : { color: SECONDARY }),
     }
+    const lead = i === 0 ? [twin(KEY_DOWN, 'Next row', 'j'), twin(KEY_UP, 'Previous row', 'k')] : []
+    return [...lead, twin(`${KEY_TABKEY_PREFIX}${t.id}`, t.name, t.digit), tab]
   })
-  return line(f, 'tabs', joined(segs.map((s) => [s]), layout.tabs === 'names' ? 2 : 1))
+  return line(f, 'tabs', joined(groups, layout.tabs === 'names' ? 2 : 1))
+}
+
+/**
+ * Where a focus ring headed for a hidden twin goes instead: onto the tab it sits before, or,
+ * when the ring comes from that tab (a backward walk), onto the tab before it; null keeps the
+ * ring where it is (backward past the first tab, or onto a bar key's twin). Undefined for any
+ * element not a twin.
+ */
+export function twinTarget(element: string, focused: string | null): string | null | undefined {
+  // A bar key's twin sits after every key the bar drew: the ring stops before it.
+  if (element.startsWith(KEY_TWIN_PREFIX)) return null
+  const id = element === KEY_DOWN || element === KEY_UP
+    ? TABS[0]!.id
+    : element.startsWith(KEY_TABKEY_PREFIX) ? element.slice(KEY_TABKEY_PREFIX.length) : null
+  const at = TABS.findIndex((t) => t.id === id)
+  if (at < 0) return undefined
+  if (focused !== `${KEY_TAB_PREFIX}${TABS[at]!.id}`) return `${KEY_TAB_PREFIX}${TABS[at]!.id}`
+  const before = element === KEY_DOWN || element === KEY_UP ? undefined : TABS[at - 1]
+  return before === undefined ? null : `${KEY_TAB_PREFIX}${before.id}`
 }
 
 /** The four counters: a row of figures over a row of labels, then a blank line; or one short line. */
@@ -364,9 +412,32 @@ interface BarKey { seg: Seg; keep: number }
 const noticeLine = (f: Frame, notice: string): Line => line(f, 'notice', [{ text: notice, color: WARNING }])
 
 /**
+ * The search row under the History title: the field, open and as wide as the row allows, or
+ * the query it applied; either way with `x: Clear` against the right edge.
+ */
+function searchLine(f: Frame, model: PaneModel, search: 'field' | 'query'): Line {
+  const label: Seg = { text: 'search  ', color: SECONDARY }
+  const clear = [{ text: '  ' }, key(KEY_SEARCH_CLEAR, 'Clear', 'x')]
+  const query = model.view.query
+  if (search === 'query') return line(f, 'search', spread([label, { text: query, color: HEADING, bold: true }], clear, f.inner))
+  // Too narrow for Clear as well: the field keeps the row, Clear goes.
+  const withClear = f.inner - width([label]) - width(clear)
+  const room = Math.max(1, withClear >= 1 ? withClear : f.inner - width([label]))
+  const field: Seg = { text: spaces(room), field: { key: KEY_SEARCH_FIELD, value: query, placeholder: 'part of a call, then Enter' } }
+  return line(f, 'search', [label, field, ...(withClear >= 1 ? clear : [])])
+}
+
+/** The key list `h` opens, in the rows the layout gave it: its title, the rates, then the keys. */
+function keyList(f: Frame, model: PaneModel, rows: number): Line[] {
+  const title = titleRule(f, 'keys-title', { text: '?', color: SECONDARY }, 'Keys', [])
+  const body = keyListRows(model).slice(0, rows - 1).map((t, i) => line(f, `keys-${i}`, [{ text: t, color: i === 0 ? SECONDARY : HEADING }]))
+  return [title, ...body]
+}
+
+/**
  * The footer key bar on its faint ground. Normally the keys that act here, in order, the
- * ones that matter least left out when the width is short. While a Forget all waits for its
- * answer, the confirm and Cancel. A notice the layout gave no row of its own follows the keys.
+ * ones that matter least left out when the width is short (their hotkeys kept on hidden
+ * twins). While a Forget all waits for its answer, the confirm and Cancel. A notice the layout gave no row of its own follows the keys.
  * A pending retest is not drawn here: its confirm, with the whole call, is Task 8's block.
  */
 function keyBar(f: Frame, model: PaneModel, layout: PaneLayout): Line {
@@ -393,7 +464,10 @@ function keyBar(f: Frame, model: PaneModel, layout: PaneLayout): Line {
     used += w
   }
   const segs = joined(keys.filter((k) => kept.has(k)).map((k) => [k.seg]), 2)
-  return line(f, 'action-row', [...segs, ...notice], bg)
+  // A key left out keeps its hotkey on a hidden twin, so a narrow pane still answers it.
+  const twins = keys.filter((k) => !kept.has(k)).map(({ seg: { text, press } }) =>
+    twin(`${KEY_TWIN_PREFIX}${press!.key}`, text.slice(press!.hotkey!.length + 2), press!.hotkey!))
+  return line(f, 'action-row', [...segs, ...twins, ...notice], bg)
 }
 
 /**
@@ -404,13 +478,14 @@ export function keyListRows(model: PaneModel): string[] {
   return [
     model.rates ?? 'No warning raised yet, so no rates.',
     '1–4    switch tabs',
-    'j k    move the marker',
+    'j k    move the marker (or the arrows)',
     'Enter  open or close the marked row',
     'r      retest the marked call (asks first)',
     'f      forget the marked record',
     'a      forget every record (asks first)',
     'o      the marked record\'s full output',
-    's      search the calls',
+    's      search the calls; Enter applies it',
+    'x      clear the search',
     'd      dismiss the Just warned card',
     'h      show or hide this list',
   ]
@@ -424,10 +499,12 @@ function merged(segs: readonly Seg[]): Seg[] {
   const out: Seg[] = []
   const style = (s: Seg): string => JSON.stringify([s.color ?? null, s.bg ?? null, s.bold ?? false])
   const blank = (s: Seg): boolean => /^ *$/.test(s.text)
+  // A Button or a field is an element of its own: never joined, never dropped for drawing no text.
+  const own = (s: Seg): boolean => s.press !== undefined || s.field !== undefined
   for (const s of segs) {
-    if (s.text === '') continue
+    if (s.text === '' && !own(s)) continue
     const last = out[out.length - 1]
-    if (last === undefined || last.press !== undefined || s.press !== undefined || last.bg !== s.bg) {
+    if (last === undefined || own(last) || own(s) || last.bg !== s.bg) {
       out.push(s)
     } else if (style(last) === style(s) || blank(s)) {
       out[out.length - 1] = { ...last, text: last.text + s.text }
@@ -459,6 +536,8 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, layout
   const Box = el.Box as Tag
   const Text = el.Text as Tag
   const Button = el.Button as Tag
+  // Mobile draws no text field: there the search shows what it holds as text.
+  const Input = el.Input as Tag | undefined
 
   const one = (s: string): unknown => <Box flexDirection="column"><Text wrap="truncate-end">{fit(s, columns)}</Text></Box>
   if (model.error) return one(model.error)
@@ -474,19 +553,40 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, layout
     ...counters(f, model, layout),
     ...(layout.justWarned ? justWarned(f, model) : []),
     ...(layout.historyTitle ? [titleRule(f, 'history-title', glyph, tab, [{ text: plural(model.rows.length, 'record', 'records'), color: SECONDARY }])] : []),
+    ...(layout.search === null ? [] : [searchLine(f, model, layout.search)]),
     ...listLines(f, model, layout),
+    ...(layout.keys > 0 ? keyList(f, model, layout.keys) : []),
     ...(layout.notice && model.view.notice ? [noticeLine(f, model.view.notice)] : []),
     keyBar(f, model, layout),
   ]
 
-  const drawSeg = (s: Seg): unknown =>
-    s.press === undefined
+  const drawSeg = (s: Seg): unknown => {
+    if (s.field !== undefined) {
+      const room = cells(s.text)
+      const shown = padTo(fit(s.field.value, room), room)
+      return (
+        <Box key={`${s.field.key}-box`} width={room} flexShrink={0} overflow="hidden">
+          {Input === undefined
+            ? <Text {...textProps({ text: shown, color: HEADING })}>{shown}</Text>
+            : <Input key={s.field.key} value={s.field.value} placeholder={s.field.placeholder} submitLabel="search" onSubmit={noop} />}
+        </Box>
+      )
+    }
+    if (s.press !== undefined && s.hidden) {
+      return (
+        <Box key={`${s.press.key}-twin`} display="none">
+          <Button key={s.press.key} plain label={s.press.label} {...(s.press.hotkey === undefined ? {} : { hotkey: s.press.hotkey })} onPress={noop} />
+        </Box>
+      )
+    }
+    return s.press === undefined
       ? <Text {...textProps(s)}>{s.text}</Text>
       : (
           <Button key={s.press.key} plain {...(s.press.hotkey === undefined ? {} : { hotkey: s.press.hotkey })} onPress={noop}>
             {s.press.hotkey === undefined ? <Text {...textProps(s)}>{s.text}</Text> : s.text.slice(s.press.hotkey.length + 2)}
           </Button>
         )
+  }
   const drawLine = (l: Line): unknown => {
     const segs = merged(l.segs.length > 0 ? l.segs : [{ text: spaces(columns), ...(l.bg === undefined ? {} : { bg: l.bg }) }])
     const body = l.button === undefined

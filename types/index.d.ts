@@ -6,6 +6,19 @@ export type CassandraHash = string
 
 declare module 'claude-code' {
   interface PluginState {
-    cassandra: { selected: CassandraHash | null; confirmAll: boolean; rev: number; notice: string | null }
+    cassandra: {
+      selected: CassandraHash | null
+      confirmAll: boolean
+      rev: number
+      notice: string | null
+      tab: 'history' | 'warnings' | 'stale' | 'denied'
+      expanded: boolean
+      showFull: boolean
+      query: string
+      confirmRetest: CassandraHash | null
+      lastWarning: { hash: CassandraHash; at: string } | null
+      searching: boolean
+      showKeys: boolean
+    }
   }
 }

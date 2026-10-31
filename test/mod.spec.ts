@@ -981,10 +981,11 @@ test('every status refresh bumps rev, so an open pane redraws by itself', async 
   await call('bun test', failed())
   const after = Number(state('rev'))
   expect(after).toBeGreaterThan(0)
+  // The same call warns first (one bump for the Just warned card), then passes (one for the refresh).
   await call('bun test', ok())
-  expect(Number(state('rev'))).toBe(after + 1)
-  await start()
   expect(Number(state('rev'))).toBe(after + 2)
+  await start()
+  expect(Number(state('rev'))).toBe(after + 3)
 })
 
 test('a single forget whose command answers a non-zero code sets the notice to its text', async () => {
@@ -1376,4 +1377,196 @@ test('after a hot reload, a forget before any redraw does nothing; after a rende
   await render()
   await press('forget')
   expect(await idsLeft()).toEqual([keys[0]!])
+})
+
+// ---- view state, keys and the Just warned feed ----
+
+/** The full hash of the row a key names. */
+const hashOf = async (key: string) => (await remembered()).find((r) => r.hash.startsWith(key.slice('row:'.length)))!.hash
+/** Type into, or press Enter in, one of the pane's Inputs. */
+const input = async (element: string, value: string, kind: 'change' | 'submit' = 'submit') => {
+  let passed = 0
+  const r = await paneHook('ui.input')(host, { ...PANE, plugin: 'cassandra', element, kind, value, surface: 'terminal' }, async (e) => { passed += 1; return { element: e.element, value: e.value } })
+  expect(passed).toBe(1)
+  return r
+}
+/** A focus move through the hook, answering what the hook did with it. */
+const moveRing = async (element: string) => {
+  const landed: Array<string | undefined> = []
+  const r = await paneHook('ui.focus')(host, { ...PANE, element, origin: { kind: 'person' } }, async (e) => { landed.push(e.element); return {} })
+  return { r, landed }
+}
+
+test('a warned call keeps its hash and time as the last warning, and redraws the pane', async () => {
+  await call('bun test', failed())
+  const rev = Number(state('rev'))
+  const { r } = await call('bun test', failed())
+  expect(r.context).toHaveLength(1)
+  const hash = (await remembered())[0]!.hash
+  expect(state('lastWarning')).toEqual({ hash, at: expect.any(String) })
+  expect(Number.isNaN(Date.parse((state('lastWarning') as { at: string }).at))).toBe(false)
+  expect(Number(state('rev'))).toBeGreaterThan(rev)
+})
+
+test('a surface list that cannot be read still warns; a last warning that cannot be kept still warns', async () => {
+  await call('bun test', failed())
+  host = { ...host, session: { ...host.session, surfaces: async () => { throw new Error('no surfaces') } } }
+  expect((await call('bun test', failed())).r.context).toHaveLength(1)
+  opts.stateSetRejects = true
+  expect((await call('bun test', failed())).r.context).toHaveLength(1)
+})
+
+test('dismiss clears the last warning; o and h toggle the full output and the key list', async () => {
+  await call('bun test', failed())
+  await call('bun test', failed())
+  expect(state('lastWarning')).not.toBeNull()
+  await press('dismiss')
+  expect(state('lastWarning')).toBeNull()
+  await press('full')
+  expect(state('showFull')).toBe(true)
+  await press('full')
+  expect(state('showFull')).toBe(false)
+  await press('help')
+  expect(state('showKeys')).toBe(true)
+  expect((await render()).some((n) => n.props?.key === 'keys-title')).toBe(true)
+  // A bar key's hidden twin acts as the key itself.
+  await press('twin:help')
+  expect(state('showKeys')).toBe(false)
+})
+
+test('r marks the selected record as waiting for its retest confirm, and only a retestable one', async () => {
+  await seedFailure('bun test')
+  await press('retest')
+  // Nothing drawn here yet: nothing to retest.
+  expect(state('confirmRetest')).toBeUndefined()
+  const [key] = await rowKeys()
+  await press('retest')
+  expect(state('confirmRetest')).toBe(await hashOf(key!))
+  opts.state!.set('confirmRetest', null)
+  await call('echo nope', { deny: 'blocked' })
+  await press(`${(await rowKeys()).find((k) => k !== key)!}`)
+  await render()
+  await press('retest')
+  expect(state('confirmRetest')).toBeNull()
+})
+
+test('j and k move the marker along the drawn list, stop at its ends, and take the ring with it', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  await seedFailure('cargo test')
+  const keys = await rowKeys()
+  await press('down')
+  expect(state('selected')).toBe(await hashOf(keys[1]!))
+  expect(opts.focused).toEqual([keys[1]])
+  await press('down')
+  await press('down')
+  expect(state('selected')).toBe(await hashOf(keys[2]!))
+  await press('up')
+  expect(state('selected')).toBe(await hashOf(keys[1]!))
+  for (let i = 0; i < 3; i++) await press('up')
+  expect(state('selected')).toBe(await hashOf(keys[0]!))
+  expect(opts.focused?.at(-1)).toBe(keys[0])
+})
+
+test('j on a surface that drew nothing, or drew no rows, moves nothing', async () => {
+  await press('down')
+  expect(state('selected')).toBeUndefined()
+  await render()
+  await press('down')
+  expect(state('selected')).toBeUndefined()
+  expect(opts.focused).toBeUndefined()
+})
+
+test('Enter on the marked row opens it in place and again closes it; Enter on another row marks it', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  await press(keys[0]!)
+  expect(state('expanded')).toBe(true)
+  expect((await render()).some((n) => n.props?.key === 'detail-why')).toBe(true)
+  await press(keys[0]!)
+  expect(state('expanded')).toBe(false)
+  await press(keys[1]!)
+  expect(state('selected')).toBe(await hashOf(keys[1]!))
+  expect(state('expanded')).toBe(false)
+})
+
+test('switching tab keeps the marked row when the tab lists it, else marks the tab\'s first row, closed', async () => {
+  await seedFailure('bun test')
+  await call('echo nope', { deny: 'blocked' })
+  const denied = (await remembered()).find((r) => r.record.kind === 'denial')!.hash
+  const failed = (await remembered()).find((r) => r.record.kind !== 'denial')!.hash
+  await render()
+  await press(`row:${failed.slice(0, 8)}`)
+  await press(`row:${failed.slice(0, 8)}`)
+  expect(state('expanded')).toBe(true)
+  await press('tabkey:warnings')
+  expect(state('tab')).toBe('warnings')
+  expect(state('selected')).toBe(failed)
+  expect(state('expanded')).toBe(true)
+  await press('tab:denied')
+  expect(state('tab')).toBe('denied')
+  expect(state('selected')).toBe(denied)
+  expect(state('expanded')).toBe(false)
+  expect(await rowKeys()).toEqual([`row:${denied.slice(0, 8)}`])
+})
+
+test('a tab the state holds that is no tab reads as History', async () => {
+  await seedFailure('bun test')
+  opts.state = new Map<string, unknown>([['tab', 'bogus']])
+  expect(await rowKeys()).toHaveLength(1)
+  expect((await render()).some((n) => n.props?.key === 'tab:history' && walk(n).some((t) => t.props?.backgroundColor === 'suggestion'))).toBe(true)
+})
+
+test('s opens the search and moves the ring into it; typing applies nothing, Enter applies one trimmed line, x clears', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  await press('search')
+  expect(state('searching')).toBe(true)
+  expect(opts.focused).toEqual(['search-field'])
+  // This host's table has no Input, as mobile's: the field's cells show what it holds as text.
+  expect((await render()).some((n) => n.props?.key === 'search-field-box')).toBe(true)
+  await input('search-field', 'npm', 'change')
+  expect(state('query')).toBeUndefined()
+  await input('other-field', 'npm')
+  expect(state('query')).toBeUndefined()
+  expect(await input('search-field', '  npm\n test ')).toEqual({ element: 'search-field', value: '  npm\n test ' })
+  expect(state('query')).toBe('npm test')
+  expect(state('searching')).toBe(false)
+  expect(await rowKeys()).toHaveLength(1)
+  expect((await render()).some((n) => n.props?.key === 'search-field-box')).toBe(false)
+  expect((await render()).some((n) => n.props?.key === 'search-clear')).toBe(true)
+  await press('search-clear')
+  expect(state('query')).toBe('')
+  expect(await rowKeys()).toHaveLength(2)
+})
+
+test('Enter in the search whose state cannot be written changes nothing and still passes on', async () => {
+  opts.stateSetRejects = true
+  await input('search-field', 'npm')
+  expect(state('query')).toBeUndefined()
+  const r = await paneHook('ui.input')(host, { ...PANE, plugin: 'cassandra', element: 'search-field', kind: 'submit', value: 'x', surface: 'terminal' }, async () => { throw new Error('beneath') })
+  expect(r).toEqual({ element: 'search-field', value: 'x' })
+})
+
+test('the ring never rests on a hidden twin: it goes to the tab after it, back past it, or stays', async () => {
+  // Forward from outside the tabs onto j's twin: the first tab.
+  expect((await moveRing('down')).landed).toEqual(['tab:history'])
+  // Forward onto the second tab's twin: the second tab.
+  expect((await moveRing('tabkey:warnings')).landed).toEqual(['tab:warnings'])
+  // Back from the second tab onto its own twin: the tab before.
+  expect((await moveRing('tabkey:warnings')).landed).toEqual(['tab:history'])
+  // Back from the first tab onto its twin: nothing before it, the ring stays.
+  expect(await moveRing('tabkey:history')).toEqual({ r: {}, landed: [] })
+  expect(await moveRing('up')).toEqual({ r: {}, landed: [] })
+  // A bar key's twin is never a stop.
+  expect(await moveRing('twin:help')).toEqual({ r: {}, landed: [] })
+  // Any other element lands where it was headed.
+  expect((await moveRing('forget')).landed).toEqual(['forget'])
+})
+
+test('opening the pane drops a waiting retest confirm', async () => {
+  opts.state = new Map<string, unknown>([['confirmRetest', 'abc']])
+  await command('pane')
+  expect(state('confirmRetest')).toBeNull()
 })

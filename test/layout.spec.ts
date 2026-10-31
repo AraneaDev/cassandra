@@ -17,21 +17,21 @@ function model(n: number, over: { selected?: number; expanded?: boolean; warned?
 test('narrow and short: no branch, short counters inside the header, digit tabs', () => {
   expect(layoutOf(model(20), 40, 15)).toEqual({
     tier: 'narrow', tooShort: false, header: { branch: false, commit: false }, counters: 'in-header',
-    tabs: 'digits', justWarned: false, historyTitle: true, notice: false, list: { start: 0, count: 9, more: 11, rows: 11 }, detail: 'none',
+    tabs: 'digits', justWarned: false, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 9, more: 11, rows: 11 }, detail: 'none',
   })
 })
 
 test('medium: branch, short counters, tab names', () => {
   expect(layoutOf(model(10, { warned: true }), 70, 30)).toEqual({
     tier: 'medium', tooShort: false, header: { branch: true, commit: false }, counters: 'short',
-    tabs: 'names', justWarned: true, historyTitle: true, notice: false, list: { start: 0, count: 10, more: 0, rows: 18 }, detail: 'none',
+    tabs: 'names', justWarned: true, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 18 }, detail: 'none',
   })
 })
 
 test('wide: branch, commit and tile counters', () => {
   expect(layoutOf(model(10, { selected: 0, expanded: true }), 120, 50)).toEqual({
     tier: 'wide', tooShort: false, header: { branch: true, commit: true }, counters: 'tiles',
-    tabs: 'names', justWarned: false, historyTitle: true, notice: false, list: { start: 0, count: 10, more: 0, rows: 34 }, detail: 'full',
+    tabs: 'names', justWarned: false, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 34 }, detail: 'full',
   })
 })
 
@@ -39,7 +39,7 @@ test('below the minimum height only the one-line fallback is left', () => {
   expect(PANE_MIN_LINES).toBe(4)
   expect(layoutOf(model(10), 120, 3)).toEqual({
     tier: 'wide', tooShort: true, header: { branch: false, commit: false }, counters: 'in-header',
-    tabs: 'digits', justWarned: false, historyTitle: false, notice: false, list: { start: 0, count: 0, more: 10, rows: 0 }, detail: 'none',
+    tabs: 'digits', justWarned: false, historyTitle: false, notice: false, search: null, keys: 0, list: { start: 0, count: 0, more: 10, rows: 0 }, detail: 'none',
   })
 })
 
@@ -119,4 +119,26 @@ test('an unknown selection windows from the top', () => {
   const m = model(40)
   m.selected = 'gone'
   expect(layoutOf(m, 70, 15).list.start).toBe(0)
+})
+
+test('an open search field or an applied query takes one row from the list, before the notice', () => {
+  const extras = { searching: true, showKeys: false, keyRows: 0 }
+  const open = layoutOf(model(20), 70, 30, extras)
+  expect(open.search).toBe('field')
+  expect(open.list.rows).toBe(layoutOf(model(20), 70, 30).list.rows - 1)
+  const applied = model(20)
+  expect(layoutOf({ ...applied, view: { ...applied.view, query: 'bun' } }, 70, 30).search).toBe('query')
+  // With one list row left, neither takes it.
+  expect(layoutOf(model(20), 70, 5, extras).search).toBeNull()
+})
+
+test('the key list takes its title and rows from the list, leaves one list row, and is not drawn as a bare title', () => {
+  const keys = (rows: number) => layoutOf(model(20), 70, rows, { searching: false, showKeys: true, keyRows: 12 })
+  expect(keys(40).keys).toBe(13)
+  expect(keys(40).list.rows).toBe(layoutOf(model(20), 70, 40).list.rows - 13)
+  expect(keys(12).keys).toBe(layoutOf(model(20), 70, 12).list.rows - 1)
+  expect(keys(12).list.rows).toBe(1)
+  // Room for the title alone: no key list.
+  expect(keys(6).keys).toBe(0)
+  expect(layoutOf(model(20), 70, 40, { searching: false, showKeys: false, keyRows: 12 }).keys).toBe(0)
 })
