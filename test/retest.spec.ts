@@ -13,6 +13,7 @@ function fakeHost(over: Partial<RetestHost> = {}): RetestHost & { calls: unknown
   return {
     calls, toasts,
     cwd: async () => CWD,
+    claimed: async () => true,
     check: async () => ({ decision: 'allow' }),
     call: async (args) => { calls.push(args) },
     toast: (t) => { toasts.push(t) },
@@ -46,7 +47,7 @@ test('a denial or a record without usable input is not retested', async () => {
 
 test('a retest already in flight is not started twice', async () => {
   const host = fakeHost()
-  const retesting: Retesting = new Map([['abc', 'pending']])
+  const retesting: Retesting = new Map([['abc', { state: 'pending', cwd: CWD }]])
   expect(await runRetest(host, await seeded(), 'abc', retesting)).toEqual({ notice: 'That call is already being retested.' })
   expect(host.calls).toEqual([])
 })
@@ -67,8 +68,41 @@ test('a call that rejects says it could not run, and the retest is no longer in 
 test('without a toast the outcome becomes the notice', async () => {
   const retesting: Retesting = new Map()
   const host = fakeHost({
-    call: async () => { retesting.set('abc', 'passed') },
+    call: async () => { retesting.set('abc', { state: 'passed', cwd: CWD }) },
     toast: () => { throw new Error('no toasts') },
   })
   expect(await runRetest(host, await seeded(), 'abc', retesting)).toEqual({ notice: 'Retest passed; forgotten.' })
+})
+
+test('a session the mod has not claimed is refused before any permission question', async () => {
+  let asked = 0
+  const host = fakeHost({ claimed: async () => false, check: async () => { asked += 1; return { decision: 'allow' } } })
+  expect(await runRetest(host, await seeded(), 'abc', new Map())).toEqual({ notice: 'Cassandra\'s mod is not handling this session; nothing ran.' })
+  expect(asked).toBe(0)
+  expect(host.calls).toEqual([])
+})
+
+test('two overlapping Runs: the second finds the first busy while its permission question is open', async () => {
+  let answer: (v: { decision: 'allow' }) => void = () => undefined
+  const asked = new Promise<{ decision: 'allow' }>((r) => { answer = r })
+  const retesting: Retesting = new Map()
+  const host = fakeHost({ check: () => asked })
+  const io = await seeded()
+  const first = runRetest(host, io, 'abc', retesting)
+  // Let the first reach its permission question.
+  await new Promise((r) => setTimeout(r, 10))
+  expect(await runRetest(host, io, 'abc', retesting)).toEqual({ notice: 'That call is already being retested.' })
+  answer({ decision: 'allow' })
+  await first
+  expect(host.calls).toHaveLength(1)
+  expect(retesting.size).toBe(0)
+})
+
+test('a deny verdict leaves no retest in flight, and the pending entry holds the directory shown', async () => {
+  const retesting: Retesting = new Map()
+  let seen: unknown
+  const host = fakeHost({ check: async () => { seen = retesting.get('abc'); return { decision: 'deny' } } })
+  expect((await runRetest(host, await seeded(), 'abc', retesting)).notice).toBe('Your permission settings deny this call; nothing ran.')
+  expect(seen).toEqual({ state: 'pending', cwd: CWD })
+  expect(retesting.size).toBe(0)
 })

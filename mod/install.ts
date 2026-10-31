@@ -177,8 +177,8 @@ export interface ToolCallOutcome {
   [key: string]: unknown
 }
 
-/** A hook's `next`, which carries the dispatch's abort signal. */
-export type Next<E, R> = ((e: E) => Promise<R>) & { signal?: AbortSignal }
+/** A hook's `next`, which carries the dispatch's abort signal and who raised it (`plugin`: a `$` call's plugin, `engine` for the engine's own). */
+export type Next<E, R> = ((e: E) => Promise<R>) & { signal?: AbortSignal; origin?: { plugin: string } }
 
 /** The overloads of `on` this mod uses, typed structurally so CI can check them without the engine's types. */
 export interface ModOn {
@@ -240,9 +240,10 @@ function hostOf($: ModEngine): ModHost {
  * The calls a retest makes, each spelled out for the same reason as `hostOf`: the validator
  * follows `$` only into a function declared in this file.
  */
-function retestHostOf($: ModEngine): RetestHost {
+function retestHostOf($: ModEngine, claimed: () => Promise<boolean>): RetestHost {
   return {
     cwd: () => $.session.cwd(),
+    claimed,
     check: (args) => $.tool.check(args),
     call: (args) => $.tool.call(args),
     toast: (text) => $.ui.toast(text),
@@ -663,10 +664,10 @@ interface Pressed {
  * Run the retest the person confirmed, then show what it came to and redraw. Never throws.
  * Top-level because it takes `$`: the validator follows `$` nowhere else.
  */
-async function retestConfirmed($: ModEngine, io: Io, hash: string, retesting: Retesting): Promise<void> {
+async function retestConfirmed($: ModEngine, io: Io, hash: string, retesting: Retesting, claimed: () => Promise<boolean>): Promise<void> {
   let notice: string | null
   try {
-    notice = (await runRetest(retestHostOf($), io, hash, retesting)).notice
+    notice = (await runRetest(retestHostOf($, claimed), io, hash, retesting)).notice
   } catch {
     notice = 'The retest could not be run; nothing changed.'
   }
@@ -679,19 +680,19 @@ async function retestConfirmed($: ModEngine, io: Io, hash: string, retesting: Re
  * waiting, or one this surface could not show whole) drops the confirm and runs nothing.
  * Resolves to the run, for after the press. Rejects on a state failure.
  */
-async function confirmRetest($: ModEngine, io: Io, drawn: DrawnPane | undefined, retesting: Retesting): Promise<Pressed> {
+async function confirmRetest($: ModEngine, io: Io, drawn: DrawnPane | undefined, retesting: Retesting, claimed: () => Promise<boolean>): Promise<Pressed> {
   const hash = (await $.state.get(CONFIRM_RETEST)).value ?? null
   await $.state.set(CONFIRM_RETEST, null)
   await $.state.set(NOTICE, null)
   if (hash === null || drawn?.confirming !== hash) return { ring: null }
-  return { ring: null, retest: () => retestConfirmed($, io, hash, retesting) }
+  return { ring: null, retest: () => retestConfirmed($, io, hash, retesting, claimed) }
 }
 
 /**
  * Act on a press in the pane, by the key of the Button pressed. Resolves to what is left to
  * do once the press is done (see Pressed). Never throws.
  */
-async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: DrawnBySurface, retesting: Retesting): Promise<Pressed> {
+async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: DrawnBySurface, retesting: Retesting, claimed: () => Promise<boolean>): Promise<Pressed> {
   const done = { ring: null }
   try {
     const io = wrapIo(modIo(hostOf($)))
@@ -761,7 +762,7 @@ async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, 
         await $.state.set(CONFIRM_RETEST, null)
         return done
       case KEY_RETEST_CONFIRM:
-        return await confirmRetest($, io, here, retesting)
+        return await confirmRetest($, io, here, retesting, claimed)
       default:
         if (element.startsWith(ROW_KEY_PREFIX)) await pressRow($, io, element, here).catch(() => undefined)
         return done
@@ -890,15 +891,16 @@ export function outcomeOf(r: ToolCallOutcome, aborted: boolean, tool?: string): 
  */
 async function settleRetest($: ModEngine, io: Io, call: Call, hash: string, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>, retesting: Retesting): Promise<ToolCallOutcome> {
   const result = await next(e)
+  const entry = retesting.get(hash) ?? { state: 'running', cwd: call.cwd }
   try {
     const outcome = outcomeOf(result, next.signal?.aborted === true, call.tool)
     if (outcome.kind !== 'success' && outcome.kind !== 'failure') {
-      retesting.set(hash, 'not_run')
+      retesting.set(hash, { ...entry, state: 'not_run' })
       return result
     }
     const changed = await settle(io, call, outcome, null)
     await appendStat(io, await pathsFor(io, call.cwd), { kind: outcome.kind === 'success' ? 'retest_cleared' : 'retest_failed', hash })
-    retesting.set(hash, outcome.kind === 'success' ? 'passed' : 'failed')
+    retesting.set(hash, { ...entry, state: outcome.kind === 'success' ? 'passed' : 'failed' })
     if (changed) await refreshStatus($, io)
   } catch {
     // The call happened; only the bookkeeping is lost.
@@ -1048,7 +1050,8 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
   // the press or the move before it left.
   let pressing: Promise<unknown> = Promise.resolve()
   on('ui.press', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
-    const done = pressing.then(() => onPanePress($, e, wrapIo, drawn, retesting))
+    const claimed = async (): Promise<boolean> => claim(wrapIo(modIo(hostOf($))), await $.session.id())
+    const done = pressing.then(() => onPanePress($, e, wrapIo, drawn, retesting, claimed))
     pressing = done
     const { ring, retest } = await done
     // A press that fails beneath still counts as taken here: the action already ran.
@@ -1089,6 +1092,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     let call: Call
     let warning: Warning | null = null
     let retested: string | null = null
+    let refused: string | null = null
     try {
       io = wrapIo(modIo(hostOf($)))
       const sessionId = await $.session.id()
@@ -1097,17 +1101,26 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
       // A surface list that cannot be read only words the warning without the pane.
       const surfaces = await $.session.surfaces().catch(() => [])
       call = { tool: e.tool, input: toolInput(e), cwd: await $.session.cwd(), sessionId, agentId: e.agentId, paneAvailable: surfaces.length > 0 }
-      // The pane's own retest: the person asked for it, so it is not warned about.
-      const hash = retesting.size > 0 ? await callHash(io, call) : null
-      if (hash !== null && retesting.get(hash) === 'pending') {
-        retesting.set(hash, 'running')
-        retested = hash
+      // The pane's own retest, raised by this plugin: the person asked for it, so it is not
+      // warned about. A model's call of the same fingerprint is any other call.
+      const hash = retesting.size > 0 && next.origin?.plugin === PLUGIN_NAME ? await callHash(io, call) : null
+      const pending = hash === null ? undefined : retesting.get(hash)
+      if (hash !== null && pending?.state === 'pending') {
+        // It runs only from the directory its confirm showed.
+        if (call.cwd !== pending.cwd) {
+          retesting.set(hash, { ...pending, state: 'not_run' })
+          refused = `Retest refused: the shell is now in ${call.cwd}, not ${pending.cwd}.`
+        } else {
+          retesting.set(hash, { ...pending, state: 'running' })
+          retested = hash
+        }
       } else {
         warning = await check(io, call)
       }
     } catch {
       return next(e)
     }
+    if (refused !== null) return { deny: refused }
     if (retested !== null) return settleRetest($, io, call, retested, e, next, retesting)
     if (warning) await noteWarning($, io, warning.hash)
 

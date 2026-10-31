@@ -10,6 +10,8 @@ import { readRecord } from '../src/core/record.ts'
  */
 export interface RetestHost {
   cwd(): Promise<string>
+  /** Whether the mod handles this session; when not, the binary records its calls and a retest is not the mod's to run. */
+  claimed(): Promise<boolean>
   check(args: { tool: string; input: unknown }): Promise<{ decision: 'allow' | 'ask' | 'deny' }>
   call(args: { tool: string; consent: string; [key: string]: unknown }): Promise<unknown>
   toast(text: string): void
@@ -21,8 +23,11 @@ export interface RetestHost {
  */
 export type RetestState = 'pending' | 'running' | 'passed' | 'failed' | 'not_run'
 
-/** The retests in flight, by the record's hash. The tracked `tool.call` hook settles them. */
-export type Retesting = Map<string, RetestState>
+/**
+ * The retests in flight, by the record's hash: where each stands, and the directory its
+ * confirm showed, which the tracked `tool.call` hook holds the call to.
+ */
+export type Retesting = Map<string, { state: RetestState; cwd: string }>
 
 /** The person's own words for the press that raised the call, as the engine reads `consent`. */
 export const RETEST_CONSENT = 'The user pressed "Run" on Cassandra\'s retest of this call.'
@@ -36,6 +41,7 @@ const BUSY = 'That call is already being retested.'
 const NOT_RUN = 'The retest did not run; nothing changed.'
 const UNRECORDED = 'The retest ran, but Cassandra could not record its outcome.'
 const FAILED_TO_RUN = 'The retest could not be run; nothing changed.'
+const UNCLAIMED = 'Cassandra\'s mod is not handling this session; nothing ran.'
 
 /** A stored input a call can be spread from: a plain object. */
 const isArgs = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -57,13 +63,15 @@ export async function runRetest(host: RetestHost, io: Io, hash: string, retestin
   // The directory the confirm showed: the record's, else this session's (as the pane draws it).
   const from = typeof record.cwd === 'string' && record.cwd ? record.cwd : cwd
   if (from !== cwd) return { notice: `Retest runs from ${from}; this session is in ${cwd}.` }
+  if (!(await host.claimed())) return { notice: UNCLAIMED }
   if (retesting.has(hash)) return { notice: BUSY }
-  if ((await host.check({ tool: record.tool, input: record.input })).decision === 'deny') return { notice: DENIED }
-  retesting.set(hash, 'pending')
+  // Marked before the permission question, so a second Run meanwhile finds it busy.
+  retesting.set(hash, { state: 'pending', cwd })
   try {
+    if ((await host.check({ tool: record.tool, input: record.input })).decision === 'deny') return { notice: DENIED }
     // The reserved keys last, so no stored argument can stand in for them.
     await host.call({ ...record.input, tool: record.tool, consent: RETEST_CONSENT })
-    const state = retesting.get(hash)
+    const state = retesting.get(hash)?.state
     if (state === 'passed' || state === 'failed') {
       const said = state === 'passed' ? PASSED : FAILED
       try {

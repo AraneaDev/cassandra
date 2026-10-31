@@ -1581,12 +1581,16 @@ test('opening the pane closes an open search field', async () => {
  * Route the mod's own `$.tool.call` back through its tracked hook, as the engine does, with
  * the engine beneath answering `answer`; `aborted` marks the dispatch interrupted.
  */
-function retestsThrough(answer: () => ToolCallOutcome, aborted = false): void {
+function retestsThrough(answer: () => ToolCallOutcome, aborted = false, before: () => Promise<void> = async () => undefined): void {
   opts.toolCall = async (args) => {
-    const next = Object.assign(async () => answer(), { signal: { aborted } as AbortSignal })
+    await before()
+    const next = Object.assign(async () => { ran += 1; return answer() }, { signal: { aborted } as AbortSignal, origin: { plugin: 'cassandra' } })
     return (hooks.get('tool.call') as unknown as ($: ModEngine, e: ToolCallEvent, n: typeof next) => Promise<ToolCallOutcome>)(host, args as ToolCallEvent, next)
   }
 }
+
+/** How many retest calls reached the engine beneath. */
+let ran = 0
 
 /** Draw, press `r`, draw the confirm, and press Run. */
 async function retestMarked(): Promise<void> {
@@ -1667,4 +1671,63 @@ test('j and tab switches drop a waiting retest; Cancel drops it too', async () =
   await press('retest')
   await press('retest-cancel')
   expect(state('confirmRetest')).toBeNull()
+})
+
+test('a retest whose shell moved before the call reaches the hook is refused, and nothing runs', async () => {
+  await seedFailure('bun test # moved')
+  ran = 0
+  retestsThrough(ok, false, async () => { opts.cwd = join(tmp, 'elsewhere') })
+  await render()
+  await press('retest')
+  await render()
+  await press('retest-confirm')
+  expect(ran).toBe(0)
+  opts.cwd = cwd
+  expect(state('notice')).toBe('The retest did not run; nothing changed.')
+  expect((await remembered())[0]!.record.count).toBe(1)
+})
+
+test('the refusal names both directories', async () => {
+  await seedFailure('bun test # moved again')
+  const elsewhere = join(tmp, 'elsewhere')
+  let r: unknown
+  opts.toolCall = async (args) => {
+    opts.cwd = elsewhere
+    const next = Object.assign(async () => ok(), { signal: { aborted: false } as AbortSignal, origin: { plugin: 'cassandra' } })
+    r = await (hooks.get('tool.call') as unknown as ($: ModEngine, e: ToolCallEvent, n: typeof next) => Promise<ToolCallOutcome>)(host, args as ToolCallEvent, next)
+    return r
+  }
+  await retestMarked()
+  opts.cwd = cwd
+  expect(r).toEqual({ deny: `Retest refused: the shell is now in ${elsewhere}, not ${cwd}.` })
+})
+
+test('a model call with the same fingerprint while a retest is pending is warned as usual and leaves the retest its own', async () => {
+  await seedFailure('bun test # twin')
+  let model: ToolCallOutcome | undefined
+  ran = 0
+  // The model repeats the call while the pane's retest waits: it is the engine's, not the plugin's.
+  retestsThrough(ok, false, async () => { model = (await call('bun test # twin', failed())).r })
+  await retestMarked()
+  expect(model!.context?.join('\n')).toContain('cassandra')
+  expect(ran).toBe(1)
+  expect(opts.toasts).toEqual(['Retest passed; forgotten.'])
+  const kinds = (await readStats(io(), await pathsFor(io(), cwd))).map((e) => e.kind)
+  expect(kinds.filter((k) => k === 'warned')).toHaveLength(1)
+  expect(kinds).toContain('retest_cleared')
+})
+
+test('j moves on from a selection outside the window, as long as the drawing lists it', async () => {
+  for (let i = 0; i < 8; i++) await seedFailure(`false # m${i}`)
+  const all = (await render()).filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
+  expect(all).toHaveLength(8)
+  const short = { bodyColumns: 70, scroll: { offset: 0, bodyRows: 8 } }
+  const window = (await render(short)).filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
+  expect(window.length).toBeLessThan(6)
+  // The selection sits below the window this surface drew, without a redraw since.
+  const records = await remembered()
+  const hashOf = (key: string) => records.find((r) => r.hash.startsWith(key.slice(4)))!.hash
+  opts.state!.set('selected', hashOf(all[6]!))
+  await press('down')
+  expect(state('selected')).toBe(hashOf(all[7]!))
 })

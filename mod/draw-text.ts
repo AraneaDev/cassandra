@@ -67,11 +67,16 @@ export function wrapCells(text: string, width: number): string[] {
 }
 
 /**
- * `text` with every control character but the newline drawn as its Unicode control
- * picture (`␛` for ESC, `␉` for a tab), so a terminal shows each one instead of acting on it.
+ * `text` with every control character but the newline made visible, so a terminal shows
+ * each one instead of acting on it: a C0 one or DEL as its Unicode control picture (`␛`
+ * for ESC, `␉` for a tab, `␡`), a C1 one as its escape (`\u009b`).
  */
 export const visible = (text: string): string =>
-  text.replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, (c) => (c === '\u007F' ? '␡' : String.fromCharCode(0x2400 + c.charCodeAt(0))))
+  text.replace(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/g, (c) => {
+    const code = c.charCodeAt(0)
+    if (code === 0x7f) return '␡'
+    return code < 0x20 ? String.fromCharCode(0x2400 + code) : `\\u${code.toString(16).padStart(4, '0')}`
+  })
 
 /** `n` spaces; none for a negative `n`. */
 export const spaces = (n: number): string => ' '.repeat(Math.max(0, n))

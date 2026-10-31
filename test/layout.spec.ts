@@ -168,3 +168,13 @@ test('fullBody wraps the stored output with tabs as spaces; without it, the exce
   expect(fullBody({ ...d, full: null }, 100)).toEqual(['boom', FULL_NOT_KEPT])
   expect(fullBody({ ...d, full: null, reason: null }, 100)[0]).toBe('(no output captured)')
 })
+
+test('the confirm shows DEL and C1 characters in a stored argument as visible text, never raw', () => {
+  const input = { q: 'a\u007fb\u009bc' }
+  const mcp = retestBody({ ok: true, tool: 'mcp__s__t', input, cwd: '/p' }, 60)!
+  expect(mcp.map((l) => l.text).join('\n')).toContain('"q": "a␡b\\u009bc"')
+  const bash = retestBody({ ok: true, tool: 'Bash', input: { command: 'x', env: '\u0085' }, cwd: '/p' }, 60)!
+  expect(bash.at(-1)).toEqual({ label: 'with', text: '{"env":"\\u0085"}' })
+  for (const l of [...mcp, ...bash]) expect(l.text).not.toMatch(/[\u007f-\u009f]/)
+  expect(visible('\u0080\u009f')).toBe('\\u0080\\u009f')
+})

@@ -41,12 +41,12 @@ export function retestBody(retest: Extract<PaneDetail['retest'], { ok: true }>, 
     return [
       ...labelled('run', visible((input as { command: string }).command), room),
       ...labelled('in', visible(retest.cwd), room),
-      ...(Object.keys(rest).length > 0 ? labelled('with', JSON.stringify(rest), room) : []),
+      ...(Object.keys(rest).length > 0 ? labelled('with', visible(JSON.stringify(rest)), room) : []),
     ]
   }
   return [
     ...labelled('tool', visible(retest.tool), room),
-    ...labelled('input', JSON.stringify(input, null, 2) ?? String(input), room),
+    ...labelled('input', visible(JSON.stringify(input, null, 2) ?? String(input)), room),
   ]
 }
 
