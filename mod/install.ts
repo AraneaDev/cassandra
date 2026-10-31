@@ -2,13 +2,14 @@ import { forget } from '../src/commands/forget.ts'
 import { runCommand, type CommandResult } from '../src/commands/run.ts'
 import { buildBriefing, callHash, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
-import { paneModel, unreadableModel, type PaneModel, type PaneTab, type PaneView } from '../src/core/pane.ts'
+import { paneModel, unreadableModel, type LastWarning, type PaneModel, type PaneTab, type PaneView } from '../src/core/pane.ts'
+import { evidence } from '../src/core/describe.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { statusText } from '../src/core/status.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
 import { appendStat, type BriefBoundary } from '../src/core/stats.ts'
 import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from '../src/core/tools.ts'
-import { listRecords } from '../src/core/record.ts'
+import { listRecords, readRecord } from '../src/core/record.ts'
 import { resolveHash } from '../src/core/resolve.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
 import { layoutOf, type PaneExtras } from './layout.ts'
@@ -17,7 +18,7 @@ import {
   KEY_SEARCH_CLEAR, KEY_SEARCH_FIELD, KEY_TABKEY_PREFIX, KEY_TAB_PREFIX, KEY_TWIN_PREFIX, KEY_UP, ROW_KEY_PREFIX, drawPane, keyListRows, twinTarget,
   type Elements,
 } from './pane.tsx'
-import { runRetest, type RetestHost, type Retesting } from './retest.ts'
+import { callDigest, runRetest, type RetestHost, type Retesting } from './retest.ts'
 
 /** A user-role row a plugin appends: text blocks the model reads, in the named loop (main when absent). */
 export interface AppendArgs {
@@ -42,7 +43,7 @@ export interface PaneState {
   showFull: boolean
   query: string
   confirmRetest: string | null
-  lastWarning: { hash: string; at: string } | null
+  lastWarning: LastWarning | null
   searching: boolean
   showKeys: boolean
 }
@@ -352,6 +353,8 @@ export interface DrawnPane {
   retestable: string | null
   /** The record whose whole call this surface drew under a Run, when it did. */
   confirming: string | null
+  /** The digest of the call that confirm showed (callDigest), so Run runs that call or nothing. */
+  shown: string | null
 }
 
 /** What each surface last drew, by surface. Forget acts only on rows the person saw. */
@@ -453,15 +456,17 @@ async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRende
     const bodyRows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24
     let model: PaneModel
     let extras: PaneExtras | undefined
+    const io = wrapIo(modIo(hostOf($)))
     try {
       // Read so that a bump of the revision draws the pane again.
       await $.state.get(REV)
-      model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), await $.session.id())
+      model = await paneModel(io, await $.session.cwd(), await readView($), await $.session.id())
       extras = await readExtras($, model)
     } catch {
       model = unreadableModel()
     }
     const layout = layoutOf(model, columns, bodyRows, extras)
+    const confirming = layout.retest !== null && layout.retest !== 'too-small'
     const { start, count } = layout.list
     // Not state: a render may not write it, and a press only needs this session's own drawing.
     drawn.set(e.surface ?? '', {
@@ -470,7 +475,9 @@ async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRende
       counted: new Set(model.hashes),
       rows: model.rows.map((r) => r.hash),
       retestable: model.detail?.retest.ok === true ? model.selected : null,
-      confirming: layout.retest !== null && layout.retest !== 'too-small' ? model.selected : null,
+      confirming: confirming ? model.selected : null,
+      shown: confirming && model.detail?.retest.ok === true
+        ? await callDigest(io, model.detail.retest.tool, model.detail.retest.input, model.detail.retest.cwd) : null,
     })
     return drawPane($.ui.resolve(e), model, columns, layout)
   } catch {
@@ -664,10 +671,10 @@ interface Pressed {
  * Run the retest the person confirmed, then show what it came to and redraw. Never throws.
  * Top-level because it takes `$`: the validator follows `$` nowhere else.
  */
-async function retestConfirmed($: ModEngine, io: Io, hash: string, retesting: Retesting, claimed: () => Promise<boolean>): Promise<void> {
+async function retestConfirmed($: ModEngine, io: Io, hash: string, shown: string, retesting: Retesting, claimed: () => Promise<boolean>): Promise<void> {
   let notice: string | null
   try {
-    notice = (await runRetest(retestHostOf($, claimed), io, hash, retesting)).notice
+    notice = (await runRetest(retestHostOf($, claimed), io, hash, shown, retesting)).notice
   } catch {
     notice = 'The retest could not be run; nothing changed.'
   }
@@ -684,8 +691,9 @@ async function confirmRetest($: ModEngine, io: Io, drawn: DrawnPane | undefined,
   const hash = (await $.state.get(CONFIRM_RETEST)).value ?? null
   await $.state.set(CONFIRM_RETEST, null)
   await $.state.set(NOTICE, null)
-  if (hash === null || drawn?.confirming !== hash) return { ring: null }
-  return { ring: null, retest: () => retestConfirmed($, io, hash, retesting, claimed) }
+  if (hash === null || drawn?.confirming !== hash || drawn.shown === null) return { ring: null }
+  const shown = drawn.shown
+  return { ring: null, retest: () => retestConfirmed($, io, hash, shown, retesting, claimed) }
 }
 
 /**
@@ -785,12 +793,15 @@ async function onPaneInput($: ModEngine, e: InputEvent): Promise<void> {
 }
 
 /**
- * Remember the warning this call raised, so the pane's Just warned card shows it, and redraw
- * an open pane. Never throws: a lost card must not cost the warning itself.
+ * Remember the warning this call raised, with its record as it stood then (before this call
+ * settles it), so the pane's Just warned card shows what was warned, and redraw an open
+ * pane. Never throws: a lost card must not cost the warning itself.
  */
-async function noteWarning($: ModEngine, io: Io, hash: string): Promise<void> {
+async function noteWarning($: ModEngine, io: Io, call: Call, hash: string): Promise<void> {
   try {
-    await $.state.set(LAST_WARNING, { hash, at: io.now() })
+    const r = await readRecord(io, await pathsFor(io, call.cwd), hash).catch(() => null)
+    const snapshot = r === null ? {} : { count: r.count, lastSeen: r.lastSeen, evidence: evidence(r) }
+    await $.state.set(LAST_WARNING, { hash, at: io.now(), ...snapshot })
   } catch {
     // The card misses this warning; the agent still gets it.
   }
@@ -1108,8 +1119,8 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
       if (hash !== null && pending?.state === 'pending') {
         // It runs only from the directory its confirm showed.
         if (call.cwd !== pending.cwd) {
-          retesting.set(hash, { ...pending, state: 'not_run' })
           refused = `Retest refused: the shell is now in ${call.cwd}, not ${pending.cwd}.`
+          retesting.set(hash, { ...pending, state: 'not_run', reason: refused })
         } else {
           retesting.set(hash, { ...pending, state: 'running' })
           retested = hash
@@ -1122,7 +1133,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     }
     if (refused !== null) return { deny: refused }
     if (retested !== null) return settleRetest($, io, call, retested, e, next, retesting)
-    if (warning) await noteWarning($, io, warning.hash)
+    if (warning) await noteWarning($, io, call, warning.hash)
 
     const result = await next(e)
 

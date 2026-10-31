@@ -34,8 +34,15 @@ export interface PaneDetail {
 }
 /** The warning this session raised last, for the record it was about. */
 export interface JustWarned { hash: string; at: string; display: string; count: number; lastSeen: string; reason: string | null; evidence: string; fix: string | null }
+/**
+ * The warning this session raised last: its record, when, and that record as it stood when
+ * the warning was raised (`count`, `lastSeen`, `evidence`), so a later failure or a stale
+ * workspace does not change what the card says was warned. A value from before the snapshot
+ * was kept has only `hash` and `at`, and reads the live record instead.
+ */
+export interface LastWarning { hash: string; at: string; count?: number; lastSeen?: string; evidence?: string }
 /** What the pane remembers between redraws. */
-export interface PaneView { tab: PaneTab; selected: string | null; expanded: boolean; confirmAll: boolean; confirmRetest: string | null; showFull: boolean; query: string; notice: string | null; lastWarning: { hash: string; at: string } | null }
+export interface PaneView { tab: PaneTab; selected: string | null; expanded: boolean; confirmAll: boolean; confirmRetest: string | null; showFull: boolean; query: string; notice: string | null; lastWarning: LastWarning | null }
 /** Everything the pane draws, as plain data. */
 export interface PaneModel {
   project: string; git: { branch: string | null; head: string } | null
@@ -209,8 +216,8 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, sessionId: 
     if (last && warned && events.some((e) => e.kind === 'warned' && e.hash === last.hash && e.sessionId === sessionId)) {
       const r = warned.record
       justWarned = {
-        hash: last.hash, at: last.at, display: oneLine(r.display), count: r.count, lastSeen: r.lastSeen,
-        reason: reasonOf(r), evidence: evidence(r), fix: await fixOf(io, paths, last.hash),
+        hash: last.hash, at: last.at, display: oneLine(r.display), count: last.count ?? r.count, lastSeen: last.lastSeen ?? r.lastSeen,
+        reason: reasonOf(r), evidence: last.evidence ?? evidence(r), fix: await fixOf(io, paths, last.hash),
       }
     }
 

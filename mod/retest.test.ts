@@ -323,3 +323,23 @@ test('a search applied on a pane too short for its row still shows and clears wi
   expect((await paneLines(ui)).join('\n')).not.toContain('matching')
   await ui.unmount()
 })
+
+test('a record rewritten under the same fingerprint after the confirm was drawn runs nothing', async ($, on) => {
+  const host = memoryHost(on)
+  let ran = 0
+  on('tool.call', { tool: 'Bash' }, async () => {
+    ran += 1
+    return FAIL
+  })
+  verdict(on, 'allow')
+  await $.tool.call({ tool: 'Bash', command: 'bun test # swapped' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  await ui.press({ key: 'retest' })
+  expect((await paneLines(ui)).some((l) => l.includes('run     bun test # swapped'))).toBe(true)
+  // A later failure of the same command with another argument rewrites the record behind the confirm.
+  restore(host, (r) => ({ ...r, input: { ...(r.input as object), dangerouslyDisableSandbox: true } }))
+  await ui.press({ key: 'retest-confirm' })
+  expect(ran).toBe(1)
+  expect((await paneLines(ui)).join('\n')).toContain('The call changed since you confirmed it; nothing ran.')
+  await ui.unmount()
+})

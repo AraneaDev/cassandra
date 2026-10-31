@@ -1402,8 +1402,10 @@ test('a warned call keeps its hash and time as the last warning, and redraws the
   const rev = Number(state('rev'))
   const { r } = await call('bun test', failed())
   expect(r.context).toHaveLength(1)
-  const hash = (await remembered())[0]!.hash
-  expect(state('lastWarning')).toEqual({ hash, at: expect.any(String) })
+  const { hash, record } = (await remembered())[0]!
+  // The record as it stood when warned, before this call failed again and bumped it.
+  expect(record.count).toBe(2)
+  expect(state('lastWarning')).toEqual({ hash, at: expect.any(String), count: 1, lastSeen: expect.any(String), evidence: 'No file under this directory tree has changed since.' })
   expect(Number.isNaN(Date.parse((state('lastWarning') as { at: string }).at))).toBe(false)
   expect(Number(state('rev'))).toBeGreaterThan(rev)
 })
@@ -1683,7 +1685,7 @@ test('a retest whose shell moved before the call reaches the hook is refused, an
   await press('retest-confirm')
   expect(ran).toBe(0)
   opts.cwd = cwd
-  expect(state('notice')).toBe('The retest did not run; nothing changed.')
+  expect(state('notice')).toBe(`Retest refused: the shell is now in ${join(tmp, 'elsewhere')}, not ${cwd}.`)
   expect((await remembered())[0]!.record.count).toBe(1)
 })
 
@@ -1730,4 +1732,15 @@ test('j moves on from a selection outside the window, as long as the drawing lis
   opts.state!.set('selected', hashOf(all[6]!))
   await press('down')
   expect(state('selected')).toBe(hashOf(all[7]!))
+})
+
+test('the Just warned card draws the record as it was when warned; an older last warning reads the live record', async () => {
+  await call('bun test', failed())
+  await call('bun test', failed())
+  // The record is now at two tries; the warning was raised at one.
+  const card = async () => (await render()).filter((n) => n.type === 'Box' && n.props.key === 'warned-matched').map(textOf)[0]
+  expect(await card()).toContain('the same call, 1× before')
+  const { hash } = (await remembered())[0]!
+  opts.state!.set('lastWarning', { hash, at: new Date().toISOString() })
+  expect(await card()).toContain('the same call, 2× before')
 })
