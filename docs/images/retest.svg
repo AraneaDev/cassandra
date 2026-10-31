@@ -28,7 +28,7 @@
   <text x="22" y="283" xml:space="preserve"><tspan fill="#d8a13f">   ▸ </tspan><tspan fill="#7a8593">15:03  </tspan><tspan fill="#ece5d5">curl -fsSL https://staging.acme.test/healthz               </tspan><tspan fill="#7a8593"> ×1</tspan><tspan fill="#d8a13f">  denied  </tspan></text>
   <text x="22" y="302" xml:space="preserve"><tspan fill="#ece5d5">                                                                                    </tspan></text>
   <text x="22" y="321" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold">  Last week                                                                         </tspan></text>
-  <text x="22" y="340" xml:space="preserve"><tspan fill="#7a8593">   ▸ 08:55  docker compose up -d db                                      ×1  stale  </tspan></text>
+  <text x="22" y="340" xml:space="preserve"><tspan fill="#7a8593">   ▸ 10-21  docker compose up -d db                                      ×1  stale  </tspan></text>
   <text x="22" y="359" xml:space="preserve"><tspan fill="#ece5d5">                                                                                    </tspan></text>
   <text x="22" y="378" xml:space="preserve"><tspan fill="#3a4553">  ── </tspan><tspan fill="#d8a13f" font-weight="bold">↻ </tspan><tspan fill="#d97757" font-weight="bold">Retest </tspan><tspan fill="#3a4553">─────────────────────────── </tspan><tspan fill="#7a8593">runs through your permission settings</tspan><tspan fill="#3a4553"> ──  </tspan></text>
   <text x="22" y="397" xml:space="preserve"><tspan fill="#7a8593">  run     </tspan><tspan fill="#ece5d5">bun test test/billing.test.ts                                             </tspan></text>

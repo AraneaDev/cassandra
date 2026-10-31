@@ -115,6 +115,34 @@ test('rows are grouped by day', async () => {
   expect(m.rows[0]).toMatchObject({ group: 'Yesterday', time: '09:05', count: 1, where: '', display: 'bun test' })
 })
 
+test('rows older than this week show their date, the others their time', async () => {
+  const now = local(2026, 11, 3, 15) // a Tuesday, so Oct 25 and Sep 30 cross a month boundary
+  const when: Array<[string, string]> = [
+    ['today', local(2026, 11, 3, 8, 7)],
+    ['yesterday', local(2026, 11, 2, 23, 59)],
+    ['weekday', local(2026, 10, 28, 6, 30)],
+    ['last week start', local(2026, 10, 27, 9, 5)],
+    ['last week', local(2026, 10, 25, 18, 45)],
+    ['last week edge', local(2026, 10, 21, 0, 1)],
+    ['older', local(2026, 9, 30, 12, 0)],
+    ['older jan', local(2026, 1, 2, 3, 4)],
+  ]
+  for (const [command, at] of when) await seed(command, at)
+  io.clock.now = now
+  const m = await paneModel(io, cwd, view, 's1')
+  const byName = Object.fromEntries(m.rows.map((r) => [r.display, [r.group, r.time]]))
+  expect(byName).toEqual({
+    today: ['Today', '08:07'],
+    yesterday: ['Yesterday', '23:59'],
+    weekday: ['Wednesday', '06:30'],
+    'last week start': ['Last week', '10-27'],
+    'last week': ['Last week', '10-25'],
+    'last week edge': ['Last week', '10-21'],
+    older: ['Older', '09-30'],
+    'older jan': ['Older', '01-02'],
+  })
+})
+
 test('the query filters rows by display, case-insensitive', async () => {
   const a = await seed('bun TEST', '2026-10-30T10:00:00.000Z')
   await seed('make', '2026-10-30T11:00:00.000Z')

@@ -15,8 +15,8 @@ export type PaneTab = 'history' | 'warnings' | 'stale' | 'denied'
 export type RowState = 'warns' | 'stale' | 'denied'
 /**
  * One remembered call as a list row: `display` is the command on one line, `where` its
- * package suffix (" (in packages/a)") or '', `time` the local HH:MM of `lastSeen` and
- * `group` its day group (see `dayGroup`).
+ * package suffix (" (in packages/a)") or '', `time` the local HH:MM of `lastSeen` (MM-DD under
+ * Last week and Older) and `group` its day group (see `dayGroup`).
  */
 export interface PaneRow { hash: string; id: string; display: string; where: string; state: RowState; count: number; time: string; group: string }
 /**
@@ -86,11 +86,17 @@ export function dayGroup(lastSeenIso: string, nowIso: string): string {
   return 'Older'
 }
 
-/** Local HH:MM of an ISO time; '' when it does not parse. */
-function clock(iso: string): string {
+/**
+ * What a row's time column shows: local HH:MM, or MM-DD once the day group is `Last week` or
+ * `Older` (both 5 cells); '' when the time does not parse.
+ */
+function clock(iso: string, group: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const two = (n: number): string => String(n).padStart(2, '0')
+  return group === 'Last week' || group === 'Older'
+    ? `${two(d.getMonth() + 1)}-${two(d.getDate())}`
+    : `${two(d.getHours())}:${two(d.getMinutes())}`
 }
 
 /** "fp X% · same_context Y%", as `cassandra stats` reads them; null when nothing was warned. */
@@ -174,16 +180,19 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, sessionId: 
     const shown = sorted.filter((r) =>
       (view.tab === 'history' || r.state === (view.tab === 'warnings' ? 'warns' : view.tab))
       && (!query || oneLine(r.record.display).toLowerCase().includes(query)))
-    const rows: PaneRow[] = shown.map(({ hash, record, state }) => ({
-      hash,
-      id: hash.slice(0, 8),
-      display: oneLine(record.display),
-      where: inScope(record),
-      state,
-      count: record.count,
-      time: clock(record.lastSeen),
-      group: dayGroup(record.lastSeen, now),
-    }))
+    const rows: PaneRow[] = shown.map(({ hash, record, state }) => {
+      const group = dayGroup(record.lastSeen, now)
+      return {
+        hash,
+        id: hash.slice(0, 8),
+        display: oneLine(record.display),
+        where: inScope(record),
+        state,
+        count: record.count,
+        time: clock(record.lastSeen, group),
+        group,
+      }
+    })
 
     const chosen = shown.find((r) => r.hash === view.selected) ?? shown[0]
     let detail: PaneDetail | null = null

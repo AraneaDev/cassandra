@@ -64,6 +64,6 @@
   <text x="22" y="568" xml:space="preserve"><tspan fill="#d8a13f">  ▸ </tspan><tspan fill="#7a8593">15:03  </tspan><tspan fill="#ece5d5">curl -fsSL https://s…</tspan><tspan fill="#7a8593"> ×1</tspan><tspan fill="#d8a13f">  denied </tspan></text>
   <text x="22" y="587" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
   <text x="22" y="606" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> Last week                                  </tspan></text>
-  <text x="22" y="625" xml:space="preserve"><tspan fill="#7a8593">  ▸ 08:55  docker compose up -d … ×1  stale </tspan></text>
+  <text x="22" y="625" xml:space="preserve"><tspan fill="#7a8593">  ▸ 10-21  docker compose up -d … ×1  stale </tspan></text>
   <text x="22" y="644" xml:space="preserve"><tspan fill="#ece5d5"> </tspan><tspan fill="#ece5d5">r: </tspan><tspan fill="#ece5d5">Retest</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">f: </tspan><tspan fill="#ece5d5">Forget</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">a: </tspan><tspan fill="#ece5d5">Forget all</tspan><tspan fill="#ece5d5">        </tspan></text>
 </svg>
