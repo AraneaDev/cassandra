@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="980" height="728" viewBox="0 0 980 728" font-family="ui-monospace, SFMono-Regular, &#34;SF Mono&#34;, Menlo, Consolas, &#34;DejaVu Sans Mono&#34;, monospace" font-size="13">
-  <rect width="980" height="728" rx="8" fill="#10151d"/>
-  <rect x="0.5" y="0.5" width="979" height="727" rx="8" fill="none" stroke="#26303d"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="709" viewBox="0 0 980 709" font-family="ui-monospace, SFMono-Regular, &#34;SF Mono&#34;, Menlo, Consolas, &#34;DejaVu Sans Mono&#34;, monospace" font-size="13">
+  <rect width="980" height="709" rx="8" fill="#10151d"/>
+  <rect x="0.5" y="0.5" width="979" height="708" rx="8" fill="none" stroke="#26303d"/>
   <rect x="833.2" y="22" width="109.2" height="19" fill="#cf6a63"/>
   <rect x="37.6" y="41" width="78.0" height="19" fill="#9a8fd0"/>
   <rect x="22.0" y="383" width="39.0" height="19" fill="#1d2633"/>
@@ -23,26 +23,25 @@
   <rect x="201.4" y="516" width="756.6" height="19" fill="#1d2633"/>
   <rect x="22.0" y="535" width="179.4" height="19" fill="#1d2633"/>
   <rect x="201.4" y="535" width="756.6" height="19" fill="#1d2633"/>
-  <rect x="22.0" y="554" width="936.0" height="19" fill="#1d2633"/>
-  <rect x="22.0" y="687" width="15.6" height="19" fill="#171e28"/>
-  <rect x="37.6" y="687" width="23.4" height="19" fill="#171e28"/>
-  <rect x="61.0" y="687" width="46.8" height="19" fill="#171e28"/>
-  <rect x="107.8" y="687" width="15.6" height="19" fill="#171e28"/>
-  <rect x="123.4" y="687" width="23.4" height="19" fill="#171e28"/>
-  <rect x="146.8" y="687" width="46.8" height="19" fill="#171e28"/>
-  <rect x="193.6" y="687" width="15.6" height="19" fill="#171e28"/>
-  <rect x="209.2" y="687" width="23.4" height="19" fill="#171e28"/>
-  <rect x="232.6" y="687" width="78.0" height="19" fill="#171e28"/>
-  <rect x="310.6" y="687" width="15.6" height="19" fill="#171e28"/>
-  <rect x="326.2" y="687" width="23.4" height="19" fill="#171e28"/>
-  <rect x="349.6" y="687" width="85.8" height="19" fill="#171e28"/>
-  <rect x="435.4" y="687" width="15.6" height="19" fill="#171e28"/>
-  <rect x="451.0" y="687" width="23.4" height="19" fill="#171e28"/>
-  <rect x="474.4" y="687" width="46.8" height="19" fill="#171e28"/>
-  <rect x="521.2" y="687" width="15.6" height="19" fill="#171e28"/>
-  <rect x="536.8" y="687" width="23.4" height="19" fill="#171e28"/>
-  <rect x="560.2" y="687" width="31.2" height="19" fill="#171e28"/>
-  <rect x="591.4" y="687" width="366.6" height="19" fill="#171e28"/>
+  <rect x="22.0" y="668" width="15.6" height="19" fill="#171e28"/>
+  <rect x="37.6" y="668" width="23.4" height="19" fill="#171e28"/>
+  <rect x="61.0" y="668" width="46.8" height="19" fill="#171e28"/>
+  <rect x="107.8" y="668" width="15.6" height="19" fill="#171e28"/>
+  <rect x="123.4" y="668" width="23.4" height="19" fill="#171e28"/>
+  <rect x="146.8" y="668" width="46.8" height="19" fill="#171e28"/>
+  <rect x="193.6" y="668" width="15.6" height="19" fill="#171e28"/>
+  <rect x="209.2" y="668" width="23.4" height="19" fill="#171e28"/>
+  <rect x="232.6" y="668" width="78.0" height="19" fill="#171e28"/>
+  <rect x="310.6" y="668" width="15.6" height="19" fill="#171e28"/>
+  <rect x="326.2" y="668" width="23.4" height="19" fill="#171e28"/>
+  <rect x="349.6" y="668" width="85.8" height="19" fill="#171e28"/>
+  <rect x="435.4" y="668" width="15.6" height="19" fill="#171e28"/>
+  <rect x="451.0" y="668" width="23.4" height="19" fill="#171e28"/>
+  <rect x="474.4" y="668" width="46.8" height="19" fill="#171e28"/>
+  <rect x="521.2" y="668" width="15.6" height="19" fill="#171e28"/>
+  <rect x="536.8" y="668" width="23.4" height="19" fill="#171e28"/>
+  <rect x="560.2" y="668" width="31.2" height="19" fill="#171e28"/>
+  <rect x="591.4" y="668" width="366.6" height="19" fill="#171e28"/>
   <text x="22" y="36" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold">  acme-api  </tspan><tspan fill="#7a8593">feat/invoice-pdf · a3f9c2e                                                                  </tspan><tspan fill="#10151d" font-weight="bold"> 3 would warn </tspan><tspan fill="#ece5d5">  </tspan></text>
   <text x="22" y="55" xml:space="preserve"><tspan fill="#ece5d5">  </tspan><tspan fill="#10151d" font-weight="bold"> History⁶ </tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#7a8593"> Warnings³ </tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#7a8593"> Stale² </tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#7a8593"> Denied¹ </tspan><tspan fill="#ece5d5">                                                                          </tspan></text>
   <text x="22" y="74" xml:space="preserve"><tspan fill="#cf6a63" font-weight="bold">  3                            </tspan><tspan fill="#ece5d5" font-weight="bold">6                            </tspan><tspan fill="#d8a13f" font-weight="bold">2                            </tspan><tspan fill="#7fb3a3" font-weight="bold">1                              </tspan></text>
@@ -72,11 +71,10 @@
   <text x="22" y="530" xml:space="preserve"><tspan fill="#7a8593">     session           </tspan><tspan fill="#ece5d5">in this session                                                                                  </tspan></text>
   <text x="22" y="549" xml:space="preserve"><tspan fill="#7a8593">     fix               </tspan><tspan fill="#7fb3a3">Last time this started working after `packages/web/eslint.config.js` changed (2026-10-26).       </tspan></text>
   <text x="22" y="568" xml:space="preserve"><tspan fill="#ece5d5">                                                                                                                        </tspan></text>
-  <text x="22" y="587" xml:space="preserve"><tspan fill="#ece5d5">                                                                                                                        </tspan></text>
-  <text x="22" y="606" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold">  Wednesday                                                                                                             </tspan></text>
-  <text x="22" y="625" xml:space="preserve"><tspan fill="#d8a13f">   ▸ </tspan><tspan fill="#7a8593">15:03  </tspan><tspan fill="#ece5d5">curl -fsSL https://staging.acme.test/healthz                                                   </tspan><tspan fill="#7a8593"> ×1</tspan><tspan fill="#d8a13f">  denied  </tspan></text>
-  <text x="22" y="644" xml:space="preserve"><tspan fill="#ece5d5">                                                                                                                        </tspan></text>
-  <text x="22" y="663" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold">  Last week                                                                                                             </tspan></text>
-  <text x="22" y="682" xml:space="preserve"><tspan fill="#7a8593">   ▸ 08:55  docker compose up -d db                                                                          ×1  stale  </tspan></text>
-  <text x="22" y="701" xml:space="preserve"><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">r: </tspan><tspan fill="#ece5d5">Retest</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">f: </tspan><tspan fill="#ece5d5">Forget</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">a: </tspan><tspan fill="#ece5d5">Forget all</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">o: </tspan><tspan fill="#ece5d5">Full output</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">s: </tspan><tspan fill="#ece5d5">Search</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">h: </tspan><tspan fill="#ece5d5">Keys</tspan><tspan fill="#ece5d5">                                               </tspan></text>
+  <text x="22" y="587" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold">  Wednesday                                                                                                             </tspan></text>
+  <text x="22" y="606" xml:space="preserve"><tspan fill="#d8a13f">   ▸ </tspan><tspan fill="#7a8593">15:03  </tspan><tspan fill="#ece5d5">curl -fsSL https://staging.acme.test/healthz                                                   </tspan><tspan fill="#7a8593"> ×1</tspan><tspan fill="#d8a13f">  denied  </tspan></text>
+  <text x="22" y="625" xml:space="preserve"><tspan fill="#ece5d5">                                                                                                                        </tspan></text>
+  <text x="22" y="644" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold">  Last week                                                                                                             </tspan></text>
+  <text x="22" y="663" xml:space="preserve"><tspan fill="#7a8593">   ▸ 08:55  docker compose up -d db                                                                          ×1  stale  </tspan></text>
+  <text x="22" y="682" xml:space="preserve"><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">r: </tspan><tspan fill="#ece5d5">Retest</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">f: </tspan><tspan fill="#ece5d5">Forget</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">a: </tspan><tspan fill="#ece5d5">Forget all</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">o: </tspan><tspan fill="#ece5d5">Full output</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">s: </tspan><tspan fill="#ece5d5">Search</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">h: </tspan><tspan fill="#ece5d5">Keys</tspan><tspan fill="#ece5d5">                                               </tspan></text>
 </svg>

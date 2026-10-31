@@ -160,11 +160,11 @@ async function write(name: string, svg: string, text: string[]): Promise<void> {
 
 // The hero: a wide pane, the warning it just raised, the lint record opened with its fix note.
 const hero = await paneModel(io, PROJECT, { ...VIEW, selected: hashes.lint!, expanded: true, lastWarning: warned }, SESSION)
-const wide = paneSvg(hero, 120, 36)
+const wide = paneSvg(hero, 120, 35)
 await write('pane.svg', wide.svg, wide.text)
 
 // The same pane at phone width, where the tabs fall back to digits and the counters to one line.
-const narrow = paneSvg(hero, 44, 34)
+const narrow = paneSvg(hero, 44, 33)
 await write('narrow.svg', narrow.svg, narrow.text)
 
 // The retest confirm for the billing test: the exact command and where it runs.

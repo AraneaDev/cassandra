@@ -12,7 +12,7 @@
 [![Last commit](https://img.shields.io/github/last-commit/AraneaDev/cassandra?label=last%20commit)](https://github.com/AraneaDev/cassandra/commits/main)
 [![Conventional Commits](https://img.shields.io/badge/commits-conventional-fe5196?logo=conventionalcommits&logoColor=white)](https://www.conventionalcommits.org/)
 [![Status](https://img.shields.io/badge/status-pre--release-orange)](#status)
-[![Tests](https://img.shields.io/badge/tests-616%20passing-brightgreen)](#development)
+[![Tests](https://img.shields.io/badge/tests-622%20passing-brightgreen)](#development)
 
 </div>
 
@@ -123,11 +123,12 @@ exactly the records counted on its button: a record written after the pane last 
 kept, and the notice says how many were forgotten and kept. `f` only ever forgets a row
 the pane has drawn; if that row is gone, the press just redraws the pane.
 
-<img align="right" width="300" src="docs/images/narrow.svg" alt="The same pane 44 columns wide. The header keeps the project and the pill, the tabs other than the open one show only their digits, the counters share one line, the Just warned card and the open row cut their longer lines with an ellipsis, and the key bar keeps Retest, Forget and Forget all.">
+<img align="right" width="300" src="docs/images/narrow.svg" alt="The same pane 44 columns wide. The header keeps the project and the pill, the tabs other than the open one show only their digits, the counters share one line with shorter labels (warn, kept, today, cleared), the Just warned card and the open row cut their longer lines with an ellipsis, and the key bar keeps Retest, Forget and Forget all.">
 
 The pane fits its size. Under 56 columns the tabs other than the open one fall back to
 their digits and the branch leaves the header; from 100 columns the commit joins it and the
-counters get a tile each. Narrower than that the counters share one line, under 22 rows
+counters get a tile each. Narrower than that the counters share one line, with shorter
+labels under 56 columns when the usual ones do not fit, under 22 rows
 they move into the header, and a body under 4 lines draws a single line asking for a taller
 window. Long lines are cut with an ellipsis rather than wrapped, except in the retest
 confirm, which always shows the whole call. The key bar drops the keys that matter least

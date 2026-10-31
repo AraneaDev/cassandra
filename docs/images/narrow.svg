@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="388" height="690" viewBox="0 0 388 690" font-family="ui-monospace, SFMono-Regular, &#34;SF Mono&#34;, Menlo, Consolas, &#34;DejaVu Sans Mono&#34;, monospace" font-size="13">
-  <rect width="388" height="690" rx="8" fill="#10151d"/>
-  <rect x="0.5" y="0.5" width="387" height="689" rx="8" fill="none" stroke="#26303d"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="388" height="671" viewBox="0 0 388 671" font-family="ui-monospace, SFMono-Regular, &#34;SF Mono&#34;, Menlo, Consolas, &#34;DejaVu Sans Mono&#34;, monospace" font-size="13">
+  <rect width="388" height="671" rx="8" fill="#10151d"/>
+  <rect x="0.5" y="0.5" width="387" height="670" rx="8" fill="none" stroke="#26303d"/>
   <rect x="248.2" y="22" width="109.2" height="19" fill="#cf6a63"/>
   <rect x="29.8" y="41" width="78.0" height="19" fill="#9a8fd0"/>
   <rect x="22.0" y="345" width="31.2" height="19" fill="#1d2633"/>
@@ -23,20 +23,19 @@
   <rect x="193.6" y="478" width="171.6" height="19" fill="#1d2633"/>
   <rect x="22.0" y="497" width="171.6" height="19" fill="#1d2633"/>
   <rect x="193.6" y="497" width="171.6" height="19" fill="#1d2633"/>
-  <rect x="22.0" y="516" width="343.2" height="19" fill="#1d2633"/>
-  <rect x="22.0" y="649" width="7.8" height="19" fill="#171e28"/>
-  <rect x="29.8" y="649" width="23.4" height="19" fill="#171e28"/>
-  <rect x="53.2" y="649" width="46.8" height="19" fill="#171e28"/>
-  <rect x="100.0" y="649" width="15.6" height="19" fill="#171e28"/>
-  <rect x="115.6" y="649" width="23.4" height="19" fill="#171e28"/>
-  <rect x="139.0" y="649" width="46.8" height="19" fill="#171e28"/>
-  <rect x="185.8" y="649" width="15.6" height="19" fill="#171e28"/>
-  <rect x="201.4" y="649" width="23.4" height="19" fill="#171e28"/>
-  <rect x="224.8" y="649" width="78.0" height="19" fill="#171e28"/>
-  <rect x="302.8" y="649" width="62.4" height="19" fill="#171e28"/>
+  <rect x="22.0" y="630" width="7.8" height="19" fill="#171e28"/>
+  <rect x="29.8" y="630" width="23.4" height="19" fill="#171e28"/>
+  <rect x="53.2" y="630" width="46.8" height="19" fill="#171e28"/>
+  <rect x="100.0" y="630" width="15.6" height="19" fill="#171e28"/>
+  <rect x="115.6" y="630" width="23.4" height="19" fill="#171e28"/>
+  <rect x="139.0" y="630" width="46.8" height="19" fill="#171e28"/>
+  <rect x="185.8" y="630" width="15.6" height="19" fill="#171e28"/>
+  <rect x="201.4" y="630" width="23.4" height="19" fill="#171e28"/>
+  <rect x="224.8" y="630" width="78.0" height="19" fill="#171e28"/>
+  <rect x="302.8" y="630" width="62.4" height="19" fill="#171e28"/>
   <text x="22" y="36" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> acme-api                    </tspan><tspan fill="#10151d" font-weight="bold"> 3 would warn </tspan><tspan fill="#ece5d5"> </tspan></text>
   <text x="22" y="55" xml:space="preserve"><tspan fill="#ece5d5"> </tspan><tspan fill="#10151d" font-weight="bold"> History⁶ </tspan><tspan fill="#ece5d5"> </tspan><tspan fill="#7a8593"> 2³ </tspan><tspan fill="#ece5d5"> </tspan><tspan fill="#7a8593"> 3² </tspan><tspan fill="#ece5d5"> </tspan><tspan fill="#7a8593"> 4¹ </tspan><tspan fill="#ece5d5">                  </tspan></text>
-  <text x="22" y="74" xml:space="preserve"><tspan fill="#cf6a63" font-weight="bold"> 3</tspan><tspan fill="#7a8593"> warn now   </tspan><tspan fill="#ece5d5" font-weight="bold">6</tspan><tspan fill="#7a8593"> remembered   </tspan><tspan fill="#d8a13f" font-weight="bold">2</tspan><tspan fill="#7a8593"> today   </tspan><tspan fill="#7fb3a3" font-weight="bold">1</tspan><tspan fill="#7a8593"> c… </tspan></text>
+  <text x="22" y="74" xml:space="preserve"><tspan fill="#cf6a63" font-weight="bold"> 3</tspan><tspan fill="#7a8593"> warn  </tspan><tspan fill="#ece5d5" font-weight="bold">6</tspan><tspan fill="#7a8593"> kept  </tspan><tspan fill="#d8a13f" font-weight="bold">2</tspan><tspan fill="#7a8593"> today  </tspan><tspan fill="#7fb3a3" font-weight="bold">1</tspan><tspan fill="#7a8593"> cleared         </tspan></text>
   <text x="22" y="93" xml:space="preserve"><tspan fill="#3a4553"> ── </tspan><tspan fill="#d8a13f" font-weight="bold">! </tspan><tspan fill="#d97757" font-weight="bold">Just warned </tspan><tspan fill="#3a4553">───── </tspan><tspan fill="#7a8593">14:31 </tspan><tspan fill="#ece5d5">d: </tspan><tspan fill="#ece5d5">Dismiss</tspan><tspan fill="#3a4553"> ── </tspan></text>
   <text x="22" y="112" xml:space="preserve"><tspan fill="#7a8593"> you ran   </tspan><tspan fill="#ece5d5">bun test test/billing.test.ts    </tspan></text>
   <text x="22" y="131" xml:space="preserve"><tspan fill="#7a8593"> matched   </tspan><tspan fill="#ece5d5">the same call, 3× before </tspan><tspan fill="#7a8593">(last … </tspan></text>
@@ -61,11 +60,10 @@
   <text x="22" y="492" xml:space="preserve"><tspan fill="#7a8593">    session           </tspan><tspan fill="#ece5d5">in this session       </tspan></text>
   <text x="22" y="511" xml:space="preserve"><tspan fill="#7a8593">    fix               </tspan><tspan fill="#7fb3a3">Last time this start… </tspan></text>
   <text x="22" y="530" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
-  <text x="22" y="549" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
-  <text x="22" y="568" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> Wednesday                                  </tspan></text>
-  <text x="22" y="587" xml:space="preserve"><tspan fill="#d8a13f">  ▸ </tspan><tspan fill="#7a8593">15:03  </tspan><tspan fill="#ece5d5">curl -fsSL https://s…</tspan><tspan fill="#7a8593"> ×1</tspan><tspan fill="#d8a13f">  denied </tspan></text>
-  <text x="22" y="606" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
-  <text x="22" y="625" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> Last week                                  </tspan></text>
-  <text x="22" y="644" xml:space="preserve"><tspan fill="#7a8593">  ▸ 08:55  docker compose up -d … ×1  stale </tspan></text>
-  <text x="22" y="663" xml:space="preserve"><tspan fill="#ece5d5"> </tspan><tspan fill="#ece5d5">r: </tspan><tspan fill="#ece5d5">Retest</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">f: </tspan><tspan fill="#ece5d5">Forget</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">a: </tspan><tspan fill="#ece5d5">Forget all</tspan><tspan fill="#ece5d5">        </tspan></text>
+  <text x="22" y="549" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> Wednesday                                  </tspan></text>
+  <text x="22" y="568" xml:space="preserve"><tspan fill="#d8a13f">  ▸ </tspan><tspan fill="#7a8593">15:03  </tspan><tspan fill="#ece5d5">curl -fsSL https://s…</tspan><tspan fill="#7a8593"> ×1</tspan><tspan fill="#d8a13f">  denied </tspan></text>
+  <text x="22" y="587" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="606" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> Last week                                  </tspan></text>
+  <text x="22" y="625" xml:space="preserve"><tspan fill="#7a8593">  ▸ 08:55  docker compose up -d … ×1  stale </tspan></text>
+  <text x="22" y="644" xml:space="preserve"><tspan fill="#ece5d5"> </tspan><tspan fill="#ece5d5">r: </tspan><tspan fill="#ece5d5">Retest</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">f: </tspan><tspan fill="#ece5d5">Forget</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">a: </tspan><tspan fill="#ece5d5">Forget all</tspan><tspan fill="#ece5d5">        </tspan></text>
 </svg>
