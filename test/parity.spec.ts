@@ -56,7 +56,8 @@ const SCRIPT: Step[] = [
 ]
 
 // Stamps differ by design: the binary sees fractional file times and adds a coarse hash.
-const scrub = (s: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.replace(/"stateStamp":"[0-9a-f]{16}"/g, '"stateStamp":"S"').replace(/,"stateCoarse":"[0-9a-f]{16}"/g, '')]))
+// The stored cwd differs because each front end runs in its own directory.
+const scrub = (s: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.replace(/"stateStamp":"[0-9a-f]{16}"/g, '"stateStamp":"S"').replace(/,"stateCoarse":"[0-9a-f]{16}"/g, '').replace(/"cwd":"[^"]*"/g, '"cwd":"C"')]))
 
 
 function expectNonTrivial(said: string[], store: Record<string, string>): void {

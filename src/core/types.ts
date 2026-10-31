@@ -38,6 +38,14 @@ export interface FailureRecord {
   firstSeen: string
   lastSeen: string
   errorExcerpt: string
+  /** The call's input, kept so the call can be retested; absent when it was too large. */
+  input?: unknown
+  /** True when the input was over the size cap and so not stored. */
+  inputTooLarge?: true
+  /** Where the call ran. */
+  cwd?: string
+  /** Sanitised full failure output, multi-line, capped; never shown to the agent. */
+  errorFull?: string
   agentId?: string
   /** HEAD when the call failed, git repositories only. */
   gitHead?: string

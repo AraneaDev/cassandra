@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { check, settle, type Call } from '../src/core/engine.ts'
+import { check, sanitiseFull, settle, type Call } from '../src/core/engine.ts'
 import { fixSentence, readFix, writeFix } from '../src/core/fixes.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
@@ -420,4 +420,32 @@ describe('package scope', () => {
     expect(await readRecord(io, await pathsFor(io, a), '7de9474754ac3aa7')).not.toBeNull()
     expect(await check(io, { ...mcp, cwd: b })).not.toBeNull()
   })
+})
+
+test('a failure stores the input, the cwd and the full output', async () => {
+  await settle(io, call('bun test'), { kind: 'failure', reason: 'Exit code 1\nline two' }, null)
+  const paths = await pathsFor(io, cwd)
+  const hash = (await fingerprint(io, 'Bash', { command: 'bun test' }, ''))!
+  const rec = await readRecord(io, paths, hash)
+  expect(rec?.input).toEqual({ command: 'bun test' })
+  expect(rec?.cwd).toBe('/work/proj')
+  expect(rec?.errorFull).toBe('Exit code 1\nline two')
+  expect(rec?.errorExcerpt).toBe('Exit code 1 line two')
+})
+
+test('an input over 16384 JSON characters is not stored', async () => {
+  const command = 'x'.repeat(20000)
+  await settle(io, call(command), { kind: 'failure', reason: 'boom' }, null)
+  const hash = (await fingerprint(io, 'Bash', { command }, ''))!
+  const rec = await readRecord(io, await pathsFor(io, cwd), hash)
+  expect(rec).not.toBeNull()
+  expect(rec?.input).toBeUndefined()
+  expect(rec?.inputTooLarge).toBe(true)
+})
+
+test('full output keeps newlines and tabs, drops other control characters, and is capped', () => {
+  expect(sanitiseFull('a\u001b[31mb\r\nc\td\u0007')).toBe('a [31mb\nc\td')
+  const long = sanitiseFull('y'.repeat(20000))
+  expect(long.length).toBe(16384)
+  expect(long.endsWith('...')).toBe(true)
 })

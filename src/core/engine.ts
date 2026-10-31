@@ -12,6 +12,10 @@ import { appendStat, attributeBoundary, type BriefBoundary } from './stats.ts'
 import type { RecordKind } from './types.ts'
 
 const EXCERPT_MAX = 240
+/** Most JSON characters of a call's input a record keeps, for retest. */
+export const INPUT_MAX = 16384
+/** Most characters of the sanitised full output a record keeps. */
+export const FULL_MAX = 16384
 /** Most dirty paths a record keeps, so a huge working tree cannot bloat it. */
 const DIRTY_MAX = 200
 
@@ -33,6 +37,22 @@ export function sanitiseExcerpt(text: string | undefined): string {
     .replace(/\s+/g, ' ')
     .trim()
   return t.length > EXCERPT_MAX ? `${t.slice(0, EXCERPT_MAX - 3)}...` : t
+}
+
+/**
+ * The longer, multi-line form of the failure output, kept for the pane and never shown to
+ * the agent. Same untrusted-text rule as the excerpt: control characters other than
+ * newline and tab become spaces, each line's trailing whitespace is trimmed, and the
+ * result is capped.
+ */
+export function sanitiseFull(text: string | undefined): string {
+  const t = (text ?? '')
+    .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, ' ')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .trim()
+  return t.length > FULL_MAX ? `${t.slice(0, FULL_MAX - 3)}...` : t
 }
 
 /** One tracked tool call, as either front end sees it. Empty strings mean unknown. */
@@ -144,6 +164,8 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
   if (stamp.kind === 'none') return false
   const earlier = await readRecord(io, paths, hash)
   const { hashes, stats } = stamp.git ? await dirtyHashes(io, await findRepoRoot(io, call.cwd), stamp.git.dirty, earlier) : { hashes: {}, stats: {} }
+  const inputJson = JSON.stringify(call.input)
+  const full = sanitiseFull(reason)
   await upsertRecord(io, paths, hash, {
     tool: call.tool,
     display: displayFor(call.tool, call.input),
@@ -155,6 +177,9 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
     sessionId: call.sessionId,
     compactions: await compactionCount(io, paths, call.sessionId),
     errorExcerpt: sanitiseExcerpt(reason),
+    ...(full ? { errorFull: full } : {}),
+    ...(inputJson !== undefined && inputJson.length <= INPUT_MAX ? { input: call.input } : { inputTooLarge: true as const }),
+    cwd: call.cwd,
     agentId: call.agentId,
     ...(stamp.git
       ? {
