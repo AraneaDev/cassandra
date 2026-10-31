@@ -95,6 +95,16 @@ describe('drawPane', () => {
     }
   })
 
+  test('at the four-row minimum, Just warned with an open row draws within its rows at the exact width', () => {
+    const m = model({ justWarned: warned }, { expanded: true })
+    for (const columns of [24, 40, 70, 120]) {
+      const { texts } = draw(m, columns, PANE_MIN_LINES)
+      expect(texts.length).toBeGreaterThan(0)
+      expect(texts.length).toBeLessThanOrEqual(PANE_MIN_LINES)
+      for (const t of texts) expect(cells(t)).toBe(columns)
+    }
+  })
+
   test('a full list fills its rows exactly', () => {
     const many = Array.from({ length: 40 }, (_, i) => row(i))
     for (const [columns, rows] of SIZES) {

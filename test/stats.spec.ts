@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test'
 import { appendFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -6,8 +6,17 @@ import { pathsFor, type Paths } from '../src/core/paths.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { appendStat, attributeBoundary, countToday, readStats, warningRates, type StatEvent } from '../src/core/stats.ts'
 
-// countToday uses the local day; pin it so the test is deterministic.
-process.env.TZ = 'UTC'
+// countToday uses the local day; pin it so the tests are deterministic. Bun runs every test
+// file in one process, so restore the previous zone instead of leaking UTC into other files.
+let previousTz: string | undefined
+beforeAll(() => {
+  previousTz = process.env.TZ
+  process.env.TZ = 'UTC'
+})
+afterAll(() => {
+  if (previousTz === undefined) delete process.env.TZ
+  else process.env.TZ = previousTz
+})
 
 let tmp: string
 let paths: Paths
@@ -183,4 +192,23 @@ test('countToday counts only events on the same local day', () => {
     { t: '2026-10-31T09:00:00Z', kind: 'confirmed', hash: h },
   ]
   expect(countToday(events, 'warned', '2026-10-31T12:00:00Z')).toBe(2)
+})
+
+test('countToday follows the local day, not the UTC day', () => {
+  const h = 'a'.repeat(16)
+  const events: StatEvent[] = [
+    { t: '2026-10-30T22:30:00Z', kind: 'warned', hash: h }, // 23:30 on the 30th in Amsterdam (CET after the 25th)
+    { t: '2026-10-30T23:30:00Z', kind: 'warned', hash: h }, // 00:30 on the 31st
+    { t: '2026-10-31T10:00:00Z', kind: 'warned', hash: h }, // 11:00 on the 31st
+  ]
+  const now = '2026-10-31T11:00:00Z'
+  const before = process.env.TZ
+  try {
+    process.env.TZ = 'Europe/Amsterdam'
+    expect(countToday(events, 'warned', now)).toBe(2)
+    process.env.TZ = 'UTC'
+    expect(countToday(events, 'warned', now)).toBe(1)
+  } finally {
+    process.env.TZ = before
+  }
 })

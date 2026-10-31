@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { check, sanitiseFull, settle, type Call } from '../src/core/engine.ts'
+import { check, FULL_MAX, INPUT_MAX, sanitiseFull, settle, type Call } from '../src/core/engine.ts'
 import { fixSentence, readFix, writeFix } from '../src/core/fixes.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
@@ -457,6 +457,49 @@ test('an input over 16384 JSON characters is not stored', async () => {
   expect(rec).not.toBeNull()
   expect(rec?.input).toBeUndefined()
   expect(rec?.inputTooLarge).toBe(true)
+})
+
+test('an input of exactly 16384 JSON characters is kept, one more is not', async () => {
+  const overhead = JSON.stringify({ command: '' }).length
+  const exact = 'x'.repeat(INPUT_MAX - overhead)
+  expect(JSON.stringify({ command: exact }).length).toBe(INPUT_MAX)
+  await settle(io, call(exact), { kind: 'failure', reason: 'boom' }, null)
+  const kept = await readRecord(io, await pathsFor(io, cwd), (await fingerprint(io, 'Bash', { command: exact }, ''))!)
+  expect(kept?.input).toEqual({ command: exact })
+  expect(kept?.inputTooLarge).toBeUndefined()
+
+  const over = `${exact}x`
+  await settle(io, call(over), { kind: 'failure', reason: 'boom' }, null)
+  const dropped = await readRecord(io, await pathsFor(io, cwd), (await fingerprint(io, 'Bash', { command: over }, ''))!)
+  expect(dropped?.input).toBeUndefined()
+  expect(dropped?.inputTooLarge).toBe(true)
+})
+
+test('a call with no input is never recorded, so it cannot be marked inputTooLarge', async () => {
+  // An undefined input has no fingerprint, so record() stops before JSON.stringify(undefined) matters.
+  const noInput = { tool: 'Read', cwd, sessionId: 's1' } as unknown as Call
+  await settle(io, noInput, { kind: 'failure', reason: 'boom' }, null)
+  expect(await fingerprint(io, 'Read', undefined, '')).toBeNull()
+  const paths = await pathsFor(io, cwd)
+  expect(await readRecord(io, paths, (await fingerprint(io, 'Read', {}, ''))!)).toBeNull()
+  expect(await check(io, noInput)).toBeNull()
+})
+
+test('full output of exactly 16384 characters is kept whole, one more is capped, empty stores nothing', async () => {
+  const exact = 'y'.repeat(FULL_MAX)
+  expect(sanitiseFull(exact)).toBe(exact)
+  const over = sanitiseFull(`${exact}y`)
+  expect(over.length).toBe(FULL_MAX)
+  expect(over.endsWith('...')).toBe(true)
+
+  const stored = async (command: string) =>
+    readRecord(io, await pathsFor(io, cwd), (await fingerprint(io, 'Bash', { command }, ''))!)
+  await settle(io, call('exact'), { kind: 'failure', reason: exact }, null)
+  expect((await stored('exact'))?.errorFull).toBe(exact)
+  await settle(io, call('empty'), { kind: 'failure', reason: '' }, null)
+  const empty = await stored('empty')
+  expect(empty).not.toBeNull()
+  expect(empty?.errorFull).toBeUndefined()
 })
 
 test('full output keeps newlines and tabs, drops other control characters, and is capped', () => {
