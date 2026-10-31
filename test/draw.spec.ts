@@ -251,11 +251,34 @@ describe('drawPane', () => {
     expect(text(byKey(draw(one, 70, 30).all, pane.KEY_CONFIRM)!)).toBe('Forget all 1 record')
   })
 
-  test('a pending retest draws no confirm here yet: its block is Task 8\'s', () => {
-    const { all } = draw(model({}, { confirmRetest: row(0).hash }), 70, 30)
-    expect([pane.KEY_RETEST_CONFIRM, pane.KEY_RETEST_CANCEL]).toEqual(['retest-confirm', 'retest-cancel'])
+  test('the full output opens under the detail, windowed to the pane with a count of the rest', () => {
+    const full = Array.from({ length: 60 }, (_, i) => `out ${i}`).join('\n')
+    const { texts, layout } = draw(model({ detail: { ...detail, full } }, { expanded: true, showFull: true }), 70, 30)
+    expect(texts).toHaveLength(30)
+    expect(layout.full!.more).toBeGreaterThan(0)
+    expect(texts.some((t) => t.trim() === 'full output')).toBe(true)
+    expect(texts.some((t) => t.trim() === `${layout.full!.more} more lines`)).toBe(true)
+    for (const t of texts) expect(cells(t)).toBe(70)
+    // All of it when it fits, and no count.
+    const small = draw(model({ detail: { ...detail, full: 'one\ntwo' } }, { expanded: true, showFull: true }), 70, 30)
+    expect(small.layout.full).toEqual({ lines: ['one', 'two'], more: 0 })
+  })
+
+  test('a pending retest for the marked row draws its whole call above Run and Cancel', () => {
+    const { all, texts, layout } = draw(model({}, { confirmRetest: row(0).hash }), 70, 30)
+    expect(layout.retest).not.toBeNull()
+    expect(layout.retest).not.toBe('too-small')
+    expect(texts.some((t) => t.includes('Retest'))).toBe(true)
+    expect(byKey(all, pane.KEY_RETEST_CONFIRM)).toBeDefined()
+    expect(byKey(all, pane.KEY_RETEST_CANCEL)).toBeDefined()
+    expect(byKey(all, 'retest-row')).toBeDefined()
+    for (const t of texts) expect(cells(t)).toBe(70)
+  })
+
+  test('a pending retest for another row than the marked one draws nothing', () => {
+    const { all, layout } = draw(model({}, { confirmRetest: 'not-the-marked-row' }), 70, 30)
+    expect(layout.retest).toBeNull()
     expect(byKey(all, pane.KEY_RETEST_CONFIRM)).toBeUndefined()
-    expect(byKey(all, pane.KEY_RETEST_CANCEL)).toBeUndefined()
     expect(byKey(all, 'action-row')).toBeDefined()
   })
 

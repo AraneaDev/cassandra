@@ -1,22 +1,23 @@
 import { forget } from '../src/commands/forget.ts'
 import { runCommand, type CommandResult } from '../src/commands/run.ts'
-import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
+import { buildBriefing, callHash, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
 import { paneModel, unreadableModel, type PaneModel, type PaneTab, type PaneView } from '../src/core/pane.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { statusText } from '../src/core/status.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
-import type { BriefBoundary } from '../src/core/stats.ts'
+import { appendStat, type BriefBoundary } from '../src/core/stats.ts'
 import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from '../src/core/tools.ts'
 import { listRecords } from '../src/core/record.ts'
 import { resolveHash } from '../src/core/resolve.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
 import { layoutOf, type PaneExtras } from './layout.ts'
 import {
-  KEY_CANCEL, KEY_CONFIRM, KEY_DISMISS, KEY_DOWN, KEY_FORGET, KEY_FORGET_ALL, KEY_FULL, KEY_HELP, KEY_RETEST, KEY_SEARCH,
+  KEY_CANCEL, KEY_CONFIRM, KEY_DISMISS, KEY_DOWN, KEY_FORGET, KEY_FORGET_ALL, KEY_FULL, KEY_HELP, KEY_RETEST, KEY_RETEST_CANCEL, KEY_RETEST_CONFIRM, KEY_SEARCH,
   KEY_SEARCH_CLEAR, KEY_SEARCH_FIELD, KEY_TABKEY_PREFIX, KEY_TAB_PREFIX, KEY_TWIN_PREFIX, KEY_UP, ROW_KEY_PREFIX, drawPane, keyListRows, twinTarget,
   type Elements,
 } from './pane.tsx'
+import { runRetest, type RetestHost, type Retesting } from './retest.ts'
 
 /** A user-role row a plugin appends: text blocks the model reads, in the named loop (main when absent). */
 export interface AppendArgs {
@@ -60,7 +61,11 @@ export interface OpenArgs {
 /** The slice of `$` the hooks use: the core's, the session's identity and its append, tool registration, state and the pane. */
 export type ModEngine = ModHost & {
   session: { id(): Promise<string>; cwd(): Promise<string>; append(args: AppendArgs): Promise<AppendResult>; surfaces(): Promise<readonly string[]> }
-  tool: { register(spec: { name: string; description: string; inputSchema?: Record<string, unknown> }): Promise<unknown> }
+  tool: {
+    register(spec: { name: string; description: string; inputSchema?: Record<string, unknown> }): Promise<unknown>
+    check(args: { tool: string; input: unknown }): Promise<{ decision: 'allow' | 'ask' | 'deny' }>
+    call(args: { tool: string; consent?: string; [key: string]: unknown }): Promise<unknown>
+  }
   command: { register(spec: { name: string; description?: string; argumentHint?: string }): Promise<unknown> }
   state: {
     get<K extends keyof PaneState>(ref: PaneRef<K>): Promise<{ value: PaneState[K] | undefined; version: number }>
@@ -71,6 +76,7 @@ export type ModEngine = ModHost & {
     open(args: OpenArgs): Promise<unknown>
     resolve(e: PaneRenderEvent): Elements
     focus(args: { requestId: string; key: string }): Promise<{ deny?: string }>
+    toast(text: string): void
   }
 }
 
@@ -230,6 +236,19 @@ function hostOf($: ModEngine): ModHost {
   }
 }
 
+/**
+ * The calls a retest makes, each spelled out for the same reason as `hostOf`: the validator
+ * follows `$` only into a function declared in this file.
+ */
+function retestHostOf($: ModEngine): RetestHost {
+  return {
+    cwd: () => $.session.cwd(),
+    check: (args) => $.tool.check(args),
+    call: (args) => $.tool.call(args),
+    toast: (text) => $.ui.toast(text),
+  }
+}
+
 /** This plugin's name, as the engine stamps it on the rows the plugin appends. */
 const PLUGIN_NAME = 'cassandra'
 
@@ -321,8 +340,8 @@ const TAB_IDS: readonly PaneTab[] = ['history', 'warnings', 'stale', 'denied']
 
 /**
  * What one surface last drew: the row it marked selected, every row it showed, every record
- * it counted, the whole list the marker walks (the tab and search applied, in order), and
- * the marked record when it offered a retest.
+ * it counted, the whole list the marker walks (the tab and search applied, in order), the
+ * marked record when it offered a retest, and the record whose retest confirm it drew whole.
  */
 export interface DrawnPane {
   selected: string | null
@@ -330,6 +349,8 @@ export interface DrawnPane {
   counted: ReadonlySet<string>
   rows: readonly string[]
   retestable: string | null
+  /** The record whose whole call this surface drew under a Run, when it did. */
+  confirming: string | null
 }
 
 /** What each surface last drew, by surface. Forget acts only on rows the person saw. */
@@ -408,12 +429,13 @@ async function readExtras($: ModEngine, model: PaneModel): Promise<PaneExtras> {
 
 /**
  * Open the pane, unless nothing can show one. Neither confirmation survives into a fresh
- * open, and neither does an old notice. Rejects on a host failure.
+ * open, nor an open search field, nor an old notice. Rejects on a host failure.
  */
 async function openPane($: ModEngine): Promise<{ text: string; exitCode: number }> {
   if ((await $.session.surfaces()).length === 0) return { text: PANE_HEADLESS, exitCode: 1 }
   await $.state.set(CONFIRM_ALL, false)
   await $.state.set(CONFIRM_RETEST, null)
+  await $.state.set(SEARCHING, false)
   await $.state.set(NOTICE, null)
   await $.ui.open({ id: PANE_ID, title: 'Cassandra', focus: true, closeOnEscape: true })
   return { text: PANE_OPENED, exitCode: 0 }
@@ -447,6 +469,7 @@ async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRende
       counted: new Set(model.hashes),
       rows: model.rows.map((r) => r.hash),
       retestable: model.detail?.retest.ok === true ? model.selected : null,
+      confirming: layout.retest !== null && layout.retest !== 'too-small' ? model.selected : null,
     })
     return drawPane($.ui.resolve(e), model, columns, layout)
   } catch {
@@ -497,26 +520,32 @@ async function pressRow($: ModEngine, io: Io, key: string, drawn: DrawnPane | un
 
 /**
  * `j` or `k`: mark the next or previous row of the list this surface drew, stopping at
- * either end. Resolves to the key of the row now marked, for the ring to follow; null when
- * nothing moved. Rejects on a state failure.
+ * either end. It moves from the selection wherever it is in that list, not only inside the
+ * window shown, so a held key walks past the window's edge. A retest waiting for its
+ * confirm is dropped: the confirm showed the old row's call. Resolves to the key of the row
+ * now marked, for the ring to follow; null when nothing moved. Rejects on a state failure.
  */
 async function moveMarker($: ModEngine, drawn: DrawnPane | undefined, by: 1 | -1): Promise<string | null> {
   if (!drawn || drawn.rows.length === 0) return null
-  const from = drawn.rows.indexOf((await markedRow($, drawn)) ?? '')
+  const selected = (await $.state.get(SELECTED)).value ?? null
+  const start = selected !== null && drawn.rows.includes(selected) ? selected : drawn.selected
+  const from = drawn.rows.indexOf(start ?? '')
   const to = drawn.rows[Math.min(drawn.rows.length - 1, Math.max(0, (from < 0 ? 0 : from) + by))]!
   await $.state.set(SELECTED, to)
   await $.state.set(SHOW_FULL, false)
+  await $.state.set(CONFIRM_RETEST, null)
   return `${ROW_KEY_PREFIX}${to.slice(0, 8)}`
 }
 
 /**
  * Switch the list to `tab`: the marked row stays marked when the new tab lists it, else the
- * tab's first row is marked, closed. Rejects on a host failure.
+ * tab's first row is marked, closed. A waiting retest is dropped. Rejects on a host failure.
  */
 async function switchTab($: ModEngine, io: Io, cwd: string, tab: PaneTab): Promise<void> {
   const view = await readView($)
   const model = await paneModel(io, cwd, { ...view, tab }, await $.session.id())
   await $.state.set(TAB, tab)
+  await $.state.set(CONFIRM_RETEST, null)
   if (model.selected === view.selected) return
   await $.state.set(SELECTED, model.selected)
   await $.state.set(EXPANDED, false)
@@ -622,12 +651,48 @@ async function confirmForgetAll($: ModEngine, io: Io, cwd: string, drawn: DrawnP
   await refreshStatus($, io)
 }
 
+/** What a press leaves to do once it is done: where the focus ring goes, and a retest to run. */
+interface Pressed {
+  /** The element the ring moves to (the row `j`/`k` marked, the search field `s` opened), or null. */
+  ring: string | null
+  /** The confirmed retest, run after the press so it holds up no other press while the call runs. */
+  retest?: () => Promise<void>
+}
+
 /**
- * Act on a press in the pane, by the key of the Button pressed. Resolves to the element the
- * focus ring should move to once the press is done (the row `j`/`k` marked, the search
- * field `s` opened), or null. Never throws.
+ * Run the retest the person confirmed, then show what it came to and redraw. Never throws.
+ * Top-level because it takes `$`: the validator follows `$` nowhere else.
  */
-async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: DrawnBySurface): Promise<string | null> {
+async function retestConfirmed($: ModEngine, io: Io, hash: string, retesting: Retesting): Promise<void> {
+  let notice: string | null
+  try {
+    notice = (await runRetest(retestHostOf($), io, hash, retesting)).notice
+  } catch {
+    notice = 'The retest could not be run; nothing changed.'
+  }
+  await $.state.set(NOTICE, notice).catch(() => undefined)
+  await refreshStatus($, io)
+}
+
+/**
+ * Run: the retest this surface drew whole, and only that one. Anything else (no confirm
+ * waiting, or one this surface could not show whole) drops the confirm and runs nothing.
+ * Resolves to the run, for after the press. Rejects on a state failure.
+ */
+async function confirmRetest($: ModEngine, io: Io, drawn: DrawnPane | undefined, retesting: Retesting): Promise<Pressed> {
+  const hash = (await $.state.get(CONFIRM_RETEST)).value ?? null
+  await $.state.set(CONFIRM_RETEST, null)
+  await $.state.set(NOTICE, null)
+  if (hash === null || drawn?.confirming !== hash) return { ring: null }
+  return { ring: null, retest: () => retestConfirmed($, io, hash, retesting) }
+}
+
+/**
+ * Act on a press in the pane, by the key of the Button pressed. Resolves to what is left to
+ * do once the press is done (see Pressed). Never throws.
+ */
+async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: DrawnBySurface, retesting: Retesting): Promise<Pressed> {
+  const done = { ring: null }
   try {
     const io = wrapIo(modIo(hostOf($)))
     const cwd = await $.session.cwd()
@@ -637,7 +702,7 @@ async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, 
     const tab = tabOf(element)
     if (tab !== null) {
       await switchTab($, io, cwd, tab)
-      return null
+      return done
     }
     switch (element) {
       case KEY_FORGET:
@@ -645,52 +710,65 @@ async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, 
           const target = await forgetTarget($, io, cwd, here)
           return target === null ? null : forget(io, await pathsFor(io, cwd), target, false)
         }, 'Could not forget the selected record.')
-        return null
+        return done
       // An old failure line must not sit beside the confirm row, nor outlive the cancel.
       case KEY_FORGET_ALL:
         await $.state.set(NOTICE, null)
         // Nothing to confirm on an empty store.
         if ((await listRecords(io, await pathsFor(io, cwd))).length > 0) await $.state.set(CONFIRM_ALL, true)
-        return null
+        return done
       case KEY_CANCEL:
         await $.state.set(NOTICE, null)
         await $.state.set(CONFIRM_ALL, false)
-        return null
+        return done
       case KEY_CONFIRM:
         await confirmForgetAll($, io, cwd, here)
-        return null
+        return done
       case KEY_DOWN:
-        return await moveMarker($, here, 1)
+        return { ring: await moveMarker($, here, 1) }
       case KEY_UP:
-        return await moveMarker($, here, -1)
+        return { ring: await moveMarker($, here, -1) }
       // Each reference spelled out: the validator lists state only from literal references.
-      case KEY_FULL:
-        await $.state.set(SHOW_FULL, !((await $.state.get(SHOW_FULL)).value ?? false))
-        return null
+      // The full output shows in the open detail, so opening it opens the row too.
+      case KEY_FULL: {
+        const full = !((await $.state.get(SHOW_FULL)).value ?? false)
+        await $.state.set(SHOW_FULL, full)
+        if (full) await $.state.set(EXPANDED, true)
+        return done
+      }
       case KEY_HELP:
         await $.state.set(SHOW_KEYS, !((await $.state.get(SHOW_KEYS)).value ?? false))
-        return null
+        return done
       case KEY_DISMISS:
         await $.state.set(LAST_WARNING, null)
-        return null
+        return done
       case KEY_SEARCH:
         await $.state.set(SEARCHING, true)
-        return KEY_SEARCH_FIELD
+        return { ring: KEY_SEARCH_FIELD }
       case KEY_SEARCH_CLEAR:
         await $.state.set(QUERY, '')
         await $.state.set(SEARCHING, false)
-        return null
-      // Only marks the retest as waiting for its confirm; the confirm and the run are Task 8's.
+        return done
+      // Marks the retest as waiting for its confirm, which shows the whole call.
       case KEY_RETEST:
-        if (here?.retestable) await $.state.set(CONFIRM_RETEST, here.retestable)
-        return null
+        if (here?.retestable) {
+          await $.state.set(NOTICE, null)
+          await $.state.set(CONFIRM_RETEST, here.retestable)
+        }
+        return done
+      case KEY_RETEST_CANCEL:
+        await $.state.set(NOTICE, null)
+        await $.state.set(CONFIRM_RETEST, null)
+        return done
+      case KEY_RETEST_CONFIRM:
+        return await confirmRetest($, io, here, retesting)
       default:
         if (element.startsWith(ROW_KEY_PREFIX)) await pressRow($, io, element, here).catch(() => undefined)
-        return null
+        return done
     }
   } catch {
     // The press changes nothing.
-    return null
+    return done
   }
 }
 
@@ -800,6 +878,32 @@ export function outcomeOf(r: ToolCallOutcome, aborted: boolean, tool?: string): 
     return { kind: 'failure', reason: r.text }
   }
   return { kind: 'success' }
+}
+
+/**
+ * Run the pane's retest of a call and settle it as any call is settled, with no warning
+ * before it: a pass forgets the record (with its fix note) and logs `retest_cleared`, a
+ * failure updates the record and logs `retest_failed`; neither is a warning's outcome, so
+ * no `false_positive` or `confirmed`. A call that never ran (a denial, a refused
+ * permission, an interrupt) changes nothing. What it came to is left in `retesting` for
+ * the retest that is waiting on it. The result comes back as the engine gave it.
+ */
+async function settleRetest($: ModEngine, io: Io, call: Call, hash: string, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>, retesting: Retesting): Promise<ToolCallOutcome> {
+  const result = await next(e)
+  try {
+    const outcome = outcomeOf(result, next.signal?.aborted === true, call.tool)
+    if (outcome.kind !== 'success' && outcome.kind !== 'failure') {
+      retesting.set(hash, 'not_run')
+      return result
+    }
+    const changed = await settle(io, call, outcome, null)
+    await appendStat(io, await pathsFor(io, call.cwd), { kind: outcome.kind === 'success' ? 'retest_cleared' : 'retest_failed', hash })
+    retesting.set(hash, outcome.kind === 'success' ? 'passed' : 'failed')
+    if (changed) await refreshStatus($, io)
+  } catch {
+    // The call happened; only the bookkeeping is lost.
+  }
+  return result
 }
 
 /**
@@ -936,19 +1040,23 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
   })
 
   const drawn: DrawnBySurface = new Map()
+  // The retests the pane started, until the tracked hook below has settled each one.
+  const retesting: Retesting = new Map()
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => renderPane($, e, next, wrapIo, drawn))
 
   // Presses and focus moves run one at a time, in order, so a Forget reads the selection
   // the press or the move before it left.
   let pressing: Promise<unknown> = Promise.resolve()
   on('ui.press', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
-    const done = pressing.then(() => onPanePress($, e, wrapIo, drawn))
+    const done = pressing.then(() => onPanePress($, e, wrapIo, drawn, retesting))
     pressing = done
-    const ring = await done
+    const { ring, retest } = await done
     // A press that fails beneath still counts as taken here: the action already ran.
     const pressed = await next(e).catch(() => ({ element: e.element }))
     // After the press, never inside it: the move raises ui.focus, which waits its turn behind this press.
     if (ring !== null) await $.ui.focus({ requestId: PANE_ID, key: ring }).catch(() => undefined)
+    // Outside the queue, so the pane still answers while the call runs (or its permission prompt waits).
+    if (retest) await retest()
     return pressed
   })
 
@@ -979,7 +1087,8 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
   on('tool.call', { tool: TRACKED }, async ($, e, next) => {
     let io: Io
     let call: Call
-    let warning: Warning | null
+    let warning: Warning | null = null
+    let retested: string | null = null
     try {
       io = wrapIo(modIo(hostOf($)))
       const sessionId = await $.session.id()
@@ -988,10 +1097,18 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
       // A surface list that cannot be read only words the warning without the pane.
       const surfaces = await $.session.surfaces().catch(() => [])
       call = { tool: e.tool, input: toolInput(e), cwd: await $.session.cwd(), sessionId, agentId: e.agentId, paneAvailable: surfaces.length > 0 }
-      warning = await check(io, call)
+      // The pane's own retest: the person asked for it, so it is not warned about.
+      const hash = retesting.size > 0 ? await callHash(io, call) : null
+      if (hash !== null && retesting.get(hash) === 'pending') {
+        retesting.set(hash, 'running')
+        retested = hash
+      } else {
+        warning = await check(io, call)
+      }
     } catch {
       return next(e)
     }
+    if (retested !== null) return settleRetest($, io, call, retested, e, next, retesting)
     if (warning) await noteWarning($, io, warning.hash)
 
     const result = await next(e)

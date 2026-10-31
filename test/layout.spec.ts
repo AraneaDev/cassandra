@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
-import { layoutOf, PANE_MIN_LINES } from '../mod/layout.ts'
-import { unreadableModel, type JustWarned, type PaneModel, type PaneRow } from '../src/core/pane.ts'
+import { visible, wrapCells } from '../mod/draw-text.ts'
+import { FULL_NOT_KEPT, fullBody, layoutOf, PANE_MIN_LINES, retestBody } from '../mod/layout.ts'
+import { unreadableModel, type JustWarned, type PaneDetail, type PaneModel, type PaneRow } from '../src/core/pane.ts'
 
 const row = (i: number, group = 'Today'): PaneRow => ({ hash: `h${i}`, id: `id${i}`, display: `cmd ${i}`, where: '', state: 'warns', count: 1, time: '10:00', group })
 
@@ -17,21 +18,21 @@ function model(n: number, over: { selected?: number; expanded?: boolean; warned?
 test('narrow and short: no branch, short counters inside the header, digit tabs', () => {
   expect(layoutOf(model(20), 40, 15)).toEqual({
     tier: 'narrow', tooShort: false, header: { branch: false, commit: false }, counters: 'in-header',
-    tabs: 'digits', justWarned: false, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 9, more: 11, rows: 11 }, detail: 'none',
+    tabs: 'digits', justWarned: false, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 9, more: 11, rows: 11 }, detail: 'none', retest: null, full: null,
   })
 })
 
 test('medium: branch, short counters, tab names', () => {
   expect(layoutOf(model(10, { warned: true }), 70, 30)).toEqual({
     tier: 'medium', tooShort: false, header: { branch: true, commit: false }, counters: 'short',
-    tabs: 'names', justWarned: true, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 18 }, detail: 'none',
+    tabs: 'names', justWarned: true, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 18 }, detail: 'none', retest: null, full: null,
   })
 })
 
 test('wide: branch, commit and tile counters', () => {
   expect(layoutOf(model(10, { selected: 0, expanded: true }), 120, 50)).toEqual({
     tier: 'wide', tooShort: false, header: { branch: true, commit: true }, counters: 'tiles',
-    tabs: 'names', justWarned: false, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 34 }, detail: 'full',
+    tabs: 'names', justWarned: false, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 34 }, detail: 'full', retest: null, full: null,
   })
 })
 
@@ -39,7 +40,7 @@ test('below the minimum height only the one-line fallback is left', () => {
   expect(PANE_MIN_LINES).toBe(4)
   expect(layoutOf(model(10), 120, 3)).toEqual({
     tier: 'wide', tooShort: true, header: { branch: false, commit: false }, counters: 'in-header',
-    tabs: 'digits', justWarned: false, historyTitle: false, notice: false, search: null, keys: 0, list: { start: 0, count: 0, more: 10, rows: 0 }, detail: 'none',
+    tabs: 'digits', justWarned: false, historyTitle: false, notice: false, search: null, keys: 0, list: { start: 0, count: 0, more: 10, rows: 0 }, detail: 'none', retest: null, full: null,
   })
 })
 
@@ -141,4 +142,29 @@ test('the key list takes its title and rows from the list, leaves one list row, 
   // Room for the title alone: no key list.
   expect(keys(6).keys).toBe(0)
   expect(layoutOf(model(20), 70, 40, { searching: false, showKeys: false, keyRows: 12 }).keys).toBe(0)
+})
+
+test('wrapCells cuts by cells and loses nothing; visible draws control characters as pictures', () => {
+  expect(wrapCells('abcdefg', 3)).toEqual(['abc', 'def', 'g'])
+  expect(wrapCells('', 3)).toEqual([''])
+  expect(wrapCells('日本語', 3)).toEqual(['日', '本', '語'])
+  expect(wrapCells('日本語x', 4).join('')).toBe('日本語x')
+  expect(visible('a\u001b[2Jb\tc\nd\u007f')).toBe('a␛[2Jb␉c\nd␡')
+})
+
+test('retestBody: Bash shows the command, its directory and any other argument; other tools their input', () => {
+  const bash = retestBody({ ok: true, tool: 'Bash', input: { command: 'bun test', description: 'run it', timeout: 5 }, cwd: '/p' }, 40)
+  expect(bash).toEqual([{ label: 'run', text: 'bun test' }, { label: 'in', text: '/p' }, { label: 'with', text: '{"timeout":5}' }])
+  const mcp = retestBody({ ok: true, tool: 'mcp__s__t', input: { a: 1 }, cwd: '/p' }, 40)
+  expect(mcp).toEqual([{ label: 'tool', text: 'mcp__s__t' }, { label: 'input', text: '{' }, { label: '', text: '  "a": 1' }, { label: '', text: '}' }])
+  // A Bash input without a command string is shown whole, as any other tool's.
+  expect(retestBody({ ok: true, tool: 'Bash', input: { cmd: 1 }, cwd: '/p' }, 40)![0]).toEqual({ label: 'tool', text: 'Bash' })
+  expect(retestBody({ ok: true, tool: 'Bash', input: { command: 'x' }, cwd: '/p' }, 19)).toBeNull()
+})
+
+test('fullBody wraps the stored output with tabs as spaces; without it, the excerpt and a note', () => {
+  const d = { full: 'a\tb\n' + 'x'.repeat(25), reason: 'boom' } as PaneDetail
+  expect(fullBody(d, 13)).toEqual(['a    b', 'xxxxxxxxxx', 'xxxxxxxxxx', 'xxxxx'])
+  expect(fullBody({ ...d, full: null }, 100)).toEqual(['boom', FULL_NOT_KEPT])
+  expect(fullBody({ ...d, full: null, reason: null }, 100)[0]).toBe('(no output captured)')
 })

@@ -1570,3 +1570,101 @@ test('opening the pane drops a waiting retest confirm', async () => {
   await command('pane')
   expect(state('confirmRetest')).toBeNull()
 })
+
+test('opening the pane closes an open search field', async () => {
+  opts.state = new Map<string, unknown>([['searching', true]])
+  await command('pane')
+  expect(state('searching')).toBe(false)
+})
+
+/**
+ * Route the mod's own `$.tool.call` back through its tracked hook, as the engine does, with
+ * the engine beneath answering `answer`; `aborted` marks the dispatch interrupted.
+ */
+function retestsThrough(answer: () => ToolCallOutcome, aborted = false): void {
+  opts.toolCall = async (args) => {
+    const next = Object.assign(async () => answer(), { signal: { aborted } as AbortSignal })
+    return (hooks.get('tool.call') as unknown as ($: ModEngine, e: ToolCallEvent, n: typeof next) => Promise<ToolCallOutcome>)(host, args as ToolCallEvent, next)
+  }
+}
+
+/** Draw, press `r`, draw the confirm, and press Run. */
+async function retestMarked(): Promise<void> {
+  await render()
+  await press('retest')
+  await render()
+  await press('retest-confirm')
+}
+
+test('a confirmed retest that passes forgets the record, toasts, and logs retest_cleared without a warning', async () => {
+  await seedFailure('bun test # retest')
+  retestsThrough(ok)
+  await retestMarked()
+  expect(opts.toolCalls).toEqual([{ command: 'bun test # retest', tool: 'Bash', consent: 'The user pressed "Run" on Cassandra\'s retest of this call.' }])
+  expect(opts.toasts).toEqual(['Retest passed; forgotten.'])
+  expect(await remembered()).toEqual([])
+  const kinds = (await readStats(io(), await pathsFor(io(), cwd))).map((e) => e.kind)
+  expect(kinds).toContain('retest_cleared')
+  expect(kinds).not.toContain('warned')
+  expect(kinds).not.toContain('false_positive')
+  expect(state('notice')).toBeNull()
+  expect(state('confirmRetest')).toBeNull()
+})
+
+test('a confirmed retest that fails updates the record and logs retest_failed', async () => {
+  await seedFailure('bun test # still')
+  retestsThrough(() => failed())
+  await retestMarked()
+  expect(opts.toasts).toEqual(['Retest failed again; record updated.'])
+  const [r] = await remembered()
+  expect(r!.record.count).toBe(2)
+  expect((await readStats(io(), await pathsFor(io(), cwd))).map((e) => e.kind)).toEqual(['retest_failed'])
+})
+
+test('an interrupted retest changes nothing and says it did not run', async () => {
+  await seedFailure('bun test # interrupted')
+  retestsThrough(() => failed('Interrupted'), true)
+  await retestMarked()
+  expect(opts.toasts).toBeUndefined()
+  expect(state('notice')).toBe('The retest did not run; nothing changed.')
+  expect((await remembered())[0]!.record.count).toBe(1)
+})
+
+test('a deny verdict runs nothing; Run without a confirm drawn here runs nothing either', async () => {
+  await seedFailure('bun test # deny')
+  opts.verdict = 'deny'
+  await retestMarked()
+  expect(opts.toolCalls).toBeUndefined()
+  expect(state('notice')).toBe('Your permission settings deny this call; nothing ran.')
+  opts.verdict = 'allow'
+  // A confirm another surface drew: this one never showed the call.
+  await press('retest')
+  await press('retest-confirm', 'desktop')
+  expect(opts.toolCalls).toBeUndefined()
+  expect(state('confirmRetest')).toBeNull()
+})
+
+test('a retest whose call the engine never lets reach the hook says its outcome was not recorded', async () => {
+  await seedFailure('bun test # unhooked')
+  await retestMarked()
+  expect(opts.toolCalls).toHaveLength(1)
+  expect(state('notice')).toBe('The retest ran, but Cassandra could not record its outcome.')
+})
+
+test('j and tab switches drop a waiting retest; Cancel drops it too', async () => {
+  await seedFailure('bun test # one')
+  await seedFailure('bun test # two')
+  await render()
+  await press('retest')
+  expect(state('confirmRetest')).not.toBeNull()
+  await press('down')
+  expect(state('confirmRetest')).toBeNull()
+  await render()
+  await press('retest')
+  await press('tab:warnings')
+  expect(state('confirmRetest')).toBeNull()
+  await render()
+  await press('retest')
+  await press('retest-cancel')
+  expect(state('confirmRetest')).toBeNull()
+})

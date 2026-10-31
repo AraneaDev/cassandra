@@ -1,6 +1,6 @@
 import type { PaneDetail, PaneModel, PaneRow, PaneTab } from '../src/core/pane.ts'
 import { cells, fit, padTo, spaces } from './draw-text.ts'
-import { ROWS, type PaneLayout } from './layout.ts'
+import { FULL_INDENT_CELLS, RETEST_LABEL_CELLS, ROWS, padOf, type PaneLayout } from './layout.ts'
 
 export { fit } from './draw-text.ts'
 
@@ -370,8 +370,46 @@ function detailLines(f: Frame, d: PaneDetail, size: 'full' | 'compact'): Line[] 
     at('session', field('session', lw, [{ text: d.session }])),
   ]
   if (d.fix) lines.push(at('fix', field('fix', lw, [{ text: d.fix, color: SUCCESS }])))
+  if (!d.retest.ok) lines.push(at('retest', field('retest', lw, [{ text: NO_RETEST[d.retest.why], color: SECONDARY }])))
   return exactly(f, 'detail', lines, ROWS.fullDetail, MARKED_BG)
 }
+
+/** Why the marked record offers no retest, as its detail says it. */
+const NO_RETEST: Record<Extract<PaneDetail['retest'], { ok: false }>['why'], string> = {
+  'denied': 'not offered for a denied call',
+  'no-input': 'not possible: the call\'s input was not kept',
+  'too-large': 'not possible: the call\'s input was too large to keep',
+}
+
+/** The open detail's full output, on the marked row's ground: its title, its lines, and how many more did not fit. */
+function fullLines(f: Frame, full: NonNullable<PaneLayout['full']>): Line[] {
+  const bg = { bg: MARKED_BG }
+  const indent: Seg = { text: spaces(FULL_INDENT_CELLS) }
+  return [
+    line(f, 'full-title', [indent, { text: 'full output', color: SECONDARY, bold: true }], bg),
+    ...full.lines.map((t, i) => line(f, `full-${i}`, [indent, { text: t }], bg)),
+    ...(full.more > 0 ? [line(f, 'full-more', [indent, { text: plural(full.more, 'more line', 'more lines'), color: SECONDARY }], bg)] : []),
+  ]
+}
+
+/**
+ * The retest confirm: its title rule, then the whole call as the layout wrapped it, each
+ * label dim and the call's text plain. Run and Cancel are the key bar's.
+ */
+function retestLines(f: Frame, lines: NonNullable<Exclude<PaneLayout['retest'], 'too-small'>>['lines']): Line[] {
+  const note: Seg[] = [{ text: 'runs through your permission settings', color: SECONDARY }]
+  return [
+    titleRule(f, 'retest-title', { text: '↻', color: WARNING, bold: true }, 'Retest', note),
+    ...lines.map((l, i) => line(f, `retest-${i}`, [{ text: padTo(l.label, RETEST_LABEL_CELLS), color: SECONDARY }, { text: l.text, color: HEADING }])),
+  ]
+}
+
+/** What a retest too big for the pane says in place of its confirm. */
+export const RETEST_TOO_SMALL = 'Pane too small for the whole call; enlarge it.'
+
+/** The notice the pane shows: a retest it cannot show whole, else the last action's. */
+const noticeOf = (model: PaneModel, layout: PaneLayout): string | null =>
+  layout.retest === 'too-small' ? RETEST_TOO_SMALL : model.view.notice
 
 /**
  * The History card's list: the layout's window onto the rows, each day group under its bold
@@ -400,6 +438,7 @@ function listLines(f: Frame, model: PaneModel, layout: PaneLayout): Line[] {
     const marked = r.hash === model.selected
     out.push(rowLine(f, r, marked, marked && open))
     if (marked && open) out.push(...detailLines(f, model.detail!, layout.detail as 'full' | 'compact'))
+    if (marked && open && layout.full !== null) out.push(...fullLines(f, layout.full))
   })
   if (moreLine) out.push(line(f, 'more', [{ text: ` ${more} more ↓`, color: SECONDARY }]))
   return out
@@ -427,6 +466,13 @@ function searchLine(f: Frame, model: PaneModel, search: 'field' | 'query'): Line
   return line(f, 'search', [label, field, ...(withClear >= 1 ? clear : [])])
 }
 
+/** The History title's note: how many records it lists, and the search they match when no search row shows it. */
+function historyNote(model: PaneModel, layout: PaneLayout): Seg[] {
+  const count: Seg = { text: plural(model.rows.length, 'record', 'records'), color: SECONDARY }
+  if (!model.view.query || layout.search !== null) return [count]
+  return [count, { text: ' matching ', color: SECONDARY }, { text: model.view.query, color: HEADING, bold: true }]
+}
+
 /** The key list `h` opens, in the rows the layout gave it: its title, the rates, then the keys. */
 function keyList(f: Frame, model: PaneModel, rows: number): Line[] {
   const title = titleRule(f, 'keys-title', { text: '?', color: SECONDARY }, 'Keys', [])
@@ -437,23 +483,31 @@ function keyList(f: Frame, model: PaneModel, rows: number): Line[] {
 /**
  * The footer key bar on its faint ground. Normally the keys that act here, in order, the
  * ones that matter least left out when the width is short (their hotkeys kept on hidden
- * twins). While a Forget all waits for its answer, the confirm and Cancel. A notice the layout gave no row of its own follows the keys.
- * A pending retest is not drawn here: its confirm, with the whole call, is Task 8's block.
+ * twins). While a Forget all waits for its answer, the confirm and Cancel; while a retest
+ * does, Run (only under the whole call) and Cancel. A notice the layout gave no row of its own follows the keys.
  */
 function keyBar(f: Frame, model: PaneModel, layout: PaneLayout): Line {
   const bg = { bg: BAR_BG }
-  const notice: Seg[] = model.view.notice && !layout.notice ? [{ text: '  ' }, { text: model.view.notice, color: WARNING }] : []
+  const text = noticeOf(model, layout)
+  const notice: Seg[] = text && !layout.notice ? [{ text: '  ' }, { text, color: WARNING }] : []
   if (model.view.confirmAll && model.total > 0) {
     const confirm = key(KEY_CONFIRM, `Forget all ${plural(model.total, 'record', 'records')}`)
     return line(f, 'confirm-row', [...joined([[confirm], [key(KEY_CANCEL, 'Cancel')]], 2), ...notice], bg)
+  }
+  // A retest waiting for its answer: Run only when the whole call is drawn above.
+  if (layout.retest !== null) {
+    const run = layout.retest === 'too-small' ? [] : [[key(KEY_RETEST_CONFIRM, 'Run')]]
+    return line(f, 'retest-row', [...joined([...run, [key(KEY_RETEST_CANCEL, 'Cancel')]], 2), ...notice], bg)
   }
   const retest = model.detail?.retest
   const keys: BarKey[] = []
   if (retest?.ok) keys.push({ seg: key(KEY_RETEST, 'Retest', 'r'), keep: 2 })
   if (model.selected !== null) keys.push({ seg: key(KEY_FORGET, 'Forget', 'f'), keep: 0 })
   if (model.total > 0) keys.push({ seg: key(KEY_FORGET_ALL, 'Forget all', 'a'), keep: 1 })
-  if (model.detail?.full) keys.push({ seg: key(KEY_FULL, 'Full output', 'o'), keep: 4 })
+  if (model.detail !== null) keys.push({ seg: key(KEY_FULL, 'Full output', 'o'), keep: 4 })
   if (model.total > 0) keys.push({ seg: key(KEY_SEARCH, 'Search', 's'), keep: 5 })
+  // A search applied where the pane has no row for it: clearing it stays in reach.
+  if (model.view.query && layout.search === null) keys.push({ seg: key(KEY_SEARCH_CLEAR, 'Clear search', 'x'), keep: 1.5 })
   keys.push({ seg: key(KEY_HELP, 'Keys', 'h'), keep: 3 })
   const kept = new Set<BarKey>()
   let used = 0
@@ -543,7 +597,7 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, layout
   if (model.error) return one(model.error)
   if (layout.tooShort) return one(TOO_SHORT)
 
-  const pad = Math.min(layout.tier === 'narrow' ? 1 : 2, Math.floor(columns / 2))
+  const pad = padOf(columns)
   const f: Frame = { columns, pad, inner: Math.max(0, columns - 2 * pad) }
   const glyph: Seg = { text: '◷', color: SECONDARY }
   const tab = TABS.find((t) => t.id === model.view.tab)?.name ?? 'History'
@@ -552,11 +606,12 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, layout
     tabs(f, model, layout),
     ...counters(f, model, layout),
     ...(layout.justWarned ? justWarned(f, model) : []),
-    ...(layout.historyTitle ? [titleRule(f, 'history-title', glyph, tab, [{ text: plural(model.rows.length, 'record', 'records'), color: SECONDARY }])] : []),
+    ...(layout.historyTitle ? [titleRule(f, 'history-title', glyph, tab, historyNote(model, layout))] : []),
     ...(layout.search === null ? [] : [searchLine(f, model, layout.search)]),
     ...listLines(f, model, layout),
     ...(layout.keys > 0 ? keyList(f, model, layout.keys) : []),
-    ...(layout.notice && model.view.notice ? [noticeLine(f, model.view.notice)] : []),
+    ...(layout.retest !== null && layout.retest !== 'too-small' ? retestLines(f, layout.retest.lines) : []),
+    ...(layout.notice && noticeOf(model, layout) ? [noticeLine(f, noticeOf(model, layout)!)] : []),
     keyBar(f, model, layout),
   ]
 

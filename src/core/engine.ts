@@ -128,7 +128,7 @@ export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: s
   const paths = await pathsFor(io, call.cwd)
   if (outcome.kind === 'success') {
     if (warnedHash) await appendStat(io, paths, { kind: 'false_positive', hash: warnedHash })
-    const hash = warnedHash ?? (call.tool ? await fingerprint(io, call.tool, call.input, await callScope(io, call)) : null)
+    const hash = warnedHash ?? await callHash(io, call)
     if (!hash) return false
     const found = await readRecord(io, paths, hash)
     if (!found) return false
@@ -144,6 +144,11 @@ export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: s
   // It failed again after we warned, so the warning was right and was disregarded.
   if (warnedHash) await appendStat(io, paths, { kind: 'confirmed', hash: warnedHash })
   return record(io, call, outcome.kind, outcome.reason)
+}
+
+/** The fingerprint a call's record is stored under; null for a call that is never recorded. */
+export async function callHash(io: Io, call: Call): Promise<string | null> {
+  return call.tool ? fingerprint(io, call.tool, call.input, await callScope(io, call)) : null
 }
 
 /** The package a Bash call ran in; '' at the repo root and for every other tool. */

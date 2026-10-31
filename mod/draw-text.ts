@@ -41,6 +41,38 @@ export function fit(text: string, width: number): string {
   return `${out}…`
 }
 
+/**
+ * `text` cut into pieces of at most `width` cells, in order, nothing dropped and nothing
+ * marked: joined again they are `text`. An empty `text` is one empty piece. A grapheme
+ * wider than `width` takes a piece of its own.
+ */
+export function wrapCells(text: string, width: number): string[] {
+  const room = Math.max(1, width)
+  if (cells(text) <= room) return [text]
+  const out: string[] = []
+  let piece = ''
+  let used = 0
+  for (const g of graphemes(text)) {
+    const w = graphemeCells(g)
+    if (used + w > room && piece !== '') {
+      out.push(piece)
+      piece = ''
+      used = 0
+    }
+    piece += g
+    used += w
+  }
+  out.push(piece)
+  return out
+}
+
+/**
+ * `text` with every control character but the newline drawn as its Unicode control
+ * picture (`␛` for ESC, `␉` for a tab), so a terminal shows each one instead of acting on it.
+ */
+export const visible = (text: string): string =>
+  text.replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, (c) => (c === '\u007F' ? '␡' : String.fromCharCode(0x2400 + c.charCodeAt(0))))
+
 /** `n` spaces; none for a negative `n`. */
 export const spaces = (n: number): string => ' '.repeat(Math.max(0, n))
 
