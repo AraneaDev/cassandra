@@ -73,17 +73,25 @@ export function origin(b: Boundary): string {
   }
 }
 
+/**
+ * "HEAD a1b2c3d, working tree clean" or "HEAD a1b2c3d, 2 uncommitted files (a, b)": one git
+ * state, naming at most three changed paths. `qualifier` goes before the count ("the same ").
+ */
+export function gitPhrase(head: string, dirty: readonly string[], truncated = false, qualifier = ''): string {
+  const at = `HEAD ${oneLine(head).slice(0, 7)}`
+  const paths = dirty.map(oneLine)
+  if (paths.length === 0) return `${at}, working tree clean`
+  const more = paths.length > 3 || truncated ? '…' : ''
+  const files = paths.length === 1 ? 'file' : 'files'
+  return `${at}, ${qualifier}${paths.length} uncommitted ${files} (${paths.slice(0, 3).join(', ')}${more})`
+}
+
 /** What was checked to conclude nothing changed: the claim the warning stands on. */
 export function evidence(r: FailureRecord): string {
   if (r.stateKind !== 'git') return 'No file under this directory tree has changed since.'
   if (!r.gitHead) return 'Nothing in this repository has changed since.'
-  const head = `Repository unchanged since: HEAD ${r.gitHead.slice(0, 7)}`
-  const dirty = (r.dirty ?? []).map(oneLine)
-  if (dirty.length === 0) return `${head}, working tree clean.`
-  const more = dirty.length > 3 || r.dirtyTruncated ? '…' : ''
-  const files = dirty.length === 1 ? 'file' : 'files'
-  const same = r.dirtyTruncated ? 'at least the same' : 'the same'
-  return `${head}, ${same} ${dirty.length} uncommitted ${files} (${dirty.slice(0, 3).join(', ')}${more}).`
+  const same = r.dirtyTruncated ? 'at least the same ' : 'the same '
+  return `Repository unchanged since: ${gitPhrase(r.gitHead, r.dirty ?? [], r.dirtyTruncated, same)}.`
 }
 
 /**

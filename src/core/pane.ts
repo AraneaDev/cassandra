@@ -1,23 +1,268 @@
-import { inScope, oneLine } from './describe.ts'
+import { evidence, gitPhrase, inScope, oneLine, origin } from './describe.ts'
 import { fixSentence, readFix } from './fixes.ts'
 import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
-import { pathsFor } from './paths.ts'
+import { basename } from './path.ts'
+import { findRepoRoot, pathsFor, type Paths } from './paths.ts'
 import { listRecords } from './record.ts'
-import { readStats, warningRates } from './stats.ts'
+import { attributeBoundary, countToday, readStats, warningRates, type PaneCounters, type StatEvent } from './stats.ts'
+import type { FailureRecord, StateStamp } from './types.ts'
 
-/** One remembered call as a list row: `display` is the command, `where` its package suffix (" (in packages/a)") or ''. */
-export interface PaneRow { hash: string; id: string; display: string; where: string; kind: 'failed' | 'denied'; count: number; day: string; stale: boolean }
-/** What the selected row shows beneath the list; `reason` is the stored excerpt on one line, null when none was captured. */
-export interface PaneDetail { reason: string | null; probe: string; fix: string | null }
+/** Which records a tab lists: every one, or only those in one state. */
+export type PaneTab = 'history' | 'warnings' | 'stale' | 'denied'
+/** A record's state now: it would warn, the workspace moved since, or it was a denial. */
+export type RowState = 'warns' | 'stale' | 'denied'
+/**
+ * One remembered call as a list row: `display` is the command on one line, `where` its
+ * package suffix (" (in packages/a)") or '', `time` the local HH:MM of `lastSeen` and
+ * `group` its day group (see `dayGroup`).
+ */
+export interface PaneRow { hash: string; id: string; display: string; where: string; state: RowState; count: number; time: string; group: string }
+/**
+ * What the selected row shows. `reason` is the stored excerpt on one line, `full` the stored
+ * multi-line output; `evidenceThen`/`evidenceNow` the workspace when it failed and now;
+ * `firstSeen`/`lastSeen` ISO; `session` where it failed relative to this session; `retest`
+ * the call to run again, or why it cannot be.
+ */
+export interface PaneDetail {
+  exitCode: number | null; reason: string | null; full: string | null
+  warnsNow: boolean; evidenceThen: string; evidenceNow: string
+  firstSeen: string; lastSeen: string; tries: number
+  session: string; fix: string | null
+  retest: { ok: true; tool: string; input: unknown; cwd: string } | { ok: false; why: 'denied' | 'no-input' | 'too-large' }
+}
+/** The warning this session raised last, for the record it was about. */
+export interface JustWarned { hash: string; at: string; display: string; count: number; lastSeen: string; reason: string | null; evidence: string; fix: string | null }
 /** What the pane remembers between redraws. */
-export interface PaneView { selected: string | null; confirmAll: boolean; notice: string | null }
+export interface PaneView { tab: PaneTab; selected: string | null; expanded: boolean; confirmAll: boolean; confirmRetest: string | null; showFull: boolean; query: string; notice: string | null; lastWarning: { hash: string; at: string } | null }
 /** Everything the pane draws, as plain data. */
 export interface PaneModel {
-  rows: PaneRow[]
+  project: string; git: { branch: string | null; head: string } | null
+  tabs: Record<PaneTab, number>; counters: PaneCounters; rates: string | null
+  justWarned: JustWarned | null
+  /** The whole filtered (tab, query), sorted (newest first) list; windowing is the layout's. */
+  rows: PaneRow[]; selected: string | null; detail: PaneDetail | null
+  /** Every record in the store, filtered out ones included: what a confirmed Forget all may delete. */
+  total: number; hashes: string[]; view: PaneView; error: string | null
+}
+
+const UNREADABLE = "Cassandra could not read this project's store."
+
+/** Longest stored excerpt the model hands on; the drawing clips it to the width. */
+const REASON_CAP = 500
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+/** The view a pane starts from. */
+const DEFAULT_VIEW: PaneView = {
+  tab: 'history', selected: null, expanded: false, confirmAll: false, confirmRetest: null,
+  showFull: false, query: '', notice: null, lastWarning: null,
+}
+
+/**
+ * Which day heading a record falls under, by local calendar day: `Today`, `Yesterday`, the
+ * weekday name within six days, `Last week` within thirteen, else `Older`. A future or
+ * unreadable time reads as `Today` and `Older` respectively.
+ */
+export function dayGroup(lastSeenIso: string, nowIso: string): string {
+  const then = new Date(lastSeenIso)
+  const now = new Date(nowIso)
+  if (Number.isNaN(then.getTime()) || Number.isNaN(now.getTime())) return 'Older'
+  const midnight = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  // Rounded, so a day that is 23 or 25 hours long across a DST change still counts as one.
+  const days = Math.round((midnight(now) - midnight(then)) / 86_400_000)
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days <= 6) return WEEKDAYS[then.getDay()]!
+  if (days <= 13) return 'Last week'
+  return 'Older'
+}
+
+/** Local HH:MM of an ISO time; '' when it does not parse. */
+function clock(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** "fp X% · same_context Y%", as `cassandra stats` reads them; null when nothing was warned. */
+function ratesLine(events: StatEvent[]): string | null {
+  const rates = warningRates(events)
+  return rates.warned === 0
+    ? null
+    : `fp ${rates.fpRate.toFixed(1)}% · same_context ${rates.sameContextRate.toFixed(1)}%`
+}
+
+/** The exit code a Bash failure's output starts with ("Exit code 2"), or null. */
+function exitCodeOf(excerpt: string): number | null {
+  const m = /^\s*Exit code (-?\d+)\b/.exec(excerpt)
+  return m ? Number(m[1]) : null
+}
+
+/** The workspace a record was stamped against, as one phrase. */
+function evidenceThen(r: FailureRecord): string {
+  if (r.stateKind !== 'git') return 'the files under this directory tree'
+  if (!r.gitHead) return 'this repository, HEAD not recorded'
+  return gitPhrase(r.gitHead, r.dirty ?? [], r.dirtyTruncated === true)
+}
+
+/** The workspace now, as one phrase that reads against `evidenceThen`. */
+function evidenceNow(r: FailureRecord, stamp: StateStamp, same: boolean): string {
+  if (stamp.kind === 'git' && stamp.git) return gitPhrase(stamp.git.head, stamp.git.dirty)
+  if (r.stateKind === 'git') return 'not a git repository now'
+  if (stamp.kind === 'mtime') return same ? 'no file changed since' : 'files changed since'
+  return 'the workspace cannot be read now'
+}
+
+/** Why a record cannot be retested, or the exact call to run. */
+function retestOf(r: FailureRecord, cwd: string): PaneDetail['retest'] {
+  if (r.kind === 'denial') return { ok: false, why: 'denied' }
+  if (r.inputTooLarge) return { ok: false, why: 'too-large' }
+  if (r.input === undefined) return { ok: false, why: 'no-input' }
+  return { ok: true, tool: r.tool, input: r.input, cwd: typeof r.cwd === 'string' && r.cwd ? r.cwd : cwd }
+}
+
+/** Branch and short HEAD of the repository at `root`; null outside git. `branch` is null on a detached head. */
+async function gitInfo(io: Io, root: string, stamp: StateStamp): Promise<PaneModel['git']> {
+  if (stamp.kind !== 'git' || !stamp.git) return null
+  const ref = await io.run(['git', '-C', root, 'symbolic-ref', '--short', '-q', 'HEAD'], root)
+  const branch = ref && ref.exitCode === 0 ? oneLine(ref.stdout) || null : null
+  return { branch, head: oneLine(stamp.git.head).slice(0, 7) }
+}
+
+async function fixOf(io: Io, paths: Paths, hash: string): Promise<string | null> {
+  const note = await readFix(io, paths, hash)
+  return note ? fixSentence(note) : null
+}
+
+const reasonOf = (r: FailureRecord): string | null => oneLine(r.errorExcerpt).slice(0, REASON_CAP) || null
+
+/**
+ * Plain display data for `/cassandra pane`: the project, the records by tab and day, the
+ * selected record in full, and this session's latest warning. `sessionId` keeps `justWarned`
+ * to a warning this session actually raised.
+ */
+export async function paneModel(io: Io, cwd: string, view: PaneView, sessionId: string): Promise<PaneModel> {
+  try {
+    const now = io.now()
+    const root = await findRepoRoot(io, cwd)
+    const paths = await pathsFor(io, cwd)
+    const all = await listRecords(io, paths)
+    const events = await readStats(io, paths)
+    const stamp = await stateStamp(io, cwd)
+
+    const sorted = all
+      .map(({ hash, record }) => {
+        const same = unchanged(record.stateStamp, record.stateKind, stamp, record.stateCoarse)
+        const state: RowState = record.kind === 'denial' ? 'denied' : same ? 'warns' : 'stale'
+        return { hash, record, same, state }
+      })
+      .sort((a, b) => b.record.lastSeen.localeCompare(a.record.lastSeen))
+
+    const tabs: Record<PaneTab, number> = { history: sorted.length, warnings: 0, stale: 0, denied: 0 }
+    for (const r of sorted) tabs[r.state === 'warns' ? 'warnings' : r.state] += 1
+
+    const query = view.query.trim().toLowerCase()
+    const shown = sorted.filter((r) =>
+      (view.tab === 'history' || r.state === (view.tab === 'warnings' ? 'warns' : view.tab))
+      && (!query || oneLine(r.record.display).toLowerCase().includes(query)))
+    const rows: PaneRow[] = shown.map(({ hash, record, state }) => ({
+      hash,
+      id: hash.slice(0, 8),
+      display: oneLine(record.display),
+      where: inScope(record),
+      state,
+      count: record.count,
+      time: clock(record.lastSeen),
+      group: dayGroup(record.lastSeen, now),
+    }))
+
+    const chosen = shown.find((r) => r.hash === view.selected) ?? shown[0]
+    let detail: PaneDetail | null = null
+    if (chosen) {
+      const r = chosen.record
+      const boundary = attributeBoundary(
+        { sessionId: r.sessionId, compactions: r.compactions, agentId: r.agentId },
+        // The pane runs in the main agent and cannot count compactions, so a record of this session reads as this session.
+        { sessionId, compactions: r.compactions },
+      )
+      detail = {
+        exitCode: exitCodeOf(r.errorExcerpt),
+        reason: reasonOf(r),
+        full: typeof r.errorFull === 'string' && r.errorFull ? r.errorFull : null,
+        warnsNow: chosen.same,
+        evidenceThen: evidenceThen(r),
+        evidenceNow: evidenceNow(r, stamp, chosen.same),
+        firstSeen: r.firstSeen,
+        lastSeen: r.lastSeen,
+        tries: r.count,
+        session: origin(boundary),
+        fix: await fixOf(io, paths, chosen.hash),
+        retest: retestOf(r, cwd),
+      }
+    }
+
+    let justWarned: JustWarned | null = null
+    const last = view.lastWarning
+    const warned = last && sorted.find((r) => r.hash === last.hash)
+    if (last && warned && events.some((e) => e.kind === 'warned' && e.hash === last.hash && e.sessionId === sessionId)) {
+      const r = warned.record
+      justWarned = {
+        hash: last.hash, at: last.at, display: oneLine(r.display), count: r.count, lastSeen: r.lastSeen,
+        reason: reasonOf(r), evidence: evidence(r), fix: await fixOf(io, paths, last.hash),
+      }
+    }
+
+    return {
+      project: basename(root),
+      git: await gitInfo(io, root, stamp),
+      tabs,
+      counters: {
+        warnNow: tabs.warnings,
+        remembered: sorted.length,
+        warningsToday: countToday(events, 'warned', now),
+        clearedByRetest: countToday(events, 'retest_cleared', now),
+      },
+      rates: ratesLine(events),
+      justWarned,
+      rows,
+      selected: chosen?.hash ?? null,
+      detail,
+      total: sorted.length,
+      hashes: sorted.map((r) => r.hash),
+      view,
+      error: null,
+    }
+  } catch {
+    return unreadableModel(view)
+  }
+}
+
+/** The model of a pane that cannot read its store or its view: the one error line. */
+export function unreadableModel(view: PaneView = DEFAULT_VIEW): PaneModel {
+  return {
+    project: '', git: null,
+    tabs: { history: 0, warnings: 0, stale: 0, denied: 0 },
+    counters: { warnNow: 0, remembered: 0, warningsToday: 0, clearedByRetest: 0 },
+    rates: null, justWarned: null, rows: [], selected: null, detail: null,
+    total: 0, hashes: [], view, error: UNREADABLE,
+  }
+}
+
+// The model mod/ draws until it moves to `paneModel` above; removed with that move.
+
+/** One remembered call as a list row: `display` is the command, `where` its package suffix (" (in packages/a)") or ''. */
+export interface LegacyPaneRow { hash: string; id: string; display: string; where: string; kind: 'failed' | 'denied'; count: number; day: string; stale: boolean }
+/** What the selected row shows beneath the list; `reason` is the stored excerpt on one line, null when none was captured. */
+export interface LegacyPaneDetail { reason: string | null; probe: string; fix: string | null }
+/** What the pane remembers between redraws. */
+export interface LegacyPaneView { selected: string | null; confirmAll: boolean; notice: string | null }
+/** Everything the pane draws, as plain data. */
+export interface LegacyPaneModel {
+  rows: LegacyPaneRow[]
   more: number
   selected: string | null
-  detail: PaneDetail | null
+  detail: LegacyPaneDetail | null
   stats: string | null
   confirmAll: boolean
   total: number
@@ -26,11 +271,6 @@ export interface PaneModel {
   notice: string | null
   error: string | null
 }
-
-const UNREADABLE = "Cassandra could not read this project's store."
-
-/** Longest stored excerpt the model hands on; the drawing clips it to the width. */
-const REASON_CAP = 500
 
 /**
  * What the pane shows of the records: newest first, the first `maxRows`, and the row
@@ -44,16 +284,13 @@ function windowOf<T extends { hash: string; record: { lastSeen: string } }>(all:
 }
 
 /** Plain display data for `/cassandra pane`: what is remembered, what is selected, and how warnings fare. */
-export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: number): Promise<PaneModel> {
-  const empty = emptyModel(view)
+export async function legacyPaneModel(io: Io, cwd: string, view: LegacyPaneView, maxRows: number): Promise<LegacyPaneModel> {
+  const empty = legacyEmptyModel(view)
   try {
     const paths = await pathsFor(io, cwd)
     const all = await listRecords(io, paths)
     const events = await readStats(io, paths)
-    const rates = warningRates(events)
-    const stats = rates.warned === 0
-      ? null
-      : `fp ${rates.fpRate.toFixed(1)}% · same_context ${rates.sameContextRate.toFixed(1)}%`
+    const stats = ratesLine(events)
     if (all.length === 0) return { ...empty, stats }
 
     const stamp = await stateStamp(io, cwd)
@@ -62,7 +299,7 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
       view.selected,
       maxRows,
     )
-    const rows: PaneRow[] = shown.map(({ hash, record, stale }) => ({
+    const rows: LegacyPaneRow[] = shown.map(({ hash, record, stale }) => ({
       hash,
       id: hash.slice(0, 8),
       display: oneLine(record.display),
@@ -73,7 +310,7 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
       stale,
     }))
 
-    let detail: PaneDetail | null = null
+    let detail: LegacyPaneDetail | null = null
     if (chosen) {
       const note = await readFix(io, paths, chosen.hash)
       // A record's stateKind is never 'none': the record writer refuses to store a 'none' stamp.
@@ -95,11 +332,11 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, maxRows: nu
       hashes: sorted.map((r) => r.hash),
     }
   } catch {
-    return unreadableModel(view)
+    return legacyUnreadableModel(view)
   }
 }
 
-function emptyModel(view: PaneView): PaneModel {
+function legacyEmptyModel(view: LegacyPaneView): LegacyPaneModel {
   return {
     rows: [], more: 0, selected: null, detail: null, stats: null,
     confirmAll: view.confirmAll, total: 0, hashes: [], notice: view.notice, error: null,
@@ -107,6 +344,6 @@ function emptyModel(view: PaneView): PaneModel {
 }
 
 /** The model of a pane that cannot read its store or its view: the one error line. */
-export function unreadableModel(view: PaneView = { selected: null, confirmAll: false, notice: null }): PaneModel {
-  return { ...emptyModel(view), error: UNREADABLE }
+export function legacyUnreadableModel(view: LegacyPaneView = { selected: null, confirmAll: false, notice: null }): LegacyPaneModel {
+  return { ...legacyEmptyModel(view), error: UNREADABLE }
 }

@@ -126,13 +126,7 @@ export function warningRates(events: StatEvent[]): WarningRates {
   }
 }
 
-/**
- * The counters the pane header shows.
- *
- * Consumed by the pane in a later change; until then only the type exists.
- *
- * @public
- */
+/** The counters the pane header shows. */
 export interface PaneCounters {
   warnNow: number
   remembered: number

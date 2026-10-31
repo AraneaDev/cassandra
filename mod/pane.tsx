@@ -1,4 +1,4 @@
-import type { PaneModel, PaneRow } from '../src/core/pane.ts'
+import type { LegacyPaneModel as PaneModel, LegacyPaneRow as PaneRow } from '../src/core/pane.ts'
 
 /** Key prefix of a row Button; the id follows. */
 export const ROW_KEY_PREFIX = 'row:'
