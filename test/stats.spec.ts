@@ -4,7 +4,10 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathsFor, type Paths } from '../src/core/paths.ts'
 import { nodeIo } from '../src/io/node.ts'
-import { appendStat, attributeBoundary, readStats } from '../src/core/stats.ts'
+import { appendStat, attributeBoundary, countToday, readStats, warningRates, type StatEvent } from '../src/core/stats.ts'
+
+// countToday uses the local day; pin it so the test is deterministic.
+process.env.TZ = 'UTC'
 
 let tmp: string
 let paths: Paths
@@ -145,4 +148,39 @@ test('resolved lines round-trip; one without a reason is skipped', async () => {
   const events = await readStats(nodeIo, paths)
   expect(events).toHaveLength(1)
   expect(events[0]).toMatchObject({ kind: 'resolved', hash: 'aa11bb22cc33dd44', reason: 'installed jq globally' })
+})
+
+test('retest events round-trip through readStats', async () => {
+  await appendStat(nodeIo, paths, { kind: 'retest_cleared', hash: 'a'.repeat(16) })
+  await appendStat(nodeIo, paths, { kind: 'retest_failed', hash: 'b'.repeat(16) })
+  const events = await readStats(nodeIo, paths)
+  expect(events.map((e) => [e.kind, e.hash])).toEqual([
+    ['retest_cleared', 'a'.repeat(16)],
+    ['retest_failed', 'b'.repeat(16)],
+  ])
+})
+
+test('retests do not move the warning rates', () => {
+  const h = 'a'.repeat(16)
+  const at = '2026-10-31T08:00:00Z'
+  const events: StatEvent[] = [
+    { t: at, kind: 'warned', hash: h },
+    { t: at, kind: 'confirmed', hash: h },
+    { t: at, kind: 'retest_cleared', hash: h },
+    { t: at, kind: 'retest_cleared', hash: h },
+  ]
+  const rates = warningRates(events)
+  expect(rates.fpRate).toBe(0)
+  expect(rates.confirmed).toBe(1)
+})
+
+test('countToday counts only events on the same local day', () => {
+  const h = 'a'.repeat(16)
+  const events: StatEvent[] = [
+    { t: '2026-10-31T08:00:00Z', kind: 'warned', hash: h },
+    { t: '2026-10-31T22:00:00Z', kind: 'warned', hash: h },
+    { t: '2026-10-30T12:00:00Z', kind: 'warned', hash: h },
+    { t: '2026-10-31T09:00:00Z', kind: 'confirmed', hash: h },
+  ]
+  expect(countToday(events, 'warned', '2026-10-31T12:00:00Z')).toBe(2)
 })

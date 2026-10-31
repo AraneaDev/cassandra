@@ -37,6 +37,13 @@ test('a failure, then the same call unchanged, warns with the excerpt fenced', a
   expect(stats.map((s) => [s.kind, s.boundary])).toEqual([['warned', 'same_context']])
 })
 
+test('a warning logs the session it warned in', async () => {
+  await settle(io, call('bun test'), { kind: 'failure', reason: 'x' }, null)
+  await check(io, call('bun test'))
+  const stats = await readStats(io, await pathsFor(io, cwd))
+  expect(stats[0]).toMatchObject({ kind: 'warned', sessionId: 's1' })
+})
+
 test('a changed tree is silent', async () => {
   await settle(io, call('bun test'), { kind: 'failure', reason: 'x' }, null)
   await io.writeText(`${cwd}/b.txt`, 'two')

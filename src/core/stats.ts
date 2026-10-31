@@ -13,9 +13,12 @@ export type BriefBoundary = 'subagent' | 'compaction'
  * `briefed` means a note listing live failures was handed over at a boundary.
  * `resolved` means an agent said a remembered failure was fixed outside the repository,
  * and it was forgotten. `fixed` means a recorded failure succeeded and what changed in
- * between was kept.
+ * between was kept. `retest_cleared` and `retest_failed` record the outcome of a retest
+ * the user asked for from the pane; they never count towards the warning rates.
  */
-type StatKind = 'warned' | 'false_positive' | 'confirmed' | 'briefed' | 'resolved' | 'fixed'
+export type StatKind =
+  | 'warned' | 'false_positive' | 'confirmed' | 'briefed' | 'resolved' | 'fixed'
+  | 'retest_cleared' | 'retest_failed'
 
 /** One line of the efficacy log. A briefing carries `hashes`; every other kind one `hash`. */
 export interface StatEvent {
@@ -27,6 +30,8 @@ export interface StatEvent {
   reason?: string
   files?: number
   fixNote?: boolean
+  /** The session a `warned` event was raised in. */
+  sessionId?: string
 }
 
 /** Append one event. Never throws: losing a metric must not cost a session. */
@@ -65,7 +70,7 @@ export async function readStats(io: Io, paths: Paths): Promise<StatEvent[]> {
             return parsed as StatEvent
           }
           if (typeof hash !== 'string') return null
-          if (typeof kind !== 'string' || !['warned', 'false_positive', 'confirmed'].includes(kind)) return null
+          if (typeof kind !== 'string' || !['warned', 'false_positive', 'confirmed', 'retest_cleared', 'retest_failed'].includes(kind)) return null
           return parsed as StatEvent
         } catch {
           return null
@@ -119,4 +124,28 @@ export function warningRates(events: StatEvent[]): WarningRates {
     fpRate: resolved === 0 ? 0 : (falsePositives / resolved) * 100,
     sameContextRate: warned.length === 0 ? 0 : (sameContext / warned.length) * 100,
   }
+}
+
+/**
+ * The counters the pane header shows.
+ *
+ * Consumed by the pane in a later change; until then only the type exists.
+ *
+ * @public
+ */
+export interface PaneCounters {
+  warnNow: number
+  remembered: number
+  warningsToday: number
+  clearedByRetest: number
+}
+
+/** How many events of `kind` happened on the local calendar day of `nowIso`, by each event's `t`. */
+export function countToday(events: StatEvent[], kind: StatKind, nowIso: string): number {
+  const day = (iso: string): string => {
+    const d = new Date(iso)
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+  }
+  const today = day(nowIso)
+  return events.filter((e) => e.kind === kind && day(e.t) === today).length
 }

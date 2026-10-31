@@ -110,7 +110,7 @@ export async function check(io: Io, call: Call): Promise<Warning | null> {
   // What made this call work last time, when a past success left a note.
   const note = await readFix(io, paths, hash)
   if (note) text += ` ${fixSentence(note)}`
-  await appendStat(io, paths, note ? { kind: 'warned', hash, boundary, fixNote: true } : { kind: 'warned', hash, boundary })
+  await appendStat(io, paths, note ? { kind: 'warned', hash, boundary, sessionId: call.sessionId, fixNote: true } : { kind: 'warned', hash, boundary, sessionId: call.sessionId })
   return { hash, text }
 }
 
