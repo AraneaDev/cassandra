@@ -6,6 +6,7 @@ import { stateStamp } from '../src/core/freshness.ts'
 import { dayGroup, paneModel, type PaneView } from '../src/core/pane.ts'
 import { pathsFor } from '../src/core/paths.ts'
 import { deleteRecord, readRecord, upsertRecord } from '../src/core/record.ts'
+import { bumpCompactions } from '../src/core/session.ts'
 import { appendStat } from '../src/core/stats.ts'
 import type { FailureRecord, FixNote } from '../src/core/types.ts'
 import { memoryIo, type MemoryIo } from './support/memory-io.ts'
@@ -165,6 +166,13 @@ test('the detail of a dirty git failure names what differs now', async () => {
     session: 'in this session', fix: null,
   })
   expect((await paneModel(io, cwd, view, 's2')).detail?.session).toBe('in an earlier session')
+})
+
+test('the session detail counts compactions since the failure', async () => {
+  await seed('bun test', '2026-10-30T10:00:00.000Z')
+  expect((await paneModel(io, cwd, view, 's1')).detail?.session).toBe('in this session')
+  await bumpCompactions(io, await pathsFor(io, cwd), 's1')
+  expect((await paneModel(io, cwd, view, 's1')).detail?.session).toBe('in this session (before the latest compaction)')
 })
 
 test('a detached head has no branch', async () => {

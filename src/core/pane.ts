@@ -5,6 +5,7 @@ import type { Io } from './io.ts'
 import { basename } from './path.ts'
 import { findRepoRoot, pathsFor, type Paths } from './paths.ts'
 import { listRecords } from './record.ts'
+import { compactionCount } from './session.ts'
 import { attributeBoundary, countToday, readStats, warningRates, type PaneCounters, type StatEvent } from './stats.ts'
 import type { FailureRecord, StateStamp } from './types.ts'
 
@@ -183,8 +184,8 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, sessionId: 
       const r = chosen.record
       const boundary = attributeBoundary(
         { sessionId: r.sessionId, compactions: r.compactions, agentId: r.agentId },
-        // The pane runs in the main agent and cannot count compactions, so a record of this session reads as this session.
-        { sessionId, compactions: r.compactions },
+        // The pane runs in the main agent, so a record with an agentId reads as another agent's.
+        { sessionId, compactions: await compactionCount(io, paths, sessionId) },
       )
       detail = {
         exitCode: exitCodeOf(r.errorExcerpt),
