@@ -71,6 +71,11 @@ test('evidence says what was checked', () => {
   expect(evidence({ ...git, dirty: ['a', 'b', 'c', 'd', 'e'] })).toBe('Repository unchanged since: HEAD abcdef0, the same 5 uncommitted files (a, b, c…).')
   expect(evidence({ ...git, dirty: ['a'] })).toBe('Repository unchanged since: HEAD abcdef0, the same 1 uncommitted file (a).')
   expect(evidence({ ...git, dirty: ['a', 'b'], dirtyTruncated: true })).toBe('Repository unchanged since: HEAD abcdef0, at least the same 2 uncommitted files (a, b…).')
+  const long = `src/${'deep/'.repeat(20)}billing/invoice.ts`
+  const capped = evidence({ ...git, dirty: [long, 'short.ts', 'b', 'c'] })
+  expect(capped).toBe('Repository unchanged since: HEAD abcdef0, the same 4 uncommitted files (…/deep/deep/deep/deep/deep/deep/deep/billing/invoice.ts, short.ts, b…).')
+  expect(Array.from('…/deep/deep/deep/deep/deep/deep/deep/billing/invoice.ts').length).toBeLessThanOrEqual(60)
+  expect(evidence({ ...git, dirty: ['x'.repeat(100)] })).toBe(`Repository unchanged since: HEAD abcdef0, the same 1 uncommitted file (…${'x'.repeat(59)}).`)
   expect(evidence(base)).toBe('Nothing in this repository has changed since.')
   expect(evidence({ ...base, stateKind: 'mtime' })).toBe('No file under this directory tree has changed since.')
 })

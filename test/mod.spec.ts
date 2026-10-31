@@ -1391,9 +1391,9 @@ const input = async (element: string, value: string, kind: 'change' | 'submit' =
   return r
 }
 /** A focus move through the hook, answering what the hook did with it. */
-const moveRing = async (element: string) => {
+const moveRing = async (element: string, surface?: string) => {
   const landed: Array<string | undefined> = []
-  const r = await paneHook('ui.focus')(host, { ...PANE, element, origin: { kind: 'person' } }, async (e) => { landed.push(e.element); return {} })
+  const r = await paneHook('ui.focus')(host, { ...PANE, element, surface, origin: { kind: 'person' } }, async (e) => { landed.push(e.element); return {} })
   return { r, landed }
 }
 
@@ -1631,6 +1631,20 @@ test('the ring never rests on a hidden twin: it goes to the tab after it, back p
   expect(await moveRing('twin:help')).toEqual({ r: {}, landed: [] })
   // Any other element lands where it was headed.
   expect((await moveRing('forget')).landed).toEqual(['forget'])
+})
+
+test('the ring a surface rests on is its own: another surface walking back onto a twin goes forward', async () => {
+  expect((await moveRing('tab:warnings', 'terminal')).landed).toEqual(['tab:warnings'])
+  // The desktop never rested on that tab, so its walk onto the twin is a forward one.
+  expect((await moveRing('tabkey:warnings', 'desktop')).landed).toEqual(['tab:warnings'])
+  // The terminal did, so its walk onto the twin is a backward one.
+  expect((await moveRing('tabkey:warnings', 'terminal')).landed).toEqual(['tab:history'])
+})
+
+test('a ring move that fails beneath is not remembered as where the ring rests', async () => {
+  const r = await paneHook('ui.focus')(host, { ...PANE, element: 'tab:warnings', surface: 'terminal', origin: { kind: 'person' } }, async () => { throw new Error('beneath') })
+  expect(r).toEqual({ deny: 'cassandra: the focus could not move.' })
+  expect((await moveRing('tabkey:warnings', 'terminal')).landed).toEqual(['tab:warnings'])
 })
 
 test('opening the pane drops a waiting retest confirm', async () => {

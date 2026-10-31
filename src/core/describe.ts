@@ -73,13 +73,24 @@ export function origin(b: Boundary): string {
   }
 }
 
+const MAX_NAME = 60
+
+/** A path of at most 60 characters: a longer one keeps its end, from a directory boundary when there is one, behind `…`. */
+function capName(path: string): string {
+  const chars = Array.from(path)
+  if (chars.length <= MAX_NAME) return path
+  const tail = chars.slice(chars.length - (MAX_NAME - 1)).join('')
+  const slash = tail.indexOf('/', 1)
+  return `…${slash > 0 ? tail.slice(slash) : tail}`
+}
+
 /**
  * "HEAD a1b2c3d, working tree clean" or "HEAD a1b2c3d, 2 uncommitted files (a, b)": one git
- * state, naming at most three changed paths. `qualifier` goes before the count ("the same ").
+ * state, naming at most three changed paths, each cut to 60 characters. `qualifier` goes before the count ("the same ").
  */
 export function gitPhrase(head: string, dirty: readonly string[], truncated = false, qualifier = ''): string {
   const at = `HEAD ${oneLine(head).slice(0, 7)}`
-  const paths = dirty.map(oneLine)
+  const paths = dirty.map((d) => capName(oneLine(d)))
   if (paths.length === 0) return `${at}, working tree clean`
   const more = paths.length > 3 || truncated ? '…' : ''
   const files = paths.length === 1 ? 'file' : 'files'

@@ -108,6 +108,8 @@ export interface PressEvent {
 /** A `ui.focus` input: the key of the element taking the ring, absent for one of the engine's stops. */
 export interface FocusEvent {
   element?: string
+  /** Where the ring moves: terminal, desktop, vscode or mobile. */
+  surface?: string
   [key: string]: unknown
 }
 
@@ -1119,19 +1121,25 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     return next(e).catch(() => ({ element: e.element, value: e.value }))
   })
 
-  // The element the ring was last moved onto, so a backward walk onto a hidden twin is told apart.
-  let focused: string | null = null
+  // The element the ring was last moved onto, by surface, so a backward walk onto a hidden twin is told apart.
+  const focused = new Map<string, string>()
   on('ui.focus', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
-    const twin = e.element === undefined ? undefined : twinTarget(e.element, focused)
+    const twin = e.element === undefined ? undefined : twinTarget(e.element, focused.get(e.surface ?? '') ?? null)
     // Backward past the first tab: the ring stays where it is.
     if (twin === null) return {}
     const element = twin ?? e.element
-    focused = element ?? null
     const done = pressing.then(() => selectRow($, wrapIo, element)).catch(() => undefined)
     pressing = done
     await done
     // A move that fails beneath leaves the ring where it was.
-    return next(twin === undefined ? e : { ...e, element: twin }).catch(() => ({ deny: 'cassandra: the focus could not move.' }))
+    try {
+      const moved = await next(twin === undefined ? e : { ...e, element: twin })
+      if (element === undefined) focused.delete(e.surface ?? '')
+      else focused.set(e.surface ?? '', element)
+      return moved
+    } catch {
+      return { deny: 'cassandra: the focus could not move.' }
+    }
   })
 
   on('tool.call', { tool: new RegExp(`^${TOOL_PREFIX}(?:${QUERY_TOOL.name}|${RESOLVE_TOOL.name})$`) }, async ($, e) => answerTool($, wrapIo, e))

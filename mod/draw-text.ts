@@ -1,12 +1,14 @@
 /**
  * Text as the pane prints it: measured in terminal cells, cut to a width with `…`, and
  * padded. Widths are counted per grapheme: East Asian wide and emoji graphemes take two
- * cells, a grapheme of only combining marks none, the rest one. A cut never splits a
- * grapheme. Pure.
+ * cells, a text-presentation symbol (⚠ ✔ ©) one, or two when U+FE0F follows it, a grapheme
+ * of only combining marks none, the rest one. A cut never splits a grapheme. Pure.
  */
 
 const WIDE =
-  /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]|[\u{1f300}-\u{1faff}\u{20000}-\u{3fffd}]|\p{Extended_Pictographic}/u
+  /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]|[\u{20000}-\u{3fffd}]|\p{Emoji_Presentation}/u
+/** A symbol drawn as text unless U+FE0F asks for the emoji form: ⚠ ✔ © ™ ↔ ▶ ☺. */
+const SYMBOL = /^\p{Extended_Pictographic}/u
 const MARKS_ONLY = /^\p{M}+$/u
 /** Printable ASCII only: one cell a code unit. */
 const ASCII = /^[\x20-\x7e]*$/
@@ -19,7 +21,11 @@ const segmenter = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'func
 const graphemes = (text: string): string[] =>
   segmenter ? Array.from(segmenter.segment(text), (s) => s.segment) : Array.from(text)
 
-const graphemeCells = (g: string): number => (MARKS_ONLY.test(g) ? 0 : WIDE.test(g) ? 2 : 1)
+const graphemeCells = (g: string): number => {
+  if (MARKS_ONLY.test(g)) return 0
+  if (WIDE.test(g)) return 2
+  return SYMBOL.test(g) && g.includes('\uFE0F') ? 2 : 1
+}
 
 /** The cells `text` takes in a terminal. */
 export function cells(text: string): number {

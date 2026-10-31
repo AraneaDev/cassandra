@@ -10,7 +10,7 @@ import { pathsFor } from '../src/core/paths.ts'
 import { upsertRecord } from '../src/core/record.ts'
 import { nodeIo } from '../src/io/node.ts'
 import type { Io } from '../src/core/io.ts'
-import { cells } from '../mod/draw-text.ts'
+import { cells, padTo } from '../mod/draw-text.ts'
 import { fullDetailRows, layoutOf, PANE_MIN_LINES, ROWS } from '../mod/layout.ts'
 
 interface Node { type: string; props: Record<string, any>; children: any[] }
@@ -498,6 +498,27 @@ describe('fit', () => {
       for (let w = 0; w <= 12; w++) expect(cells(pane.fit(s, w))).toBeLessThanOrEqual(w)
     }
     expect(pane.fit('日本語', 4)).toBe('日…')
+  })
+})
+
+describe('cells', () => {
+  test('a text-presentation symbol is 1 cell, 2 with U+FE0F, and an emoji-presentation one stays 2', () => {
+    for (const c of ['⚠', '✔', '©', '™', '↔', '▶', '☺']) {
+      expect(cells(c)).toBe(1)
+      expect(cells(`${c}\uFE0F`)).toBe(2)
+    }
+    for (const c of ['✅', '👍', '🚀', '❌']) expect(cells(c)).toBe(2)
+    expect(cells('a⚠b')).toBe(3)
+    expect(cells('a⚠\uFE0Fb')).toBe(4)
+  })
+
+  test('fit and padTo give rows with symbols exactly the width', () => {
+    for (const s of ['⚠ warned', '⚠\uFE0F warned', '✔ ok ✅', '© ™ ↔ ▶ ☺']) {
+      for (let w = 4; w <= 14; w++) {
+        expect(cells(padTo(s, w))).toBe(w)
+        expect(cells(pane.fit(s, w))).toBeLessThanOrEqual(w)
+      }
+    }
   })
 })
 
