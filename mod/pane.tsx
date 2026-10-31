@@ -1,6 +1,6 @@
 import type { PaneDetail, PaneModel, PaneRow, PaneTab } from '../src/core/pane.ts'
 import { cells, fit, padTo, spaces } from './draw-text.ts'
-import { FULL_INDENT_CELLS, RETEST_LABEL_CELLS, ROWS, padOf, type PaneLayout } from './layout.ts'
+import { FULL_INDENT_CELLS, RETEST_LABEL_CELLS, ROWS, fullDetailRows, padOf, type PaneLayout } from './layout.ts'
 
 export { fit } from './draw-text.ts'
 
@@ -270,14 +270,18 @@ export function twinTarget(element: string, focused: string | null): string | nu
 /** The four counters: a row of figures over a row of labels, then a blank line; or one short line. */
 function counters(f: Frame, model: PaneModel, layout: PaneLayout): Line[] {
   const c = model.counters
-  const all: Array<[number, string, string, string]> = [
-    [c.warnNow, ERROR, 'warn now', 'warn now'],
-    [c.remembered, HEADING, 'remembered', 'remembered'],
-    [c.warningsToday, WARNING, 'warnings today', 'today'],
-    [c.clearedByRetest, SUCCESS, 'cleared by retest', 'cleared'],
+  // Each counter's figure, colour, tile label, short label and narrow label.
+  const all: Array<[number, string, string, string, string]> = [
+    [c.warnNow, ERROR, 'warn now', 'warn now', 'warn'],
+    [c.remembered, HEADING, 'remembered', 'remembered', 'kept'],
+    [c.warningsToday, WARNING, 'warnings today', 'today', 'today'],
+    [c.clearedByRetest, SUCCESS, 'cleared by retest', 'cleared', 'cleared'],
   ]
   if (layout.counters === 'short') {
-    return [line(f, 'counters', joined(all.map(([n, color, , short]) => figure(n, color, short)), 3))]
+    // A narrow pane tries the short labels, then shorter ones closer set, so all four stay whole.
+    const tries: Array<[3 | 4, number]> = layout.tier === 'narrow' ? [[3, 3], [4, 2], [4, 1]] : [[3, 3]]
+    const set = tries.map(([label, gap]) => joined(all.map((k) => figure(k[0], k[1], k[label])), gap))
+    return [line(f, 'counters', set.find((segs) => width(segs) <= f.inner) ?? set[set.length - 1]!)]
   }
   if (layout.counters !== 'tiles') return []
   const slot = Math.floor(f.inner / all.length)
@@ -371,7 +375,7 @@ function detailLines(f: Frame, d: PaneDetail, size: 'full' | 'compact'): Line[] 
   ]
   if (d.fix) lines.push(at('fix', field('fix', lw, [{ text: d.fix, color: SUCCESS }])))
   if (!d.retest.ok) lines.push(at('retest', field('retest', lw, [{ text: NO_RETEST[d.retest.why], color: SECONDARY }])))
-  return exactly(f, 'detail', lines, ROWS.fullDetail, MARKED_BG)
+  return exactly(f, 'detail', lines, fullDetailRows(d), MARKED_BG)
 }
 
 /** Why the marked record offers no retest, as its detail says it. */
@@ -399,6 +403,7 @@ function fullLines(f: Frame, full: NonNullable<PaneLayout['full']>): Line[] {
 function retestLines(f: Frame, lines: NonNullable<Exclude<PaneLayout['retest'], 'too-small'>>['lines']): Line[] {
   const note: Seg[] = [{ text: 'runs through your permission settings', color: SECONDARY }]
   return [
+    blankLine('retest-gap'),
     titleRule(f, 'retest-title', { text: '↻', color: WARNING, bold: true }, 'Retest', note),
     ...lines.map((l, i) => line(f, `retest-${i}`, [{ text: padTo(l.label, RETEST_LABEL_CELLS), color: SECONDARY }, { text: l.text, color: HEADING }])),
   ]

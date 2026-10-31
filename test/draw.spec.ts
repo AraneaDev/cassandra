@@ -11,7 +11,7 @@ import { upsertRecord } from '../src/core/record.ts'
 import { nodeIo } from '../src/io/node.ts'
 import type { Io } from '../src/core/io.ts'
 import { cells } from '../mod/draw-text.ts'
-import { layoutOf, PANE_MIN_LINES, ROWS } from '../mod/layout.ts'
+import { fullDetailRows, layoutOf, PANE_MIN_LINES, ROWS } from '../mod/layout.ts'
 
 interface Node { type: string; props: Record<string, any>; children: any[] }
 const g = globalThis as any
@@ -199,14 +199,14 @@ describe('drawPane', () => {
   test('an expanded row opens in place: why it failed, would it warn now, seen, session and the fix', () => {
     const { texts, lines } = draw(model({}, { expanded: true }), 120, 50)
     const at = texts.findIndex((t) => t.includes('▾ 12:39'))
-    const block = texts.slice(at + 1, at + 1 + ROWS.fullDetail)
+    const block = texts.slice(at + 1, at + 1 + fullDetailRows(detail))
     for (const label of ['why it failed', 'would it warn now', 'seen', 'session', 'fix']) expect(block.some((t) => t.includes(label))).toBe(true)
     expect(block[0]).toContain(' exit 1 ')
     expect(block[1]).toContain('Expected: "git"  Received: "mtime"')
     expect(block[2]).toContain('yes')
     expect(block.some((t) => t.includes('3 tries'))).toBe(true)
-    expect(texts[at + 1 + ROWS.fullDetail]).toContain('▸')
-    for (const l of lines.slice(at + 1, at + 1 + ROWS.fullDetail)) expect(l.props.backgroundColor).toBe('userMessageBackground')
+    expect(texts[at + 1 + fullDetailRows(detail)]).toContain('▸')
+    for (const l of lines.slice(at + 1, at + 1 + fullDetailRows(detail))) expect(l.props.backgroundColor).toBe('userMessageBackground')
     // Compact on a shorter pane: three rows, every label still there.
     const short = draw(model({}, { expanded: true }), 70, 12)
     expect(short.layout.detail).toBe('compact')
@@ -495,4 +495,52 @@ describe('redraw cost', () => {
       rmSync(tmp, { recursive: true, force: true })
     }
   }, 60_000)
+})
+
+describe('spacing and narrow counters', () => {
+  test('an open detail is followed by exactly one blank row before the next day group', () => {
+    const m = model({ selected: row(1).hash }, { expanded: true })
+    const { texts, lines } = draw(m, 120, 50)
+    const at = texts.findIndex((t) => t.includes('▾'))
+    const end = at + 1 + fullDetailRows(detail)
+    for (const l of lines.slice(at + 1, end)) expect(l.props.backgroundColor).toBe('userMessageBackground')
+    expect(texts[end - 1]).toContain('fix')
+    expect(texts[end]!.trim()).toBe('')
+    expect(lines[end]!.props.backgroundColor).toBeUndefined()
+    expect(texts[end + 1]!.trim()).toBe('Yesterday')
+  })
+
+  test('the retest confirm has a blank row above its title, and the pane keeps to its rows', () => {
+    for (const rows of [16, 30]) {
+      const { texts, layout } = draw(model({}, { confirmRetest: row(0).hash }), 70, rows)
+      expect(layout.retest).not.toBe('too-small')
+      const title = texts.findIndex((t) => t.includes('↻'))
+      expect(title).toBeGreaterThan(0)
+      expect(texts[title - 1]!.trim()).toBe('')
+      expect(texts.length).toBeLessThanOrEqual(rows)
+    }
+  })
+
+  test('at 40 to 55 columns all four counters show whole on their one line', () => {
+    const counts = [
+      { warnNow: 2, remembered: 4, warningsToday: 3, clearedByRetest: 1 },
+      { warnNow: 12, remembered: 140, warningsToday: 12, clearedByRetest: 10 },
+    ]
+    for (const counters of counts) {
+      for (let columns = 40; columns <= 55; columns++) {
+        const { texts, layout } = draw(model({ counters }), columns, 30)
+        expect(layout.counters).toBe('short')
+        const line = texts[2]!
+        expect(cells(line)).toBe(columns)
+        expect(line).not.toContain('…')
+        for (const n of Object.values(counters)) expect(line).toMatch(new RegExp(`(^| )${n} [a-z]`))
+        expect(line).toMatch(/cleared\s*$/)
+      }
+    }
+  })
+
+  test('medium panes keep the short counter labels', () => {
+    const { texts } = draw(model(), 70, 30)
+    expect(texts[2]).toContain('2 warn now   4 remembered   3 today   1 cleared')
+  })
 })

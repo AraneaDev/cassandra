@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { visible, wrapCells } from '../mod/draw-text.ts'
-import { FULL_NOT_KEPT, fullBody, layoutOf, PANE_MIN_LINES, retestBody } from '../mod/layout.ts'
+import { FULL_NOT_KEPT, fullBody, fullDetailRows, layoutOf, PANE_MIN_LINES, retestBody, ROWS } from '../mod/layout.ts'
 import { unreadableModel, type JustWarned, type PaneDetail, type PaneModel, type PaneRow } from '../src/core/pane.ts'
 
 const row = (i: number, group = 'Today'): PaneRow => ({ hash: `h${i}`, id: `id${i}`, display: `cmd ${i}`, where: '', state: 'warns', count: 1, time: '10:00', group })
@@ -177,4 +177,31 @@ test('the confirm shows DEL and C1 characters in a stored argument as visible te
   expect(bash.at(-1)).toEqual({ label: 'with', text: '{"env":"\\u0085"}' })
   for (const l of [...mcp, ...bash]) expect(l.text).not.toMatch(/[\u007f-\u009f]/)
   expect(visible('\u0080\u009f')).toBe('\\u0080\\u009f')
+})
+
+test('an open detail takes the rows its lines need, no padding to the most it can take', () => {
+  const d: PaneDetail = {
+    exitCode: 1, reason: 'boom', full: null, warnsNow: true, evidenceThen: 'x', evidenceNow: 'x',
+    firstSeen: 'x', lastSeen: 'x', tries: 1, session: 's', fix: null, retest: { ok: true, tool: 'Bash', input: { command: 'cmd 0' }, cwd: '/p' },
+  }
+  expect(fullDetailRows(d)).toBe(7)
+  expect(fullDetailRows({ ...d, fix: 'f' })).toBe(8)
+  expect(fullDetailRows({ ...d, fix: 'f', retest: { ok: false, why: 'denied' } })).toBe(ROWS.fullDetail)
+  const open = { ...model(10, { selected: 0, expanded: true }), detail: d }
+  const closed = { ...open, view: { ...open.view, expanded: false } }
+  expect(layoutOf(closed, 120, 50).list.rows - layoutOf(open, 120, 50).list.rows).toBe(7)
+})
+
+test('the retest confirm budgets a blank row above its title', () => {
+  const d: PaneDetail = {
+    exitCode: 1, reason: 'boom', full: null, warnsNow: true, evidenceThen: 'x', evidenceNow: 'x',
+    firstSeen: 'x', lastSeen: 'x', tries: 1, session: 's', fix: null, retest: { ok: true, tool: 'Bash', input: { command: 'cmd 0' }, cwd: '/p' },
+  }
+  const base = { ...model(10, { selected: 0 }), detail: d }
+  const asking = { ...base, view: { ...base.view, confirmRetest: 'h0' } }
+  const layout = layoutOf(asking, 70, 30)
+  expect(layout.retest).not.toBeNull()
+  expect(layout.retest).not.toBe('too-small')
+  const lines = (layout.retest as { lines: unknown[] }).lines.length
+  expect(layoutOf(base, 70, 30).list.rows - layout.list.rows).toBe(ROWS.retestGap + ROWS.retestTitle + lines)
 })

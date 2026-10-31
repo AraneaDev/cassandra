@@ -115,7 +115,7 @@ const WIDE_FROM = 100
 /** Rows each part of the pane costs: the layout budgets these, and the drawing draws exactly these. */
 export const ROWS = {
   header: 1, tabs: 1, tiles: 3, shortCounters: 1, justWarned: 7, historyTitle: 1, notice: 1, search: 1, keysTitle: 1, keyBar: 1,
-  fullDetail: 9, compactDetail: 3, retestTitle: 1, fullTitle: 1, fullMore: 1,
+  fullDetail: 9, compactDetail: 3, retestGap: 1, retestTitle: 1, fullTitle: 1, fullMore: 1,
 } as const
 const HEADER_ROWS = ROWS.header
 const TABS_ROWS = ROWS.tabs
@@ -129,9 +129,17 @@ const KEYS_TITLE_ROWS = ROWS.keysTitle
 const KEY_BAR_ROWS = ROWS.keyBar
 const FULL_DETAIL_ROWS = ROWS.fullDetail
 const COMPACT_DETAIL_ROWS = ROWS.compactDetail
-const RETEST_TITLE_ROWS = ROWS.retestTitle
+/** The retest confirm's blank line above it and its title rule. */
+const RETEST_HEAD_ROWS = ROWS.retestGap + ROWS.retestTitle
 const FULL_TITLE_ROWS = ROWS.fullTitle
 const FULL_MORE_ROWS = ROWS.fullMore
+
+/**
+ * Rows an open detail takes in full: its seven fixed lines, the fix note when there is one,
+ * and why no retest is offered when none is. Never padded, so the blank line before the
+ * next day group is the only gap under it. At most `ROWS.fullDetail`.
+ */
+export const fullDetailRows = (d: PaneDetail): number => 7 + (d.fix ? 1 : 0) + (d.retest.ok ? 0 : 1)
 
 /** The width tier of a pane `columns` wide. */
 export function tierOf(columns: number): Tier {
@@ -218,9 +226,9 @@ export function layoutOf(model: PaneModel, columns: number, rows: number, extras
   let retest: PaneLayout['retest'] = null
   if (pending?.ok === true && model.view.confirmRetest !== null && model.view.confirmRetest === model.selected) {
     const lines = retestBody(pending, innerOf(columns))
-    retest = lines !== null && available - RETEST_TITLE_ROWS - lines.length >= 1 ? { lines } : 'too-small'
+    retest = lines !== null && available - RETEST_HEAD_ROWS - lines.length >= 1 ? { lines } : 'too-small'
   }
-  if (retest !== null && retest !== 'too-small') available -= RETEST_TITLE_ROWS + retest.lines.length
+  if (retest !== null && retest !== 'too-small') available -= RETEST_HEAD_ROWS + retest.lines.length
   // The notice takes its row from the list, as long as one list row is left. A retest too
   // big for the pane says so there.
   const notice = (Boolean(model.view.notice) || retest === 'too-small') && available - NOTICE_ROWS >= 1
@@ -230,11 +238,12 @@ export function layoutOf(model: PaneModel, columns: number, rows: number, extras
   const keys = keyRoom > KEYS_TITLE_ROWS ? keyRoom : 0
   available -= keys
   let detail: PaneLayout['detail'] = 'none'
+  const fullRows = model.detail === null ? FULL_DETAIL_ROWS : fullDetailRows(model.detail)
   if (model.view.expanded) {
-    if (available - FULL_DETAIL_ROWS >= 1) detail = 'full'
+    if (available - fullRows >= 1) detail = 'full'
     else if (available - COMPACT_DETAIL_ROWS >= 1) detail = 'compact'
   }
-  let taken = detail === 'full' ? FULL_DETAIL_ROWS : detail === 'compact' ? COMPACT_DETAIL_ROWS : 0
+  let taken = detail === 'full' ? fullRows : detail === 'compact' ? COMPACT_DETAIL_ROWS : 0
   // The full output opens under the detail: its title and as many lines as leave one list
   // row, the rest counted on a line of its own.
   let full: PaneLayout['full'] = null
