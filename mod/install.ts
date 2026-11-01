@@ -360,6 +360,9 @@ async function answerCommand($: ModEngine, io: Io, args: string | undefined, ori
     const parts = (args ?? '').split(/\s+/).filter(Boolean)
     // The pane is for the person: a plugin, a schedule or a peer may not open it.
     if (parts[0] === 'pane') return BULK_ORIGINS.has(origin?.kind ?? '') ? await openPane($) : { text: PANE_REFUSAL, exitCode: 1 }
+    // A bare /cassandra you typed opens the pane where one can be shown; anywhere else it lists.
+    if (parts.length === 0 && BULK_ORIGINS.has(origin?.kind ?? '')
+      && (await $.session.surfaces().catch(() => [])).length > 0) return await openPane($)
     // Wiping every record is for a person or a headless run; a plugin, a schedule or a peer may not.
     if (parts[0] === 'forget' && parts.includes('--all') && !BULK_ORIGINS.has(origin?.kind ?? '')) {
       return { text: BULK_REFUSAL, exitCode: 1 }
