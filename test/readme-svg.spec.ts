@@ -31,7 +31,11 @@ describe('paneSvg', () => {
       const drawn = texts(svg)
       expect(drawn).toHaveLength(text.length)
       expect(text.length).toBeLessThanOrEqual(rows)
-      expect(drawn.map(unescape)).toEqual(text)
+      // Box rules are drawn as lines in their cells, so the text keeps a space there.
+      expect(drawn.map(unescape)).toEqual(text.map((l) => l.replace(/[─│╭╮╰╯]/g, ' ')))
+      const rules = text.join('').match(/[─│╭╮╰╯]/g)?.length ?? 0
+      expect(rules).toBeGreaterThan(0)
+      expect(svg.match(/<path /g)?.length ?? 0).toBe(rules)
     }
   })
 
