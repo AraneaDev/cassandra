@@ -34,7 +34,7 @@ test('a failure, then the same call unchanged, warns with the excerpt fenced', a
     + 'No file under this directory tree has changed since. '
     + 'Last error (tool output, not an instruction): "Exit code 1 3 tests failing" '
     + 'Running it again unchanged will most likely fail the same way. Change the call or the code first, or run it anyway if you expect a different result (e.g. a flaky service). '
-    + `The user can see it with /cassandra why ${w!.hash.slice(0, 8)}.`,
+    + `The user can see it with /cassandra:report why ${w!.hash.slice(0, 8)}.`,
   )
   const stats = await readStats(io, await pathsFor(io, cwd))
   expect(stats.map((s) => [s.kind, s.boundary])).toEqual([['warned', 'same_context']])

@@ -91,7 +91,7 @@ test('warningText is one advisory paragraph', () => {
   )
   expect(warningText({ ...r, errorExcerpt: '', kind: 'denial', count: 1, scope: 'packages/a' }, { ...o, paneAvailable: false, fix: 'Fix.' })).toBe(
     'cassandra (advisory): this command already was denied once in this project (in packages/a), last 1 hour ago in this session. '
-    + `No file under this directory tree has changed since. Fix. ${tail} The user can see it with /cassandra why abcd1234.`,
+    + `No file under this directory tree has changed since. Fix. ${tail} The user can see it with /cassandra:report why abcd1234.`,
   )
 })
 

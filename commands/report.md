@@ -1,5 +1,5 @@
 ---
-description: Show the tool calls Cassandra remembers failing in this project
+description: Report through the CLI what Cassandra remembers failing in this project (list, why <id>, stats)
 ---
 
 Run `bun "${CLAUDE_PLUGIN_ROOT}/src/cli.ts" list --cwd "$(pwd)"` and print its output

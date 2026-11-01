@@ -7,11 +7,14 @@ test('the pane refuses a plugin origin, draws the remembered failure, forgets it
   on('tool.call', { tool: 'Bash' }, async () => ({ isError: true, result: 'Exit code 1', text: 'Exit code 1\nboom' }))
   await $.tool.call({ tool: 'Bash', command: 'false # cassandra pane' })
 
-  // A run from here carries a plugin origin, which may not open the pane; the person's
-  // own origins are covered by test/mod.spec.ts. The test mounts the pane itself instead.
+  // A run from here carries a plugin origin, which may not open the pane, bare or with the
+  // args the old subcommands took; the person's own origins are covered by test/mod.spec.ts.
+  // The test mounts the pane itself instead.
   host.opened.count = 0
-  const r = await $.command.run({ command: 'cassandra', args: 'pane' })
-  expect([r.text, r.exitCode]).toEqual(['The pane opens only from your own /cassandra command.', 1])
+  for (const args of [undefined, '', 'pane', 'list', 'forget --all']) {
+    const r = await $.command.run({ command: 'cassandra', args })
+    expect([r.text, r.exitCode]).toEqual(['The pane opens only from your own /cassandra command.', 1])
+  }
   expect(host.opened.count).toBe(0)
 
   for (const surface of SURFACES) {

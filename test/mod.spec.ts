@@ -75,13 +75,13 @@ test('a failure is recorded, and the unchanged repeat carries the warning as con
   expect(r.context?.[0]).toStartWith('cassandra (advisory): this command already failed once in this project')
 })
 
-test('the warning points at the pane when a surface exists and at /cassandra why when headless', async () => {
+test('the warning points at the pane when a surface exists and at /cassandra:report why when headless', async () => {
   await call('bun test', failed())
   const { r } = await call('bun test', failed())
   expect(r.context?.[0]).toEndWith('The user can see and clear this in the Cassandra pane.')
   opts.surfaces = []
   const headless = await call('bun test', failed())
-  expect(headless.r.context?.[0]).toMatch(/The user can see it with \/cassandra why [0-9a-f]{8}\.$/)
+  expect(headless.r.context?.[0]).toMatch(/The user can see it with \/cassandra:report why [0-9a-f]{8}\.$/)
 })
 
 test('the warning is appended to context another plugin already set', async () => {
@@ -666,39 +666,13 @@ type CommandHook = ($: ModEngine, e: { command: string; args: string; origin?: {
 const command = (args: string | undefined, ...given: Array<{ kind: string } | undefined>) => (hooks.get('command.run') as unknown as CommandHook)(host, { command: 'cassandra', args: args as string, origin: given.length ? given[0] : { kind: 'composer' } }, async () => ({}))
 const start = () => (hooks.get('session.start') as unknown as ($: ModEngine, e: unknown, n: () => Promise<unknown>) => Promise<unknown>)(host, {}, async () => ({}))
 
-test('session.start registers /cassandra and pins the live count', async () => {
+test('session.start registers /cassandra with only a name and a description, and pins the live count', async () => {
   await seedFailure()
   opts.statuses = []
   await start()
   expect(opts.commands).toEqual(['cassandra'])
+  expect(opts.commandSpecs).toEqual([{ name: 'cassandra', description: 'Open the Cassandra pane: the tool calls it remembers failing in this project' }])
   expect(opts.statuses.at(-1)).toBe('1 live failure')
-})
-
-test('/cassandra answers with the CLI text and exit code for each subcommand (Review Focus 1)', async () => {
-  await seedFailure()
-  const { runCommand } = await import('../src/commands/run.ts')
-  const cli = async (args: string[]) => {
-    const r = await runCommand(io(), cwd, args)
-    return { text: r.text, exitCode: r.code }
-  }
-  const listed = await cli([])
-  expect(listed.exitCode).toBe(0)
-  expect(await command('list')).toEqual(listed)
-  const why = await cli(['why'])
-  expect(why.exitCode).toBe(1)
-  expect(await command('  why   ')).toEqual(why)
-  const forget = await cli(['forget'])
-  expect(forget.exitCode).toBe(1)
-  expect(await command('forget')).toEqual(forget)
-  const { USAGE } = await import('../src/commands/run.ts')
-  expect(await command('nope')).toEqual({ text: USAGE, exitCode: 1 })
-
-  opts.statuses = []
-  const all = await command('forget --all')
-  expect(opts.statuses).toStrictEqual([undefined])
-  await seedFailure()
-  expect(all).toEqual(await cli(['forget', '--all']))
-  expect(all.exitCode).toBe(0)
 })
 
 test('the status line refreshes only when the store changes (Review Focus 2)', async () => {
@@ -717,61 +691,6 @@ test('a resolve through the tools hook refreshes the status line', async () => {
   const r = await toolHook()(host, { tool: 'mcp__cassandra__resolve', tool_use_id: 'r1', command: 'bun test', reason: 'fixed' }, async () => ({}))
   expect(String(r.result)).toStartWith('cassandra: Forgot')
   expect(opts.statuses).toStrictEqual([undefined])
-})
-
-test('a command the core cannot serve answers with the fallback text and code 1', async () => {
-  await seedFailure()
-  wrap = (i) => ({ ...i, sha256: async () => { throw new Error('boom') } })
-  expect(await command('list')).toEqual({ text: 'could not read what this project remembers.', exitCode: 1 })
-})
-
-test('a command whose io cannot be built still answers with the fallback text', async () => {
-  wrap = () => { throw new Error('boom') }
-  expect(await command('stats')).toEqual({ text: 'could not read what this project remembers.', exitCode: 1 })
-})
-
-test('a bare /cassandra with no args at all gets the list text where no pane can be shown', async () => {
-  await seedFailure()
-  const { runCommand } = await import('../src/commands/run.ts')
-  const listed = await runCommand(io(), cwd, [])
-  opts.surfaces = []
-  expect(await command(undefined)).toEqual({ text: listed.text, exitCode: 0 })
-})
-
-test('a forget that forgets nothing leaves the status line alone', async () => {
-  await seedFailure()
-  opts.statuses = []
-  expect((await command('forget')).exitCode).toBe(1)
-  expect((await command('forget deadbeef')).exitCode).toBe(1)
-  expect(opts.statuses).toStrictEqual([])
-})
-
-test('forget --all wipes for a composer, a bridge and an sdk origin', async () => {
-  for (const kind of ['composer', 'bridge', 'sdk']) {
-    await seedFailure()
-    expect((await command('forget --all', { kind })).exitCode).toBe(0)
-    expect((await command('list')).text).not.toContain('bun test')
-  }
-})
-
-test('forget --all from a plugin or a schedule is refused and changes nothing', async () => {
-  await seedFailure()
-  const before = await command('list')
-  for (const kind of ['plugin', 'scheduled-trigger']) {
-    opts.statuses = []
-    expect(await command('forget --all', { kind })).toEqual({ text: 'forget --all only runs when you type it yourself; nothing was forgotten.', exitCode: 1 })
-    expect(opts.statuses).toStrictEqual([])
-    expect(await command('list')).toEqual(before)
-  }
-  expect(await command('forget --all', undefined)).toEqual({ text: 'forget --all only runs when you type it yourself; nothing was forgotten.', exitCode: 1 })
-})
-
-test('forget <id> still forgets one record from a plugin origin', async () => {
-  await seedFailure()
-  const id = /\b([0-9a-f]{8})\b/.exec((await command('list')).text ?? '')?.[1] ?? ''
-  const r = await command(`forget ${id}`, { kind: 'plugin' })
-  expect(r.text).toStartWith('Forgot')
-  expect(r.exitCode).toBe(0)
 })
 
 // ---- /cassandra pane ----
@@ -816,47 +735,58 @@ const focus = async (element: string | undefined) => {
 const state = (key: string) => opts.state?.get(key)
 const remembered = async () => (await import('../src/core/record.ts')).listRecords(io(), await pathsFor(io(), cwd))
 
-test('/cassandra pane opens the pane focused, answers, and resets the confirmation and the notice (Review Focus 2)', async () => {
+const OPENED = { text: 'Opened the Cassandra pane.', exitCode: 0 }
+const HEADLESS = { text: 'The pane needs an interactive session; /cassandra:report lists what Cassandra remembers.', exitCode: 1 }
+const REFUSED = { text: 'The pane opens only from your own /cassandra command.', exitCode: 1 }
+/** What the old subcommands took as args; /cassandra now ignores every one of them. */
+const OLD_ARGS = [undefined, '', '   ', 'pane', 'list', 'why abcd1234', 'forget', 'forget --all', 'stats', 'nope']
+/** Empty the store from outside the mod, as `cassandra forget --all` in a shell would. */
+const forgetAllElsewhere = async () => (await import('../src/commands/run.ts')).runCommand(io(), cwd, ['forget', '--all'])
+
+test('/cassandra opens the pane focused, answers, and resets the confirmation and the notice (Review Focus 2)', async () => {
   opts.state = new Map<string, unknown>([['confirmAll', true], ['notice', 'Could not forget the selected record.']])
-  expect(await command('pane')).toEqual({ text: 'Opened the Cassandra pane.', exitCode: 0 })
+  expect(await command(undefined)).toEqual(OPENED)
   expect(opts.opened).toEqual([{ id: 'cassandra', title: 'Cassandra', focus: true, closeOnEscape: true }])
   expect(state('confirmAll')).toBe(false)
   expect(state('notice')).toBeNull()
 })
 
-test('a bare /cassandra you type opens the pane where a surface exists', async () => {
-  for (const args of [undefined, '', '   ']) {
-    expect(await command(args)).toEqual({ text: 'Opened the Cassandra pane.', exitCode: 0 })
-  }
-  const open = { id: 'cassandra', title: 'Cassandra', focus: true, closeOnEscape: true }
-  expect(opts.opened).toEqual([open, open, open])
-})
-
-test('a bare /cassandra lists instead when no surface can show the pane, or a plugin or schedule sent it', async () => {
+test('/cassandra from your own origins opens the pane whatever its args, and lists, forgets and refreshes nothing', async () => {
   await seedFailure()
-  const { runCommand } = await import('../src/commands/run.ts')
-  const r = await runCommand(io(), cwd, [])
-  const listed = { text: r.text, exitCode: r.code }
-  for (const kind of ['plugin', 'scheduled-trigger']) expect(await command('', { kind })).toEqual(listed)
-  expect(await command('', undefined)).toEqual(listed)
-  expect(opts.opened).toBeUndefined()
+  const before = await remembered()
+  opts.statuses = []
+  for (const kind of ['composer', 'bridge', 'sdk']) {
+    for (const args of OLD_ARGS) expect(await command(args, { kind })).toEqual(OPENED)
+  }
+  expect(opts.opened).toHaveLength(3 * OLD_ARGS.length)
+  expect(await remembered()).toEqual(before)
+  expect(opts.statuses).toStrictEqual([])
+})
+
+test('/cassandra with no surface says the pane needs an interactive session, points at /cassandra:report, and opens nothing', async () => {
+  await seedFailure()
   opts.surfaces = []
-  expect(await command('', { kind: 'sdk' })).toEqual(listed)
-  expect(await command('')).toEqual(listed)
+  for (const kind of ['composer', 'bridge', 'sdk']) {
+    for (const args of [undefined, '', 'list', 'forget --all']) expect(await command(args, { kind })).toEqual(HEADLESS)
+  }
   expect(opts.opened).toBeUndefined()
+  expect(await remembered()).toHaveLength(1)
+})
+
+test('/cassandra whose surfaces cannot be read answers as a headless run', async () => {
   host = { ...host, session: { ...host.session, surfaces: async () => { throw new Error('no surfaces') } } }
-  expect(await command('')).toEqual(listed)
-})
-
-test('/cassandra pane with no surface answers that it needs an interactive session and opens nothing', async () => {
-  opts.surfaces = []
-  expect(await command('pane', { kind: 'sdk' })).toEqual({ text: 'The pane needs an interactive session.', exitCode: 1 })
+  expect(await command(undefined)).toEqual(HEADLESS)
   expect(opts.opened).toBeUndefined()
 })
 
-test('/cassandra pane whose open fails answers with the fallback text', async () => {
+test('/cassandra whose open fails answers with the fallback text', async () => {
   host = { ...host, ui: { ...host.ui, open: async () => { throw new Error('no panes here') } } }
-  expect(await command('pane')).toEqual({ text: 'could not read what this project remembers.', exitCode: 1 })
+  expect(await command(undefined)).toEqual({ text: 'could not open the pane.', exitCode: 1 })
+})
+
+test('/cassandra opens the pane even where the store cannot be read', async () => {
+  wrap = () => { throw new Error('boom') }
+  expect(await command(undefined)).toEqual(OPENED)
 })
 
 test('the render hook draws one row per remembered record', async () => {
@@ -1101,14 +1031,16 @@ test('the window follows the selection: newer records push it down, and forget s
   expect(left).toHaveLength(2)
 })
 
-test('/cassandra pane opens only for the person\'s own origins', async () => {
-  for (const kind of ['plugin', 'scheduled-trigger']) {
-    expect(await command('pane', { kind })).toEqual({ text: 'The pane opens only from your own /cassandra command.', exitCode: 1 })
+test('/cassandra opens the pane only for your own origins, and refuses every other whatever its args', async () => {
+  await seedFailure()
+  for (const origin of [{ kind: 'plugin' }, { kind: 'scheduled-trigger' }, { kind: 'peer' }, undefined]) {
+    for (const args of OLD_ARGS) expect(await command(args, origin)).toEqual(REFUSED)
   }
-  expect(await command('pane', undefined)).toEqual({ text: 'The pane opens only from your own /cassandra command.', exitCode: 1 })
+  // The refusal comes before the surface check: a headless plugin is refused, not told to go interactive.
+  opts.surfaces = []
+  expect(await command(undefined, { kind: 'plugin' })).toEqual(REFUSED)
   expect(opts.opened).toBeUndefined()
-  for (const kind of ['composer', 'bridge', 'sdk']) expect((await command('pane', { kind })).exitCode).toBe(0)
-  expect(opts.opened).toHaveLength(3)
+  expect(await remembered()).toHaveLength(1)
 })
 
 test('with hundreds of records and a fix note, the rows and the action row fit the body', async () => {
@@ -1143,7 +1075,7 @@ test('forget-all on an empty store asks nothing, and a confirmation the store em
   await press('forget-all')
   expect(state('confirmAll')).toBe(true)
   // The store empties another way while the confirmation shows.
-  expect((await command('forget --all')).exitCode).toBe(0)
+  expect(String((await toolHook()(host, { tool: 'mcp__cassandra__resolve', tool_use_id: 'r1', command: 'bun test', reason: 'fixed' }, async () => ({}))).result)).toStartWith('cassandra: Forgot')
   expect(state('confirmAll')).toBe(false)
   await seedFailure()
   expect((await render()).some((n) => n.props?.key === 'confirm-row')).toBe(false)
@@ -1212,7 +1144,7 @@ test('a forget that finds nothing to forget clears an old notice as it asks for 
   // The drawn row is gone by the press.
   await render()
   opts.state.set('notice', 'Could not forget the selected record.')
-  expect((await command('forget --all')).exitCode).toBe(0)
+  expect((await forgetAllElsewhere()).code).toBe(0)
   const rev = Number(state('rev') ?? 0)
   await press('forget')
   expect(state('notice')).toBeNull()
@@ -1353,7 +1285,7 @@ test('a confirm whose store cannot be counted deletes nothing and says so; on an
   expect(state('notice')).toBe('Could not forget every record.')
   wrap = (i) => i
   expect(await remembered()).toHaveLength(1)
-  expect((await command('forget --all')).exitCode).toBe(0)
+  expect((await forgetAllElsewhere()).code).toBe(0)
   // The store emptied another way; the confirm row was already up.
   opts.state!.set('confirmAll', true)
   const rev = Number(state('rev') ?? 0)
@@ -1549,7 +1481,7 @@ test('the full output goes back to its first page when the marker moves, the tab
   paged()
   await focus(marked)
   expect(state('fullPage')).toBe(3)
-  await command('pane')
+  await command(undefined)
   expect(state('fullPage')).toBe(0)
 })
 
@@ -1579,7 +1511,7 @@ test('every reset of the page also drops the record it was turned on', async () 
   await focus(marked)
   reset()
   paged()
-  await command('pane')
+  await command(undefined)
   reset()
 })
 
@@ -1790,13 +1722,13 @@ test('a ring move that fails beneath is not remembered as where the ring rests',
 
 test('opening the pane drops a waiting retest confirm', async () => {
   opts.state = new Map<string, unknown>([['confirmRetest', 'abc']])
-  await command('pane')
+  await command(undefined)
   expect(state('confirmRetest')).toBeNull()
 })
 
 test('opening the pane closes an open search field', async () => {
   opts.state = new Map<string, unknown>([['searching', true]])
-  await command('pane')
+  await command(undefined)
   expect(state('searching')).toBe(false)
 })
 

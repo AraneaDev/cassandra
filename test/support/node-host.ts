@@ -19,6 +19,8 @@ export interface NodeHostOptions {
   registerRejects?: boolean
   /** Commands the mod registered with `$.command.register`, by name, in order. */
   commands?: string[]
+  /** The spec each of those commands was registered with, in the same order. */
+  commandSpecs?: unknown[]
   /** Every value the mod pinned with `$.ui.status`, in order; undefined clears the line. */
   statuses?: Array<string | undefined>
   /** What `$.session.surfaces()` answers; terminal when absent, none for a headless run. */
@@ -165,6 +167,7 @@ export function nodeHost(opts: NodeHostOptions = {}): NodeHost {
     command: {
       async register(spec: { name: string }) {
         ;(opts.commands ??= []).push(spec.name)
+        ;(opts.commandSpecs ??= []).push(spec)
         return {}
       },
     },

@@ -179,7 +179,7 @@ const keptOr = <T>(kept: T | null | undefined, live: () => T | null | Promise<T 
   kept === undefined ? live() : kept
 
 /**
- * Plain display data for `/cassandra pane`: the project, the records by tab and day, the
+ * Plain display data for the `/cassandra` pane: the project, the records by tab and day, the
  * selected record in full, and this session's latest warning. `sessionId` keeps `justWarned`
  * to a warning this session actually raised.
  */

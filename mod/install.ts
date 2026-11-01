@@ -1,4 +1,3 @@
-import { runCommand } from '../src/commands/run.ts'
 import { buildBriefing, callHash, check, recordBriefing, settle, type Call, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
 import { lastWarningOf, paneModel, unreadableModel, type PaneModel } from '../src/core/pane.ts'
@@ -220,14 +219,20 @@ function paneHostOf($: ModEngine, wrapIo: (io: Io) => Io, retesting: Retesting, 
   }
 }
 
-/** What /cassandra pane answers once the pane is open. */
+/** What /cassandra answers once the pane is open. */
 const PANE_OPENED = 'Opened the Cassandra pane.'
 
-/** What /cassandra pane answers where nothing can show a pane. */
-const PANE_HEADLESS = 'The pane needs an interactive session.'
+/** What /cassandra answers where nothing can show a pane. */
+const PANE_HEADLESS = 'The pane needs an interactive session; /cassandra:report lists what Cassandra remembers.'
 
-/** What /cassandra pane answers to an origin that is not the person's own. */
+/** What /cassandra answers to an origin that is not the person's own. */
 const PANE_REFUSAL = 'The pane opens only from your own /cassandra command.'
+
+/** What /cassandra answers when the pane could not be opened; the engine already labels it "cassandra: ". */
+const PANE_FALLBACK = 'could not open the pane.'
+
+/** Origins that are a person typing, or a headless run someone started on purpose. */
+const OWN_ORIGINS = new Set(['composer', 'bridge', 'sdk'])
 
 /**
  * Bump the pane's revision, so an open pane that read it draws again. Never throws.
@@ -267,12 +272,12 @@ async function dropEmptyConfirm($: ModEngine, io: Io): Promise<void> {
 }
 
 /**
- * Open the pane, unless nothing can show one. Neither confirmation survives into a fresh
- * open, nor an open search field, nor an old notice, nor a later page of the full output.
- * Rejects on a host failure.
+ * Open the pane, unless nothing can show one (a surface list that cannot be read counts as
+ * none). Neither confirmation survives into a fresh open, nor an open search field, nor an
+ * old notice, nor a later page of the full output. Rejects on a host failure.
  */
 async function openPane($: ModEngine): Promise<{ text: string; exitCode: number }> {
-  if ((await $.session.surfaces()).length === 0) return { text: PANE_HEADLESS, exitCode: 1 }
+  if ((await $.session.surfaces().catch(() => [])).length === 0) return { text: PANE_HEADLESS, exitCode: 1 }
   await $.state.set(CONFIRM_ALL, false)
   await $.state.set(CONFIRM_RETEST, null)
   await $.state.set(SEARCHING, false)
@@ -344,35 +349,16 @@ async function noteWarning($: ModEngine, io: Io, call: Call, hash: string): Prom
   await bumpRev($)
 }
 
-/** What /cassandra shows when it cannot answer; the engine already labels it "cassandra: ". */
-const COMMAND_FALLBACK = 'could not read what this project remembers.'
-
-/** Origins that are a person typing, or a headless run someone started on purpose. */
-const BULK_ORIGINS = new Set(['composer', 'bridge', 'sdk'])
-
-/** What /cassandra answers to a bulk forget that did not come from a person or a headless run. */
-const BULK_REFUSAL = 'forget --all only runs when you type it yourself; nothing was forgotten.'
-
-/** Serve /cassandra with the CLI's own text. Never throws. */
-async function answerCommand($: ModEngine, io: Io, args: string | undefined, origin: CommandEvent['origin']): Promise<{ text: string; exitCode: number }> {
+/**
+ * Serve /cassandra: it opens the pane and nothing else, so any args are ignored. The pane is
+ * for the person: a plugin, a schedule or a peer may not open it. Never throws.
+ */
+async function answerCommand($: ModEngine, origin: CommandEvent['origin']): Promise<{ text: string; exitCode: number }> {
+  if (!OWN_ORIGINS.has(origin?.kind ?? '')) return { text: PANE_REFUSAL, exitCode: 1 }
   try {
-    // A bare /cassandra may arrive with no args at all.
-    const parts = (args ?? '').split(/\s+/).filter(Boolean)
-    // The pane is for the person: a plugin, a schedule or a peer may not open it.
-    if (parts[0] === 'pane') return BULK_ORIGINS.has(origin?.kind ?? '') ? await openPane($) : { text: PANE_REFUSAL, exitCode: 1 }
-    // A bare /cassandra you typed opens the pane where one can be shown; anywhere else it lists.
-    if (parts.length === 0 && BULK_ORIGINS.has(origin?.kind ?? '')
-      && (await $.session.surfaces().catch(() => [])).length > 0) return await openPane($)
-    // Wiping every record is for a person or a headless run; a plugin, a schedule or a peer may not.
-    if (parts[0] === 'forget' && parts.includes('--all') && !BULK_ORIGINS.has(origin?.kind ?? '')) {
-      return { text: BULK_REFUSAL, exitCode: 1 }
-    }
-    const r = await runCommand(io, await $.session.cwd(), parts)
-    // Only a forget that forgot something changes the count (a partial --all still starts so).
-    if (parts[0] === 'forget' && r.text.startsWith('Forgot')) await refreshStatus($, io)
-    return { text: r.text, exitCode: r.code }
+    return await openPane($)
   } catch {
-    return { text: COMMAND_FALLBACK, exitCode: 1 }
+    return { text: PANE_FALLBACK, exitCode: 1 }
   }
 }
 
@@ -473,7 +459,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     }
     // Apart from the tools: an engine that refuses the command costs only /cassandra.
     try {
-      await $.command.register({ name: 'cassandra', description: 'Show what Cassandra remembers failing in this project', argumentHint: '[list | why <id> | forget <id> | forget --all | stats | pane]' })
+      await $.command.register({ name: 'cassandra', description: 'Open the Cassandra pane: the tool calls it remembers failing in this project' })
     } catch {
       // The session goes on without /cassandra.
     }
@@ -546,15 +532,7 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
     return stored
   })
 
-  on('command.run', { command: 'cassandra' }, async ($, e) => {
-    let io: Io
-    try {
-      io = wrapIo(modIo(hostOf($)))
-    } catch {
-      return { text: COMMAND_FALLBACK, exitCode: 1 }
-    }
-    return answerCommand($, io, e.args, e.origin)
-  })
+  on('command.run', { command: 'cassandra' }, async ($, e) => answerCommand($, e.origin))
 
   const drawn: DrawnBySurface = new Map()
   // The retests the pane started, until the tracked hook below has settled each one.
