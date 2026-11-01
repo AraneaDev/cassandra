@@ -132,11 +132,11 @@ the pane has drawn; if that row is gone, the press just redraws the pane.
 <img align="right" width="300" src="docs/images/narrow.svg" alt="The same pane 44 columns wide. The header keeps the project and the pill, the tabs other than the open one show only their digits, the counters share one line with shorter labels (warn, kept, today, cleared), the Just warned card and the open row cut their longer lines with an ellipsis, and the key bar keeps Retest, Forget and Forget all.">
 
 The pane fits its size. Under 56 columns the tabs other than the open one fall back to
-their digits and the branch leaves the header; from 100 columns the commit joins it and the
-counters get a tile each. Narrower than that the counters share one line, with shorter
-labels under 56 columns when the usual ones do not fit. Under 22 rows they move into the
-header, and a body under 4 lines draws a single line asking for a taller window. Long lines are cut with an ellipsis rather than wrapped, except in the retest
-confirm, which always shows the whole call. The key bar drops the keys that matter least
+their digits and the branch leaves the header; from 100 columns the commit joins it. From
+56 columns the counters sit in one framed band; narrower, they share one line with shorter
+labels. Under 22 rows they move into the header, and a body under 4 lines draws a single
+line asking for a taller window. Long lines are cut with an ellipsis rather than wrapped,
+except in the retest confirm, which always shows the whole call. The key bar drops the keys that matter least
 first; their letters still work.
 
 `/cassandra` opens the pane and does nothing else; anything you type after it is ignored.

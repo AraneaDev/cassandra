@@ -693,7 +693,7 @@ test('a resolve through the tools hook refreshes the status line', async () => {
   expect(opts.statuses).toStrictEqual([undefined])
 })
 
-// ---- /cassandra pane ----
+// ---- /cassandra ----
 
 interface Drawn { type: string; props: Record<string, any>; children: any[] }
 const g = globalThis as any
