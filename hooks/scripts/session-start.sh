@@ -54,7 +54,7 @@ if ! command -v bun >/dev/null 2>&1; then
 fi
 
 # Background, so a first session never waits on a compile. Until it lands every
-# hook invocation finds no binary and Claude Code skips it.
+# hook goes through hooks/scripts/hook.sh, which finds no binary and exits quietly.
 ( cd "$root" && bun run scripts/build-hook.ts >/dev/null 2>&1 ) &
 
 printf '%s\n' '{"systemMessage":"cassandra is building its classic hook binary in the background, for Claude Code builds without the in-process mod. Where the mod loads, cassandra is already active."}'

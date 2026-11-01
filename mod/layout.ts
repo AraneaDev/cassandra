@@ -133,12 +133,12 @@ const WIDE_FROM = 100
 
 /** Rows each part of the pane costs: the layout budgets these, and the drawing draws exactly these. */
 export const ROWS = {
-  header: 1, headSpacing: 4, tabs: 1, tiles: 4, shortCounters: 1, cardGap: 1, titleGap: 1, justWarned: 7, historyTitle: 1, notice: 1, search: 1, keysTitle: 1, keyBar: 1,
+  header: 1, headSpacing: 5, tabs: 1, tiles: 4, shortCounters: 1, cardGap: 1, titleGap: 1, justWarned: 7, historyTitle: 1, notice: 1, search: 1, keysTitle: 1, keyBar: 1,
   fullDetail: 9, compactDetail: 3, retestGap: 1, retestTitle: 1, fullTitle: 1, fullMore: 1,
 } as const
 const HEADER_ROWS = ROWS.header
 const TABS_ROWS = ROWS.tabs
-/** A tall pane's room around the tabs: a blank row each side of them, a rule, and a blank row under it. */
+/** A tall pane's room around its head: a blank row above the title, one each side of the tabs, a rule, and a blank row under it. */
 const HEAD_SPACING_ROWS = ROWS.headSpacing
 const TILES_ROWS = ROWS.tiles
 const SHORT_COUNTERS_ROWS = ROWS.shortCounters

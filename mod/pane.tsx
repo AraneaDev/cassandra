@@ -680,6 +680,7 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, layout
   const tab = TABS.find((t) => t.id === model.view.tab)?.name ?? 'History'
   const gap = (k: string): Line[] => (layout.gaps ? [blankLine(k)] : [])
   const body: Line[] = [
+    ...gap('top-gap'),
     header(f, model, layout),
     // A tall pane spaces the tabs out: a blank row each side, then a rule and a blank row before the counters.
     ...gap('head-gap'),

@@ -1,18 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="388" height="671" viewBox="0 0 388 671" font-family="ui-monospace, SFMono-Regular, &#34;SF Mono&#34;, Menlo, Consolas, &#34;DejaVu Sans Mono&#34;, monospace" font-size="13">
   <rect width="388" height="671" rx="8" fill="#10151d"/>
   <rect x="0.5" y="0.5" width="387" height="670" rx="8" fill="none" stroke="#26303d"/>
-  <rect x="248.2" y="22" width="109.2" height="19" fill="#cf6a63"/>
-  <rect x="29.8" y="60" width="78.0" height="19" fill="#9a8fd0"/>
-  <rect x="22.0" y="402" width="23.4" height="19" fill="#1d2633"/>
-  <rect x="45.4" y="402" width="54.6" height="19" fill="#1d2633"/>
-  <rect x="100.0" y="402" width="93.6" height="19" fill="#1d2633"/>
-  <rect x="193.6" y="402" width="171.6" height="19" fill="#1d2633"/>
-  <rect x="22.0" y="421" width="171.6" height="19" fill="#1d2633"/>
-  <rect x="193.6" y="421" width="62.4" height="19" fill="#cf6a63"/>
-  <rect x="256.0" y="421" width="109.2" height="19" fill="#1d2633"/>
-  <rect x="22.0" y="440" width="343.2" height="19" fill="#1d2633"/>
-  <rect x="22.0" y="459" width="171.6" height="19" fill="#1d2633"/>
-  <rect x="193.6" y="459" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="248.2" y="41" width="109.2" height="19" fill="#cf6a63"/>
+  <rect x="29.8" y="79" width="78.0" height="19" fill="#9a8fd0"/>
+  <rect x="22.0" y="421" width="23.4" height="19" fill="#1d2633"/>
+  <rect x="45.4" y="421" width="54.6" height="19" fill="#1d2633"/>
+  <rect x="100.0" y="421" width="93.6" height="19" fill="#1d2633"/>
+  <rect x="193.6" y="421" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="22.0" y="440" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="193.6" y="440" width="62.4" height="19" fill="#cf6a63"/>
+  <rect x="256.0" y="440" width="109.2" height="19" fill="#1d2633"/>
+  <rect x="22.0" y="459" width="343.2" height="19" fill="#1d2633"/>
   <rect x="22.0" y="478" width="171.6" height="19" fill="#1d2633"/>
   <rect x="193.6" y="478" width="171.6" height="19" fill="#1d2633"/>
   <rect x="22.0" y="497" width="171.6" height="19" fill="#1d2633"/>
@@ -23,6 +21,8 @@
   <rect x="193.6" y="535" width="171.6" height="19" fill="#1d2633"/>
   <rect x="22.0" y="554" width="171.6" height="19" fill="#1d2633"/>
   <rect x="193.6" y="554" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="22.0" y="573" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="193.6" y="573" width="171.6" height="19" fill="#1d2633"/>
   <rect x="22.0" y="630" width="7.8" height="19" fill="#171e28"/>
   <rect x="29.8" y="630" width="23.4" height="19" fill="#171e28"/>
   <rect x="53.2" y="630" width="46.8" height="19" fill="#171e28"/>
@@ -33,108 +33,108 @@
   <rect x="201.4" y="630" width="23.4" height="19" fill="#171e28"/>
   <rect x="224.8" y="630" width="78.0" height="19" fill="#171e28"/>
   <rect x="302.8" y="630" width="62.4" height="19" fill="#171e28"/>
-  <text x="22" y="36" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4" fill="#ece5d5" font-weight="bold"> acme-api                    </tspan><tspan x="248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6" fill="#10151d" font-weight="bold"> 3 would warn </tspan><tspan x="357.4" fill="#ece5d5"> </tspan></text>
-  <text x="22" y="55" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
-  <text x="22" y="74" xml:space="preserve"><tspan x="22.0" fill="#ece5d5"> </tspan><tspan x="29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#10151d" font-weight="bold"> History⁶ </tspan><tspan x="107.8" fill="#ece5d5"> </tspan><tspan x="115.6 123.4 131.2 139.0" fill="#7a8593"> 2³ </tspan><tspan x="146.8" fill="#ece5d5"> </tspan><tspan x="154.6 162.4 170.2 178.0" fill="#7a8593"> 3² </tspan><tspan x="185.8" fill="#ece5d5"> </tspan><tspan x="193.6 201.4 209.2 217.0" fill="#7a8593"> 4¹ </tspan><tspan x="224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                  </tspan></text>
-  <text x="22" y="93" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
-  <path d="M29.8 107.5H37.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M37.6 107.5H45.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M45.4 107.5H53.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M53.2 107.5H61.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M61.0 107.5H68.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M68.8 107.5H76.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M76.6 107.5H84.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M84.4 107.5H92.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M92.2 107.5H100.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M100.0 107.5H107.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M107.8 107.5H115.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M115.6 107.5H123.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M123.4 107.5H131.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M131.2 107.5H139.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M139.0 107.5H146.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M146.8 107.5H154.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M154.6 107.5H162.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M162.4 107.5H170.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M170.2 107.5H178.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M178.0 107.5H185.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M185.8 107.5H193.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M193.6 107.5H201.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M201.4 107.5H209.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M209.2 107.5H217.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M217.0 107.5H224.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M224.8 107.5H232.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M232.6 107.5H240.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M240.4 107.5H248.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M248.2 107.5H256.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M256.0 107.5H263.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M263.8 107.5H271.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M271.6 107.5H279.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M279.4 107.5H287.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M287.2 107.5H295.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M295.0 107.5H302.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M302.8 107.5H310.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M310.6 107.5H318.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M318.4 107.5H326.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M326.2 107.5H334.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M334.0 107.5H341.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M341.8 107.5H349.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M349.6 107.5H357.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <text x="22" y="112" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#3a4553">                                            </tspan></text>
-  <text x="22" y="131" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
-  <text x="22" y="150" xml:space="preserve"><tspan x="22.0 29.8" fill="#cf6a63" font-weight="bold"> 3</tspan><tspan x="37.6 45.4 53.2 61.0 68.8 76.6 84.4" fill="#7a8593"> warn  </tspan><tspan x="92.2" fill="#ece5d5" font-weight="bold">6</tspan><tspan x="100.0 107.8 115.6 123.4 131.2 139.0 146.8" fill="#7a8593"> kept  </tspan><tspan x="154.6" fill="#d8a13f" font-weight="bold">2</tspan><tspan x="162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0" fill="#7a8593"> today  </tspan><tspan x="224.8" fill="#7fb3a3" font-weight="bold">1</tspan><tspan x="232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7a8593"> cleared         </tspan></text>
-  <text x="22" y="169" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
-  <path d="M29.8 183.5H37.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M37.6 183.5H45.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M162.4 183.5H170.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M170.2 183.5H178.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M178.0 183.5H185.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M185.8 183.5H193.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M193.6 183.5H201.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M341.8 183.5H349.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M349.6 183.5H357.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <text x="22" y="188" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4" fill="#3a4553">    </tspan><tspan x="53.2 61.0" fill="#d8a13f" font-weight="bold">! </tspan><tspan x="68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6" fill="#d97757" font-weight="bold">Just warned </tspan><tspan x="162.4 170.2 178.0 185.8 193.6 201.4" fill="#3a4553">      </tspan><tspan x="209.2 217.0 224.8 232.6 240.4 248.2" fill="#7a8593">14:31 </tspan><tspan x="256.0 263.8 271.6" fill="#ece5d5">d: </tspan><tspan x="279.4 287.2 295.0 302.8 310.6 318.4 326.2" fill="#ece5d5">Dismiss</tspan><tspan x="334.0 341.8 349.6 357.4" fill="#3a4553">    </tspan></text>
-  <text x="22" y="207" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
-  <text x="22" y="226" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#7a8593"> you ran   </tspan><tspan x="107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">bun test test/billing.test.ts    </tspan></text>
-  <text x="22" y="245" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#7a8593"> matched   </tspan><tspan x="107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0" fill="#ece5d5">the same call, 3× before </tspan><tspan x="302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7a8593">(last … </tspan></text>
-  <text x="22" y="264" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#7a8593"> because   </tspan><tspan x="107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#cf6a63">Exit code 1 (fail) invoice tota… </tspan></text>
-  <text x="22" y="283" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#7a8593"> still bad </tspan><tspan x="107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">Repository unchanged since: HEA… </tspan></text>
-  <text x="22" y="302" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#7a8593"> fix       </tspan><tspan x="107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7fb3a3">Last time this started working … </tspan></text>
-  <text x="22" y="321" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
-  <path d="M29.8 335.5H37.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M37.6 335.5H45.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M131.2 335.5H139.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M139.0 335.5H146.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M146.8 335.5H154.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M154.6 335.5H162.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M162.4 335.5H170.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M170.2 335.5H178.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M178.0 335.5H185.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M185.8 335.5H193.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M193.6 335.5H201.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M201.4 335.5H209.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M209.2 335.5H217.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M217.0 335.5H224.8" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M224.8 335.5H232.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M232.6 335.5H240.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M240.4 335.5H248.2" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M248.2 335.5H256.0" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M341.8 335.5H349.6" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <path d="M349.6 335.5H357.4" fill="none" stroke="#3a4553" stroke-width="1"/>
-  <text x="22" y="340" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4" fill="#3a4553">    </tspan><tspan x="53.2 61.0" fill="#7a8593">◷ </tspan><tspan x="68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4" fill="#d97757" font-weight="bold">History </tspan><tspan x="131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0" fill="#3a4553">                 </tspan><tspan x="263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2" fill="#7a8593">6 records</tspan><tspan x="334.0 341.8 349.6 357.4" fill="#3a4553">    </tspan></text>
-  <text x="22" y="359" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
-  <text x="22" y="378" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5" font-weight="bold"> Yesterday                                  </tspan></text>
-  <text x="22" y="397" xml:space="preserve"><tspan x="22.0 29.8 37.6" fill="#cf6a63"> ▸ </tspan><tspan x="45.4 53.2 61.0 68.8 76.6 84.4 92.2" fill="#7a8593">16:40  </tspan><tspan x="100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2" fill="#ece5d5">mcp__db__query {"sql":"select…</tspan><tspan x="334.0 341.8 349.6 357.4" fill="#7a8593"> ×1 </tspan></text>
-  <text x="22" y="416" xml:space="preserve"><tspan x="22.0 29.8 37.6" fill="#cf6a63"> ▾ </tspan><tspan x="45.4 53.2 61.0 68.8 76.6 84.4 92.2" fill="#7a8593">09:40  </tspan><tspan x="100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#ece5d5">bun run lint</tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7a8593"> (in packages/web) ×2 </tspan></text>
-  <text x="22" y="435" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">    why it failed     </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2" fill="#10151d" font-weight="bold"> exit 2 </tspan><tspan x="256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">              </tspan></text>
-  <text x="22" y="454" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#cf6a63">                      Exit code 2 src/rout… </tspan></text>
-  <text x="22" y="473" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">    would it warn now </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#cf6a63" font-weight="bold">yes                   </tspan></text>
-  <text x="22" y="492" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">      then            </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">HEAD a3f9c2e, 1 unco… </tspan></text>
-  <text x="22" y="511" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">      now             </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">HEAD a3f9c2e, 1 unco… </tspan></text>
-  <text x="22" y="530" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">    seen              </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">10-28 09:12 → 10-29 … </tspan></text>
-  <text x="22" y="549" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">    session           </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">in this session       </tspan></text>
-  <text x="22" y="568" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">    fix               </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7fb3a3">Last time this start… </tspan></text>
-  <text x="22" y="587" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7a8593"> 2 more ↓                                   </tspan></text>
-  <text x="22" y="606" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="36" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="55" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4" fill="#ece5d5" font-weight="bold"> acme-api                    </tspan><tspan x="248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6" fill="#10151d" font-weight="bold"> 3 would warn </tspan><tspan x="357.4" fill="#ece5d5"> </tspan></text>
+  <text x="22" y="74" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="93" xml:space="preserve"><tspan x="22.0" fill="#ece5d5"> </tspan><tspan x="29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#10151d" font-weight="bold"> History⁶ </tspan><tspan x="107.8" fill="#ece5d5"> </tspan><tspan x="115.6 123.4 131.2 139.0" fill="#7a8593"> 2³ </tspan><tspan x="146.8" fill="#ece5d5"> </tspan><tspan x="154.6 162.4 170.2 178.0" fill="#7a8593"> 3² </tspan><tspan x="185.8" fill="#ece5d5"> </tspan><tspan x="193.6 201.4 209.2 217.0" fill="#7a8593"> 4¹ </tspan><tspan x="224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                  </tspan></text>
+  <text x="22" y="112" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
+  <path d="M29.8 126.5H37.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M37.6 126.5H45.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M45.4 126.5H53.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M53.2 126.5H61.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M61.0 126.5H68.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M68.8 126.5H76.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M76.6 126.5H84.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M84.4 126.5H92.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M92.2 126.5H100.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M100.0 126.5H107.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M107.8 126.5H115.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M115.6 126.5H123.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M123.4 126.5H131.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M131.2 126.5H139.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M139.0 126.5H146.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M146.8 126.5H154.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M154.6 126.5H162.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M162.4 126.5H170.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M170.2 126.5H178.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M178.0 126.5H185.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M185.8 126.5H193.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M193.6 126.5H201.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M201.4 126.5H209.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M209.2 126.5H217.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M217.0 126.5H224.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M224.8 126.5H232.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M232.6 126.5H240.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M240.4 126.5H248.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M248.2 126.5H256.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M256.0 126.5H263.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M263.8 126.5H271.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M271.6 126.5H279.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M279.4 126.5H287.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M287.2 126.5H295.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M295.0 126.5H302.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M302.8 126.5H310.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M310.6 126.5H318.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M318.4 126.5H326.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M326.2 126.5H334.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M334.0 126.5H341.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M341.8 126.5H349.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M349.6 126.5H357.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <text x="22" y="131" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#3a4553">                                            </tspan></text>
+  <text x="22" y="150" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="169" xml:space="preserve"><tspan x="22.0 29.8" fill="#cf6a63" font-weight="bold"> 3</tspan><tspan x="37.6 45.4 53.2 61.0 68.8 76.6 84.4" fill="#7a8593"> warn  </tspan><tspan x="92.2" fill="#ece5d5" font-weight="bold">6</tspan><tspan x="100.0 107.8 115.6 123.4 131.2 139.0 146.8" fill="#7a8593"> kept  </tspan><tspan x="154.6" fill="#d8a13f" font-weight="bold">2</tspan><tspan x="162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0" fill="#7a8593"> today  </tspan><tspan x="224.8" fill="#7fb3a3" font-weight="bold">1</tspan><tspan x="232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7a8593"> cleared         </tspan></text>
+  <text x="22" y="188" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
+  <path d="M29.8 202.5H37.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M37.6 202.5H45.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M162.4 202.5H170.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M170.2 202.5H178.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M178.0 202.5H185.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M185.8 202.5H193.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M193.6 202.5H201.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M341.8 202.5H349.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M349.6 202.5H357.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <text x="22" y="207" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4" fill="#3a4553">    </tspan><tspan x="53.2 61.0" fill="#d8a13f" font-weight="bold">! </tspan><tspan x="68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6" fill="#d97757" font-weight="bold">Just warned </tspan><tspan x="162.4 170.2 178.0 185.8 193.6 201.4" fill="#3a4553">      </tspan><tspan x="209.2 217.0 224.8 232.6 240.4 248.2" fill="#7a8593">14:31 </tspan><tspan x="256.0 263.8 271.6" fill="#ece5d5">d: </tspan><tspan x="279.4 287.2 295.0 302.8 310.6 318.4 326.2" fill="#ece5d5">Dismiss</tspan><tspan x="334.0 341.8 349.6 357.4" fill="#3a4553">    </tspan></text>
+  <text x="22" y="226" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="245" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#7a8593"> you ran   </tspan><tspan x="107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">bun test test/billing.test.ts    </tspan></text>
+  <text x="22" y="264" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#7a8593"> matched   </tspan><tspan x="107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0" fill="#ece5d5">the same call, 3× before </tspan><tspan x="302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7a8593">(last … </tspan></text>
+  <text x="22" y="283" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#7a8593"> because   </tspan><tspan x="107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#cf6a63">Exit code 1 (fail) invoice tota… </tspan></text>
+  <text x="22" y="302" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#7a8593"> still bad </tspan><tspan x="107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">Repository unchanged since: HEA… </tspan></text>
+  <text x="22" y="321" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0" fill="#7a8593"> fix       </tspan><tspan x="107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7fb3a3">Last time this started working … </tspan></text>
+  <text x="22" y="340" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
+  <path d="M29.8 354.5H37.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M37.6 354.5H45.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M131.2 354.5H139.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M139.0 354.5H146.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M146.8 354.5H154.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M154.6 354.5H162.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M162.4 354.5H170.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M170.2 354.5H178.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M178.0 354.5H185.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M185.8 354.5H193.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M193.6 354.5H201.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M201.4 354.5H209.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M209.2 354.5H217.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M217.0 354.5H224.8" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M224.8 354.5H232.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M232.6 354.5H240.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M240.4 354.5H248.2" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M248.2 354.5H256.0" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M341.8 354.5H349.6" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <path d="M349.6 354.5H357.4" fill="none" stroke="#3a4553" stroke-width="1"/>
+  <text x="22" y="359" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4" fill="#3a4553">    </tspan><tspan x="53.2 61.0" fill="#7a8593">◷ </tspan><tspan x="68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4" fill="#d97757" font-weight="bold">History </tspan><tspan x="131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0" fill="#3a4553">                 </tspan><tspan x="263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2" fill="#7a8593">6 records</tspan><tspan x="334.0 341.8 349.6 357.4" fill="#3a4553">    </tspan></text>
+  <text x="22" y="378" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="397" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5" font-weight="bold"> Yesterday                                  </tspan></text>
+  <text x="22" y="416" xml:space="preserve"><tspan x="22.0 29.8 37.6" fill="#cf6a63"> ▸ </tspan><tspan x="45.4 53.2 61.0 68.8 76.6 84.4 92.2" fill="#7a8593">16:40  </tspan><tspan x="100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2" fill="#ece5d5">mcp__db__query {"sql":"select…</tspan><tspan x="334.0 341.8 349.6 357.4" fill="#7a8593"> ×1 </tspan></text>
+  <text x="22" y="435" xml:space="preserve"><tspan x="22.0 29.8 37.6" fill="#cf6a63"> ▾ </tspan><tspan x="45.4 53.2 61.0 68.8 76.6 84.4 92.2" fill="#7a8593">09:40  </tspan><tspan x="100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#ece5d5">bun run lint</tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7a8593"> (in packages/web) ×2 </tspan></text>
+  <text x="22" y="454" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">    why it failed     </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2" fill="#10151d" font-weight="bold"> exit 2 </tspan><tspan x="256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">              </tspan></text>
+  <text x="22" y="473" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#cf6a63">                      Exit code 2 src/rout… </tspan></text>
+  <text x="22" y="492" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">    would it warn now </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#cf6a63" font-weight="bold">yes                   </tspan></text>
+  <text x="22" y="511" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">      then            </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">HEAD a3f9c2e, 1 unco… </tspan></text>
+  <text x="22" y="530" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">      now             </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">HEAD a3f9c2e, 1 unco… </tspan></text>
+  <text x="22" y="549" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">    seen              </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">10-28 09:12 → 10-29 … </tspan></text>
+  <text x="22" y="568" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">    session           </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">in this session       </tspan></text>
+  <text x="22" y="587" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8" fill="#7a8593">    fix               </tspan><tspan x="193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7fb3a3">Last time this start… </tspan></text>
+  <text x="22" y="606" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#7a8593"> 2 more ↓                                   </tspan></text>
   <text x="22" y="625" xml:space="preserve"><tspan x="22.0 29.8 37.6 45.4 53.2 61.0 68.8 76.6 84.4 92.2 100.0 107.8 115.6 123.4 131.2 139.0 146.8 154.6 162.4 170.2 178.0 185.8 193.6 201.4 209.2 217.0 224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0 302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">                                            </tspan></text>
   <text x="22" y="644" xml:space="preserve"><tspan x="22.0" fill="#ece5d5"> </tspan><tspan x="29.8 37.6 45.4" fill="#ece5d5">r: </tspan><tspan x="53.2 61.0 68.8 76.6 84.4 92.2" fill="#ece5d5">Retest</tspan><tspan x="100.0 107.8" fill="#ece5d5">  </tspan><tspan x="115.6 123.4 131.2" fill="#ece5d5">f: </tspan><tspan x="139.0 146.8 154.6 162.4 170.2 178.0" fill="#ece5d5">Forget</tspan><tspan x="185.8 193.6" fill="#ece5d5">  </tspan><tspan x="201.4 209.2 217.0" fill="#ece5d5">a: </tspan><tspan x="224.8 232.6 240.4 248.2 256.0 263.8 271.6 279.4 287.2 295.0" fill="#ece5d5">Forget all</tspan><tspan x="302.8 310.6 318.4 326.2 334.0 341.8 349.6 357.4" fill="#ece5d5">        </tspan></text>
 </svg>
