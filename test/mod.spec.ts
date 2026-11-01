@@ -1426,7 +1426,10 @@ test('a warned call keeps its hash and time as the last warning, and redraws the
   const { hash, record } = (await remembered())[0]!
   // The record as it stood when warned, before this call failed again and bumped it.
   expect(record.count).toBe(2)
-  expect(state('lastWarning')).toEqual({ hash, at: expect.any(String), count: 1, lastSeen: expect.any(String), evidence: 'No file under this directory tree has changed since.' })
+  expect(state('lastWarning')).toEqual({
+    hash, at: expect.any(String), sessionId: 's1', count: 1, lastSeen: expect.any(String),
+    evidence: 'No file under this directory tree has changed since.', reason: 'Exit code 1 boom', fix: null,
+  })
   expect(Number.isNaN(Date.parse((state('lastWarning') as { at: string }).at))).toBe(false)
   expect(Number(state('rev'))).toBeGreaterThan(rev)
 })

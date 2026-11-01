@@ -18,7 +18,10 @@ declare module 'claude-code' {
       fullPageOf: CassandraHash | null
       query: string
       confirmRetest: CassandraHash | null
-      lastWarning: { hash: CassandraHash; at: string; count?: number; lastSeen?: string; evidence?: string } | null
+      lastWarning: {
+        hash: CassandraHash; at: string; sessionId?: string
+        count?: number; lastSeen?: string; evidence?: string; reason?: string | null; fix?: string | null
+      } | null
       searching: boolean
       showKeys: boolean
     }

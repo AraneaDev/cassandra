@@ -273,6 +273,33 @@ test("just warned shows only this session's latest warning of a record that stil
   expect((await paneModel(io, cwd, warned, 's1')).justWarned).toBeNull()
 })
 
+test('a last warning naming this session shows without a warned event, and one naming another session does not', async () => {
+  const hash = await seed('bun test', '2026-10-30T10:00:00.000Z', 'Exit code 1 boom')
+  const paths = await pathsFor(io, cwd)
+  const at = '2026-10-31T11:59:00.000Z'
+  // The stats append that would have logged the warning failed: there is no warned event.
+  const snapshot = { hash, at, sessionId: 's1', count: 1, lastSeen: '2026-10-30T10:00:00.000Z', evidence: 'E', reason: 'Exit code 1 boom', fix: null }
+  expect((await paneModel(io, cwd, { ...view, lastWarning: snapshot }, 's1')).justWarned).not.toBeNull()
+  await appendStat(io, paths, { kind: 'warned', hash, boundary: 'session', sessionId: 's2' })
+  expect((await paneModel(io, cwd, { ...view, lastWarning: snapshot }, 's2')).justWarned).toBeNull()
+})
+
+test('the Just warned card reads the reason and the fix as they were when warned; an older last warning reads them live', async () => {
+  const hash = await seed('bun test', '2026-10-30T10:00:00.000Z', 'Exit code 2 later failure')
+  const paths = await pathsFor(io, cwd)
+  const note: FixNote = { kind: 'changed', files: ['x.ts'], more: 0, at: '2026-10-31T11:00:00.000Z' }
+  await writeFix(io, paths, hash, note)
+  const at = '2026-10-31T11:59:00.000Z'
+  const snapshot = { hash, at, sessionId: 's1', count: 1, lastSeen: '2026-10-30T10:00:00.000Z', evidence: 'E', reason: 'Exit code 1 as warned', fix: null }
+  const then = (await paneModel(io, cwd, { ...view, lastWarning: snapshot }, 's1')).justWarned
+  expect([then?.reason, then?.fix]).toEqual(['Exit code 1 as warned', null])
+  const withFix = (await paneModel(io, cwd, { ...view, lastWarning: { ...snapshot, reason: null, fix: 'Fixed then.' } }, 's1')).justWarned
+  expect([withFix?.reason, withFix?.fix]).toEqual([null, 'Fixed then.'])
+  await appendStat(io, paths, { kind: 'warned', hash, boundary: 'session', sessionId: 's1' })
+  const live = (await paneModel(io, cwd, { ...view, lastWarning: { hash, at } }, 's1')).justWarned
+  expect([live?.reason, live?.fix]).toEqual(['Exit code 2 later failure', fixSentence(note)])
+})
+
 test('an unreadable store gives the error model', async () => {
   await seed('one', '2026-10-30T10:00:00.000Z')
   io.list = async () => { throw new Error('EIO') }

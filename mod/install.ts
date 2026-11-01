@@ -1,14 +1,13 @@
 import { runCommand } from '../src/commands/run.ts'
 import { buildBriefing, callHash, check, recordBriefing, settle, type Call, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
-import { paneModel, unreadableModel, type PaneModel } from '../src/core/pane.ts'
-import { evidence } from '../src/core/describe.ts'
+import { lastWarningOf, paneModel, unreadableModel, type PaneModel } from '../src/core/pane.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { statusText } from '../src/core/status.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
 import { appendStat, type BriefBoundary } from '../src/core/stats.ts'
 import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from '../src/core/tools.ts'
-import { listRecords, readRecord } from '../src/core/record.ts'
+import { listRecords } from '../src/core/record.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
 import { TRACKED, outcomeOf, toolInput } from './calls.ts'
 import { drawnOf, type DrawnBySurface } from './drawn.ts'
@@ -336,9 +335,7 @@ async function retestConfirmed($: ModEngine, io: Io, hash: string, shown: string
  */
 async function noteWarning($: ModEngine, io: Io, call: Call, hash: string): Promise<void> {
   try {
-    const r = await readRecord(io, await pathsFor(io, call.cwd), hash).catch(() => null)
-    const snapshot = r === null ? {} : { count: r.count, lastSeen: r.lastSeen, evidence: evidence(r) }
-    await $.state.set(LAST_WARNING, { hash, at: io.now(), ...snapshot })
+    await $.state.set(LAST_WARNING, await lastWarningOf(io, call.cwd, hash, call.sessionId))
   } catch {
     // The card misses this warning; the agent still gets it.
   }

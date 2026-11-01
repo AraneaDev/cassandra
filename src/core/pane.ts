@@ -4,7 +4,7 @@ import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
 import { basename } from './path.ts'
 import { findRepoRoot, pathsFor, type Paths } from './paths.ts'
-import { listRecords } from './record.ts'
+import { listRecords, readRecord } from './record.ts'
 import { compactionCount } from './session.ts'
 import { attributeBoundary, countToday, readStats, warningRates, type PaneCounters, type StatEvent } from './stats.ts'
 import type { FailureRecord, StateStamp } from './types.ts'
@@ -35,12 +35,17 @@ export interface PaneDetail {
 /** The warning this session raised last, for the record it was about. */
 export interface JustWarned { hash: string; at: string; display: string; count: number; lastSeen: string; reason: string | null; evidence: string; fix: string | null }
 /**
- * The warning this session raised last: its record, when, and that record as it stood when
- * the warning was raised (`count`, `lastSeen`, `evidence`), so a later failure or a stale
- * workspace does not change what the card says was warned. A value from before the snapshot
- * was kept has only `hash` and `at`, and reads the live record instead.
+ * The warning this session raised last: its record, when, the session that raised it, and
+ * that record as it stood when the warning was raised (`count`, `lastSeen`, `evidence`, the
+ * one-line `reason` and the `fix` sentence, null for none), so a later failure, a new fix
+ * note or a stale workspace does not change what the card says was warned. A value from
+ * before a field was kept lacks it, and reads the live record (or, for `sessionId`, the
+ * stats log) instead.
  */
-export interface LastWarning { hash: string; at: string; count?: number; lastSeen?: string; evidence?: string }
+export interface LastWarning {
+  hash: string; at: string; sessionId?: string
+  count?: number; lastSeen?: string; evidence?: string; reason?: string | null; fix?: string | null
+}
 /** What the pane remembers between redraws. */
 export interface PaneView { tab: PaneTab; selected: string | null; expanded: boolean; confirmAll: boolean; confirmRetest: string | null; showFull: boolean; query: string; notice: string | null; lastWarning: LastWarning | null }
 /** Everything the pane draws, as plain data. */
@@ -153,6 +158,23 @@ async function fixOf(io: Io, paths: Paths, hash: string): Promise<string | null>
 const reasonOf = (r: FailureRecord): string | null => oneLine(r.errorExcerpt).slice(0, REASON_CAP) || null
 
 /**
+ * What the Just warned card keeps of a warning raised now in `sessionId`: the record as it
+ * stands, before the call settles it. Only `hash`, `at` and `sessionId` when the record
+ * cannot be read. Rejects only when the store's location cannot be worked out.
+ */
+export async function lastWarningOf(io: Io, cwd: string, hash: string, sessionId: string): Promise<LastWarning> {
+  const paths = await pathsFor(io, cwd)
+  const base = { hash, at: io.now(), sessionId }
+  const r = await readRecord(io, paths, hash).catch(() => null)
+  if (r === null) return base
+  return { ...base, count: r.count, lastSeen: r.lastSeen, evidence: evidence(r), reason: reasonOf(r), fix: await fixOf(io, paths, hash).catch(() => null) }
+}
+
+/** A kept field of a last warning, or the live value when the snapshot predates it. */
+const keptOr = <T>(kept: T | null | undefined, live: () => T | null | Promise<T | null>): T | null | Promise<T | null> =>
+  kept === undefined ? live() : kept
+
+/**
  * Plain display data for `/cassandra pane`: the project, the records by tab and day, the
  * selected record in full, and this session's latest warning. `sessionId` keeps `justWarned`
  * to a warning this session actually raised.
@@ -223,11 +245,16 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, sessionId: 
     let justWarned: JustWarned | null = null
     const last = view.lastWarning
     const warned = last && sorted.find((r) => r.hash === last.hash)
-    if (last && warned && events.some((e) => e.kind === 'warned' && e.hash === last.hash && e.sessionId === sessionId)) {
+    // The session the snapshot names; an older one without it is checked against the stats log.
+    const ours = last !== null && (typeof last.sessionId === 'string'
+      ? last.sessionId === sessionId
+      : events.some((e) => e.kind === 'warned' && e.hash === last.hash && e.sessionId === sessionId))
+    if (last && warned && ours) {
       const r = warned.record
       justWarned = {
         hash: last.hash, at: last.at, display: oneLine(r.display), count: last.count ?? r.count, lastSeen: last.lastSeen ?? r.lastSeen,
-        reason: reasonOf(r), evidence: last.evidence ?? evidence(r), fix: await fixOf(io, paths, last.hash),
+        reason: await keptOr(last.reason, () => reasonOf(r)), evidence: last.evidence ?? evidence(r),
+        fix: await keptOr(last.fix, () => fixOf(io, paths, last.hash)),
       }
     }
 
