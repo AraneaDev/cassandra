@@ -95,7 +95,7 @@ export async function run(raw: string, io: Io = nodeIo): Promise<string | null> 
 }
 
 /** The raw stdin payload, or '' when it cannot be read. Never throws. */
-export async function readStdin(read: () => Promise<string> = () => Bun.stdin.text()): Promise<string> {
+export async function readStdin(read: () => Promise<string> = Bun.stdin.text.bind(Bun.stdin)): Promise<string> {
   try {
     return await read()
   } catch {
