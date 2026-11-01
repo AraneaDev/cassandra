@@ -1455,6 +1455,8 @@ test('dismiss clears the last warning; o and h toggle the full output and the ke
   await press('help')
   expect(state('showKeys')).toBe(true)
   expect((await render()).some((n) => n.props?.key === 'keys-title')).toBe(true)
+  // The host's elements have no Input, so the key list offers no search.
+  expect((await render()).filter((n) => n.type === 'Text').map(textOf).some((t) => t.includes('search the calls'))).toBe(false)
   // A bar key's hidden twin acts as the key itself.
   await press('twin:help')
   expect(state('showKeys')).toBe(false)

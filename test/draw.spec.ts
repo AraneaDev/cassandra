@@ -550,6 +550,25 @@ describe('keyListRows', () => {
     expect(rows.slice(1).some((r) => r.startsWith('h '))).toBe(true)
     expect(pane.keyListRows(model({ rates: null }))[0]).toBe('No warning raised yet, so no rates.')
   })
+
+  test('where no text field can be drawn, search is left out and clearing one stays', () => {
+    const rows = pane.keyListRows(model(), false)
+    expect(rows.some((r) => r.startsWith('s '))).toBe(false)
+    expect(rows.some((r) => r.startsWith('x '))).toBe(true)
+    expect(rows).toHaveLength(pane.keyListRows(model()).length - 1)
+    expect(pane.keyListRows(model(), true).some((r) => r.startsWith('s '))).toBe(true)
+  })
+
+  test('the open key list of a surface with no Input names no search key and still fills its rows', () => {
+    const m = model()
+    const rows = 30
+    const layout = layoutOf(m, 80, rows, { searching: false, showKeys: true, keyRows: pane.keyListRows(m, false).length, fullPage: 0 })
+    const texts = ((pane.drawPane(el, m, 80, layout) as Node).children as Node[]).map(drawnText)
+    expect(texts.some((t) => t.includes('search the calls'))).toBe(false)
+    expect(texts.some((t) => t.includes('clear the search'))).toBe(true)
+    const title = texts.findIndex((t) => t.includes('Keys'))
+    expect(texts.slice(title).length - 1).toBe(layout.keys)
+  })
 })
 
 describe('fit', () => {

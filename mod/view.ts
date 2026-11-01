@@ -36,13 +36,14 @@ export async function readView(store: PaneStore): Promise<PaneView> {
 /**
  * Whether the search field and the key list are open, and the full output's page, for a
  * model: the page turned, when it was turned on the record the model marks, else the first.
- * Rejects when the state cannot be read.
+ * The key list's rows are counted as a surface that is `searchable` (draws a text field)
+ * lists them. Rejects when the state cannot be read.
  */
-export async function readExtras(store: PaneStore, model: PaneModel): Promise<PaneExtras> {
+export async function readExtras(store: PaneStore, model: PaneModel, searchable = true): Promise<PaneExtras> {
   return {
     searching: (await store.get('searching')) ?? false,
     showKeys: (await store.get('showKeys')) ?? false,
-    keyRows: keyListRows(model).length,
+    keyRows: keyListRows(model, searchable).length,
     fullPage: await pageFor(store, model.selected),
   }
 }

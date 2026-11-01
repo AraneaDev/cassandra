@@ -296,18 +296,20 @@ async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRende
     let extras: PaneExtras | undefined
     const io = wrapIo(modIo(hostOf($)))
     const store = storeOf($)
+    const elements = $.ui.resolve(e)
     try {
       // Read so that a bump of the revision draws the pane again.
       await store.get('rev')
       model = await paneModel(io, await $.session.cwd(), await readView(store), await $.session.id())
-      extras = await readExtras(store, model)
+      // The key list counts its rows as this surface draws them: no search without a text field.
+      extras = await readExtras(store, model, elements.Input !== undefined)
     } catch {
       model = unreadableModel()
     }
     const layout = layoutOf(model, columns, bodyRows, extras)
     // Not state: a render may not write it, and a press only needs this session's own drawing.
     drawn.set(e.surface ?? '', await drawnOf(io, model, layout))
-    return drawPane($.ui.resolve(e), model, columns, layout)
+    return drawPane(elements, model, columns, layout)
   } catch {
     return next(e)
   }

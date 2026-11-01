@@ -489,9 +489,9 @@ function historyNote(model: PaneModel, layout: PaneLayout): Seg[] {
 }
 
 /** The key list `h` opens, in the rows the layout gave it: its title, the rates, then the keys. */
-function keyList(f: Frame, model: PaneModel, rows: number): Line[] {
+function keyList(f: Frame, model: PaneModel, rows: number, searchable: boolean): Line[] {
   const title = titleRule(f, 'keys-title', { text: '?', color: SECONDARY }, 'Keys', [])
-  const body = keyListRows(model).slice(0, rows - 1).map((t, i) => line(f, `keys-${i}`, [{ text: t, color: i === 0 ? SECONDARY : HEADING }]))
+  const body = keyListRows(model, searchable).slice(0, rows - 1).map((t, i) => line(f, `keys-${i}`, [{ text: t, color: i === 0 ? SECONDARY : HEADING }]))
   return [title, ...body]
 }
 
@@ -546,10 +546,11 @@ function keyBar(f: Frame, model: PaneModel, layout: PaneLayout, searchable: bool
 
 /**
  * The rows of the key list `h` opens: the warning rates first, so they stay in reach without
- * a tile of their own, then every key and what it does.
+ * a tile of their own, then every key and what it does. `s` only where `searchable`, as on
+ * the key bar; `x` stays, since an applied search still clears.
  */
-export function keyListRows(model: PaneModel): string[] {
-  return [
+export function keyListRows(model: PaneModel, searchable = true): string[] {
+  const rows = [
     model.rates ?? 'No warning raised yet, so no rates.',
     '1–4    switch tabs',
     'j k    move the marker (or the arrows)',
@@ -564,6 +565,7 @@ export function keyListRows(model: PaneModel): string[] {
     'd      dismiss the Just warned card',
     'h      show or hide this list',
   ]
+  return searchable ? rows : rows.filter((r) => !r.startsWith('s '))
 }
 
 /**
@@ -630,7 +632,7 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, layout
     ...(layout.historyTitle ? [titleRule(f, 'history-title', glyph, tab, historyNote(model, layout))] : []),
     ...(layout.search === null ? [] : [searchLine(f, model, layout.search)]),
     ...listLines(f, model, layout),
-    ...(layout.keys > 0 ? keyList(f, model, layout.keys) : []),
+    ...(layout.keys > 0 ? keyList(f, model, layout.keys, Input !== undefined) : []),
     ...(layout.retest !== null && layout.retest !== 'too-small' ? retestLines(f, layout.retest.lines) : []),
     ...(layout.notice && noticeOf(model, layout) ? [noticeLine(f, noticeOf(model, layout)!)] : []),
     keyBar(f, model, layout, Input !== undefined),
