@@ -1,6 +1,7 @@
 import { history, inScope, reason, scopeOf } from './describe.ts'
 import { digestText, liveRecords } from './digest.ts'
 import { sanitiseExcerpt } from './engine.ts'
+import { redactSecrets } from './redact.ts'
 import { fingerprint } from './fingerprint.ts'
 import { fixSentence, readFix } from './fixes.ts'
 import { stateStamp, unchanged } from './freshness.ts'
@@ -82,7 +83,7 @@ export async function queryText(io: Io, cwd: string, input: unknown): Promise<st
 
 /**
  * The answer to `resolve`: forget one record the agent says was fixed outside the
- * repository, and log the stated reason, sanitised like any tool output Cassandra keeps.
+ * repository, and log the stated reason, sanitised and redacted like any tool output Cassandra keeps.
  * A wrong claim costs one more failure, which is remembered again. Never throws.
  */
 export async function resolveFailure(io: Io, cwd: string, input: unknown): Promise<string> {
@@ -91,7 +92,7 @@ export async function resolveFailure(io: Io, cwd: string, input: unknown): Promi
     if ((command === undefined) === (id === undefined)) return say('Name the failure by exactly one of `command` or `id`.')
     if (command !== undefined && typeof command !== 'string') return say('`command` must be a string.')
     if (id !== undefined && typeof id !== 'string') return say('`id` must be a string.')
-    const stated = typeof why === 'string' ? sanitiseExcerpt(why) : ''
+    const stated = typeof why === 'string' ? sanitiseExcerpt(redactSecrets(why)) : ''
     if (!stated) return say('Give a `reason`: what was fixed, and where.')
 
     const paths = await pathsFor(io, cwd)

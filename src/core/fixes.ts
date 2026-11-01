@@ -1,3 +1,4 @@
+import { capName } from './describe.ts'
 import { gitState, unquote } from './freshness.ts'
 import type { Entry, Io } from './io.ts'
 import { join } from './path.ts'
@@ -7,7 +8,6 @@ import type { FailureRecord, FixNote } from './types.ts'
 /** git's empty tree: what a repository with no commits is diffed from. */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 const NOTE_FILES_MAX = 10
-const NAME_MAX = 120
 const SENTENCE_NAMES = 3
 
 /** Most dirty paths whose content a failure record hashes. */
@@ -116,10 +116,10 @@ export function fixPath(paths: Paths, hash: string): string {
   return join(paths.root, 'fixes', safe.slice(0, 2), `${safe}.json`)
 }
 
-/** A file name fit to put in a sentence the model reads: no control characters, bounded. */
+/** A file name fit to put in a sentence the model reads: no control characters, at most 60 characters (the end kept). */
 function cleanName(name: string): string {
   const t = name.replace(/`/g, "'").replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim()
-  return t.length > NAME_MAX ? `${t.slice(0, NAME_MAX - 3)}...` : t
+  return capName(t)
 }
 
 /**

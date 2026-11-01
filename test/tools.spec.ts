@@ -74,6 +74,13 @@ test('query rejects a command that is not a string (Review Focus 1)', async () =
   expect(await queryText(io, cwd, null)).toBe('cassandra: No live failures are remembered in this project.')
 })
 
+test('resolve redacts a likely secret from the reason before it is logged', async () => {
+  await fail('bun test')
+  const hash = await hashOf('bun test')
+  await resolveFailure(io, cwd, { command: 'bun test', reason: 'rotated GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789' })
+  expect(await readStats(io, await pathsFor(io, cwd))).toEqual([{ kind: 'resolved', hash, reason: 'rotated GITHUB_TOKEN=[redacted]', t: io.clock.now }])
+})
+
 test('resolve by command forgets the record and logs the sanitised reason', async () => {
   await fail('bun test')
   const hash = await hashOf('bun test')
@@ -129,7 +136,7 @@ test('a long or hostile reason is stored capped (Review Focus 3)', async () => {
   await resolveFailure(io, cwd, { command: 'bun test', reason: `\u001b[31m${'y'.repeat(2000)}` })
   const [line] = await readStats(io, await pathsFor(io, cwd))
   expect(line!.reason!.length).toBe(240)
-  expect(line!.reason!.startsWith('[31m')).toBe(true)
+  expect(line!.reason!.startsWith('yyy')).toBe(true)
 })
 
 test('a store that cannot be read becomes a text result, not a throw', async () => {

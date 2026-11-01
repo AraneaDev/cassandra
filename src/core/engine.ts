@@ -1,17 +1,22 @@
 import { digestText, liveRecords } from './digest.ts'
-import { history, reason, scopeOf } from './describe.ts'
+import { warningText } from './describe.ts'
 import { computeFix, dirtyHashes, fixSentence, readFix, writeFix } from './fixes.ts'
 import { displayFor, fingerprint } from './fingerprint.ts'
 import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
 import { findRepoRoot, pathsFor } from './paths.ts'
 import { deleteRecord, readRecord, upsertRecord } from './record.ts'
+import { inputLooksSecret, redactSecrets } from './redact.ts'
 import { packageScope } from './scope.ts'
 import { compactionCount } from './session.ts'
 import { appendStat, attributeBoundary, type BriefBoundary } from './stats.ts'
 import type { RecordKind } from './types.ts'
 
 const EXCERPT_MAX = 240
+/** Most JSON characters of a call's input a record keeps, for retest. */
+export const INPUT_MAX = 16384
+/** Most characters of the sanitised full output a record keeps. */
+export const FULL_MAX = 16384
 /** Most dirty paths a record keeps, so a huge working tree cannot bloat it. */
 const DIRTY_MAX = 200
 
@@ -23,7 +28,8 @@ const DIRTY_MAX = 200
  * written to disk and later handed back to the model as `additionalContext`, so it is
  * treated as untrusted throughout: ASCII control characters, which carry terminal escape
  * sequences and can hide or rewrite what is displayed, become spaces before anything else
- * happens, and the result is collapsed and capped. The warning template then quotes it,
+ * happens, and the result is collapsed and capped. Likely secrets were redacted before
+ * either (see `record`). The warning template then quotes it,
  * and labels it as tool output rather than instruction.
  * Also used for an agent's stated reason when it resolves a failure.
  */
@@ -35,6 +41,22 @@ export function sanitiseExcerpt(text: string | undefined): string {
   return t.length > EXCERPT_MAX ? `${t.slice(0, EXCERPT_MAX - 3)}...` : t
 }
 
+/**
+ * The longer, multi-line form of the failure output, kept for the pane and never shown to
+ * the agent. Same untrusted-text rule as the excerpt: control characters other than
+ * newline and tab become spaces, each line's trailing whitespace is trimmed, and the
+ * result is capped.
+ */
+export function sanitiseFull(text: string | undefined): string {
+  const t = (text ?? '')
+    .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, ' ')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .trim()
+  return t.length > FULL_MAX ? `${t.slice(0, FULL_MAX - 3)}...` : t
+}
+
 /** One tracked tool call, as either front end sees it. Empty strings mean unknown. */
 export interface Call {
   tool: string
@@ -42,6 +64,8 @@ export interface Call {
   cwd: string
   sessionId: string
   agentId?: string
+  /** True when the front end has a Cassandra pane the user can open; the binary leaves it unset. */
+  paneAvailable?: boolean
 }
 
 /**
@@ -83,14 +107,10 @@ export async function check(io: Io, call: Call): Promise<Warning | null> {
     { sessionId: found.sessionId, compactions: found.compactions, agentId: found.agentId },
     { sessionId: call.sessionId, compactions: await compactionCount(io, paths, call.sessionId), agentId: call.agentId },
   )
-  // `none` never reaches this point, since `unchanged` refuses it.
-  const scope = scopeOf(found.stateKind as Exclude<typeof found.stateKind, 'none'>)
-  let text = `cassandra: ${history(found)} before, most recently ${found.lastSeen}. `
-    + `Nothing in ${scope} has changed since.${reason(found)}`
   // What made this call work last time, when a past success left a note.
   const note = await readFix(io, paths, hash)
-  if (note) text += ` ${fixSentence(note)}`
-  await appendStat(io, paths, note ? { kind: 'warned', hash, boundary, fixNote: true } : { kind: 'warned', hash, boundary })
+  const text = warningText(found, { id: hash.slice(0, 8), boundary, now: io.now(), fix: note ? fixSentence(note) : null, paneAvailable: call.paneAvailable === true })
+  await appendStat(io, paths, note ? { kind: 'warned', hash, boundary, sessionId: call.sessionId, fixNote: true } : { kind: 'warned', hash, boundary, sessionId: call.sessionId })
   return { hash, text }
 }
 
@@ -110,7 +130,7 @@ export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: s
   const paths = await pathsFor(io, call.cwd)
   if (outcome.kind === 'success') {
     if (warnedHash) await appendStat(io, paths, { kind: 'false_positive', hash: warnedHash })
-    const hash = warnedHash ?? (call.tool ? await fingerprint(io, call.tool, call.input, await callScope(io, call)) : null)
+    const hash = warnedHash ?? await callHash(io, call)
     if (!hash) return false
     const found = await readRecord(io, paths, hash)
     if (!found) return false
@@ -126,6 +146,11 @@ export async function settle(io: Io, call: Call, outcome: Outcome, warnedHash: s
   // It failed again after we warned, so the warning was right and was disregarded.
   if (warnedHash) await appendStat(io, paths, { kind: 'confirmed', hash: warnedHash })
   return record(io, call, outcome.kind, outcome.reason)
+}
+
+/** The fingerprint a call's record is stored under; null for a call that is never recorded. */
+export async function callHash(io: Io, call: Call): Promise<string | null> {
+  return call.tool ? fingerprint(io, call.tool, call.input, await callScope(io, call)) : null
 }
 
 /** The package a Bash call ran in; '' at the repo root and for every other tool. */
@@ -144,6 +169,14 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
   if (stamp.kind === 'none') return false
   const earlier = await readRecord(io, paths, hash)
   const { hashes, stats } = stamp.git ? await dirtyHashes(io, await findRepoRoot(io, call.cwd), stamp.git.dirty, earlier) : { hashes: {}, stats: {} }
+  const inputJson = JSON.stringify(call.input)
+  // Redacted before sanitising: collapsing and capping could cut a secret past recognition.
+  const output = reason === undefined ? undefined : redactSecrets(reason)
+  const full = sanitiseFull(output)
+  // A call that looks like it holds a secret is matched by its hash and never kept for a retest.
+  const keep = inputLooksSecret(call.input, call.tool)
+    ? { inputSecret: true as const }
+    : { ...(inputJson !== undefined && inputJson.length <= INPUT_MAX ? { input: call.input } : { inputTooLarge: true as const }), cwd: call.cwd }
   await upsertRecord(io, paths, hash, {
     tool: call.tool,
     display: displayFor(call.tool, call.input),
@@ -154,7 +187,9 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
     ...(stamp.coarse ? { stateCoarse: stamp.coarse } : {}),
     sessionId: call.sessionId,
     compactions: await compactionCount(io, paths, call.sessionId),
-    errorExcerpt: sanitiseExcerpt(reason),
+    errorExcerpt: sanitiseExcerpt(output),
+    ...(full ? { errorFull: full } : {}),
+    ...keep,
     agentId: call.agentId,
     ...(stamp.git
       ? {

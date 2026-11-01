@@ -2,7 +2,8 @@ import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { install, type ModEngine, type Next, type ToolCallEvent, type ToolCallOutcome } from '../mod/install.ts'
+import type { ModEngine, Next, PaneState, ToolCallEvent, ToolCallOutcome } from '../mod/engine.ts'
+import { install, storeOf } from '../mod/install.ts'
 import type { Io } from '../src/core/io.ts'
 import { modIo } from '../src/io/mod.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
@@ -71,13 +72,22 @@ test('a miss passes the engine result through untouched, the same object', async
 test('a failure is recorded, and the unchanged repeat carries the warning as context', async () => {
   await call('bun test', failed())
   const { r } = await call('bun test', failed())
-  expect(r.context?.[0]).toStartWith('cassandra: `bun test` failed once before')
+  expect(r.context?.[0]).toStartWith('cassandra (advisory): this command already failed once in this project')
+})
+
+test('the warning points at the pane when a surface exists and at /cassandra why when headless', async () => {
+  await call('bun test', failed())
+  const { r } = await call('bun test', failed())
+  expect(r.context?.[0]).toEndWith('The user can see and clear this in the Cassandra pane.')
+  opts.surfaces = []
+  const headless = await call('bun test', failed())
+  expect(headless.r.context?.[0]).toMatch(/The user can see it with \/cassandra why [0-9a-f]{8}\.$/)
 })
 
 test('the warning is appended to context another plugin already set', async () => {
   await call('bun test', failed())
   const { r } = await call('bun test', { ...failed(), context: ['from another plugin'] })
-  expect(r.context).toEqual(['from another plugin', expect.stringContaining('cassandra:')])
+  expect(r.context).toEqual(['from another plugin', expect.stringContaining('cassandra (advisory):')])
 })
 
 test('a deny result is returned as is, with no context, and recorded as a denial', async () => {
@@ -177,7 +187,7 @@ test('a main-loop compaction is counted, a subagent one and a skipped one are no
 })
 
 test('the MCP input the mod fingerprints leaves out the engine reserved keys', async () => {
-  const { toolInput } = await import('../mod/install.ts')
+  const { toolInput } = await import('../mod/calls.ts')
   expect(toolInput({ tool: 'mcp__s__t', tool_use_id: 'x', agentId: 'a', consent: 'c', b: 2, a: 1 })).toEqual({ b: 2, a: 1 })
 })
 
@@ -201,7 +211,7 @@ test('a Bash call a hook blocked before it ran records nothing', async () => {
 })
 
 test('the tool-use-error wrapper means never-run for Bash only', async () => {
-  const { outcomeOf } = await import('../mod/install.ts')
+  const { outcomeOf } = await import('../mod/calls.ts')
   const wrapped = { isError: true, text: '<tool_use_error>server said no</tool_use_error>' }
   expect(outcomeOf(wrapped, false, 'Bash')).toEqual({ kind: 'not_run' })
   expect(outcomeOf(wrapped, false, 'mcp__s__t')).toEqual({ kind: 'failure', reason: wrapped.text })
@@ -607,7 +617,7 @@ test('the tools are answered without next, and calling them records nothing (Rev
 })
 
 test("the tracking matcher excludes Cassandra's own tools and nothing else", async () => {
-  const { TRACKED } = await import('../mod/install.ts')
+  const { TRACKED } = await import('../mod/calls.ts')
   expect(TRACKED.test('mcp__cassandra__query')).toBe(false)
   expect(TRACKED.test('mcp__cassandra__resolve')).toBe(false)
   expect(TRACKED.test('mcp__srv__do')).toBe(true)
@@ -786,7 +796,10 @@ const PANE = { component: 'Pane', requestId: 'cassandra' }
 const render = async (props: Record<string, unknown> = { bodyColumns: 100, scroll: { offset: 0, bodyRows: 30 } }, surface = 'terminal') =>
   walk(await paneHook('ui.render')(host, { ...PANE, surface, props, viewport: { columns: 120, rows: 40 } }, async () => ({})))
 const rowKeys = async () => (await render()).filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
-const selectedKey = async () => (await render()).filter((n) => n.type === 'Button' && textOf(n).startsWith('▸')).map((n) => String(n.props.key))[0]
+/** The row drawn as selected: the one on the marked row's ground. */
+const selectedKey = async () => (await render())
+  .filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:') && walk(n).some((t) => t.props?.backgroundColor === 'userMessageBackground'))
+  .map((n) => String(n.props.key))[0]
 const press = async (element: string, surface = 'terminal') => {
   let passed = 0
   const r = await paneHook('ui.press')(host, { ...PANE, plugin: 'cassandra', element, surface }, async (e) => { passed += 1; return { element: e.element } })
@@ -824,7 +837,7 @@ test('/cassandra pane whose open fails answers with the fallback text', async ()
 test('the render hook draws one row per remembered record', async () => {
   await seedFailure('bun test')
   await seedFailure('npm test')
-  const ids = (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)
+  const ids = (await remembered()).map((r) => `row:${r.hash}`)
   expect((await rowKeys()).sort()).toEqual(ids.sort())
 })
 
@@ -853,7 +866,27 @@ test('pressing a row selects it', async () => {
   const keys = await rowKeys()
   await press(keys[1]!)
   expect(await selectedKey()).toBe(keys[1])
-  expect(String(state('selected'))).toStartWith(keys[1]!.slice('row:'.length))
+  expect(String(state('selected'))).toBe(keys[1]!.slice('row:'.length))
+})
+
+test('two records sharing an 8-character prefix each draw their own row, and a press selects the one pressed', async () => {
+  await seedFailure('bun test')
+  const [{ hash, record }] = await remembered()
+  const twin = `${hash.slice(0, 8)}${hash.slice(8) === '00000000' ? '11111111' : '00000000'}`
+  const { recordPath } = await import('../src/core/paths.ts')
+  await io().writeText(recordPath(await pathsFor(io(), cwd), twin), JSON.stringify({ ...record, display: 'npm test' }))
+  expect((await rowKeys()).sort()).toEqual([`row:${hash}`, `row:${twin}`].sort())
+  await press(`row:${twin}`)
+  expect(state('selected')).toBe(twin)
+  await press(`row:${hash}`)
+  expect(state('selected')).toBe(hash)
+})
+
+test('a row key holding only a prefix of a remembered hash selects nothing', async () => {
+  await seedFailure('bun test')
+  const [{ hash }] = await remembered()
+  await press(`row:${hash.slice(0, 8)}`)
+  expect(state('selected')).toBeUndefined()
 })
 
 test('pressing a row that is gone changes nothing', async () => {
@@ -880,7 +913,7 @@ test('forget forgets exactly the selected record, bumps rev and refreshes the st
   opts.statuses = []
   const rev = Number(state('rev') ?? 0)
   await press('forget')
-  expect((await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)).toEqual([keys[0]!])
+  expect((await remembered()).map((r) => `row:${r.hash}`)).toEqual([keys[0]!])
   expect(Number(state('rev'))).toBeGreaterThan(rev)
   expect(opts.statuses).toEqual(['1 live failure'])
   expect(state('notice')).toBeNull()
@@ -969,10 +1002,11 @@ test('every status refresh bumps rev, so an open pane redraws by itself', async 
   await call('bun test', failed())
   const after = Number(state('rev'))
   expect(after).toBeGreaterThan(0)
+  // The same call warns first (one bump for the Just warned card), then passes (one for the refresh).
   await call('bun test', ok())
-  expect(Number(state('rev'))).toBe(after + 1)
-  await start()
   expect(Number(state('rev'))).toBe(after + 2)
+  await start()
+  expect(Number(state('rev'))).toBe(after + 3)
 })
 
 test('a single forget whose command answers a non-zero code sets the notice to its text', async () => {
@@ -1018,25 +1052,28 @@ test('a press or a focus move that fails beneath never rejects', async () => {
 
 // ---- final fix wave ----
 
-const { PANE_CHROME_LINES } = await import('../mod/pane.tsx')
 const sized = (bodyRows: number, bodyColumns = 100) => render({ bodyColumns, scroll: { offset: 0, bodyRows } })
 const shownRows = (drawn: Drawn[]) => drawn.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
-const drawnLines = (drawn: Drawn[]) =>
-  drawn.filter((n) => n.type === 'Text').length + shownRows(drawn).length + drawn.filter((n) => n.props?.key === 'action-row' || n.props?.key === 'confirm-row').length
+/** The lines the pane drew: its root's children, or the one line of a pane that draws only that. */
+const drawnLines = (drawn: Drawn[]) => drawn.find((n) => n.props?.key === 'cassandra-pane')?.children.length ?? 1
+/** Header, tabs, the History title and the key bar: the rows a short pane spends besides its list. */
+const CHROME = 4
 
-test('forget acts on the row the pane shows selected, never on a selection pushed out of view', async () => {
+test('the window follows the selection: newer records push it down, and forget still acts on it', async () => {
   await seedFailure('bun test')
   await seedFailure('npm test')
-  const two = PANE_CHROME_LINES + 2
+  // The chrome, a day label and two rows.
+  const two = CHROME + 3
   const before = shownRows(await sized(two))
   expect(before).toHaveLength(2)
   await press(before[1]!)
   await seedFailure('make')
-  const after = shownRows(await sized(two))
-  expect(after).not.toContain(before[1])
+  // The newest record goes above the window; the selected row stays in it.
+  expect(shownRows(await sized(two))).toEqual(before)
   await press('forget')
-  const left = (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`).sort()
-  expect(left).toEqual([after[1]!, before[1]!].sort())
+  const left = (await remembered()).map((r) => `row:${r.hash}`)
+  expect(left).not.toContain(before[1])
+  expect(left).toHaveLength(2)
 })
 
 test('/cassandra pane opens only for the person\'s own origins', async () => {
@@ -1062,7 +1099,7 @@ test('with hundreds of records and a fix note, the rows and the action row fit t
     const drawn = await sized(bodyRows)
     expect(drawnLines(drawn)).toBeLessThanOrEqual(bodyRows)
     expect(drawn.some((n) => n.props?.key === 'action-row')).toBe(true)
-    expect(drawn.map((n) => (n.type === 'Text' ? textOf(n) : '')).some((l) => l.startsWith('fix '))).toBe(true)
+    expect(drawn.some((n) => n.props?.key === 'forget')).toBe(true)
   }
 }, 30_000)
 
@@ -1071,7 +1108,7 @@ test('a focus move and a forget right after it act in order: the forget takes th
   await seedFailure('npm test')
   const keys = await rowKeys()
   await Promise.all([focus(keys[1]!), press('forget')])
-  expect((await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)).toEqual([keys[0]!])
+  expect((await remembered()).map((r) => `row:${r.hash}`)).toEqual([keys[0]!])
 })
 
 test('forget-all on an empty store asks nothing, and a confirmation the store emptied under is dropped', async () => {
@@ -1089,7 +1126,7 @@ test('forget-all on an empty store asks nothing, and a confirmation the store em
 
 // ---- Ruling 14: Forget acts only on what this surface drew ----
 
-const idsLeft = async () => (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`).sort()
+const idsLeft = async () => (await remembered()).map((r) => `row:${r.hash}`).sort()
 
 test('a newer record recorded between the draw and the press is not forgotten: the drawn row is', async () => {
   await seedFailure('bun test')
@@ -1097,26 +1134,27 @@ test('a newer record recorded between the draw and the press is not forgotten: t
   const drawnSel = await selectedKey()
   const keys = await rowKeys()
   await seedFailure('make')
-  const newest = (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`).find((k) => !keys.includes(k))!
+  const newest = (await remembered()).map((r) => `row:${r.hash}`).find((k) => !keys.includes(k))!
   await press('forget')
   expect(await idsLeft()).toEqual([...keys.filter((k) => k !== drawnSel), newest].sort())
 })
 
-test('two surfaces with different windows each forget their own shown selection', async () => {
+test('two surfaces with different windows each keep the selection in view; a forget on one takes no other row on the other', async () => {
   await seedFailure('bun test')
   await seedFailure('npm test')
   await seedFailure('make')
   const all = await rowKeys()
   const oldest = all[2]!
   await press(oldest)
-  const terminal = shownRows(await render({ bodyColumns: 100, scroll: { offset: 0, bodyRows: PANE_CHROME_LINES + 3 } }, 'terminal'))
-  const desktop = shownRows(await render({ bodyColumns: 100, scroll: { offset: 0, bodyRows: PANE_CHROME_LINES + 1 } }, 'desktop'))
-  expect(terminal).toContain(oldest)
-  expect(desktop).toEqual([all[0]!])
+  const terminal = shownRows(await render({ bodyColumns: 100, scroll: { offset: 0, bodyRows: 30 } }, 'terminal'))
+  const desktop = shownRows(await render({ bodyColumns: 100, scroll: { offset: 0, bodyRows: CHROME + 2 } }, 'desktop'))
+  expect(terminal).toEqual(all)
+  expect(desktop).toEqual([oldest])
   await press('forget', 'desktop')
-  expect(await idsLeft()).toEqual([all[1]!, oldest].sort())
+  expect(await idsLeft()).toEqual([all[0]!, all[1]!].sort())
+  // The row the terminal drew as selected is gone: its forget takes nothing else.
   await press('forget', 'terminal')
-  expect(await idsLeft()).toEqual([all[1]!])
+  expect(await idsLeft()).toEqual([all[0]!, all[1]!].sort())
 })
 
 test('focus a drawn row, then f with no redraw between: the focused row is forgotten', async () => {
@@ -1212,7 +1250,7 @@ test('a record hidden under the more line is forgotten by the confirm', async ()
   for (const c of ['one', 'two', 'three', 'four']) await seedFailure(c)
   await press('forget-all')
   const drawn = await sized(6)
-  expect(drawn.some((n) => n.type === 'Text' && /^…\d+ more$/.test(textOf(n)))).toBe(true)
+  expect(drawn.some((n) => n.type === 'Text' && /^ *\d+ more ↓ *$/.test(textOf(n)))).toBe(true)
   await press('forget-all-confirm')
   expect(await remembered()).toHaveLength(0)
   expect(state('notice')).toBeNull()
@@ -1259,9 +1297,9 @@ test('a record delete that fails quietly gives the could-not-forget notice', asy
   expect(await remembered()).toHaveLength(2)
 })
 
-test('a body under six lines draws the single too-short line', async () => {
+test('a body under four lines draws the single too-short line', async () => {
   await seedFailure()
-  for (const bodyRows of [1, 3, 5]) {
+  for (const bodyRows of [1, 2, 3]) {
     const drawn = await sized(bodyRows)
     expect(drawn.filter((n) => n.type === 'Text').map(textOf)).toEqual(['Pane too short; make the window taller.'])
     expect(drawn.some((n) => n.type === 'Button')).toBe(false)
@@ -1300,38 +1338,28 @@ test('a confirm whose store cannot be counted deletes nothing and says so; on an
   expect(Number(state('rev'))).toBe(rev + 1)
 })
 
-// ---- short panes: the detail goes first, then the stats ----
+// ---- short panes: the list gives way, the key bar stays ----
 
-test('a pane shorter than the full chrome drops the detail, then the stats, and keeps rows and the action row', async () => {
-  const paths = await pathsFor(io(), cwd)
+test('a short pane keeps a row and the key bar, never outgrows its body, and keeps the confirm row', async () => {
   for (let i = 0; i < 12; i++) await seedFailure(`false ${i}`)
-  // A repeat warns, so the stats line shows.
-  await seedFailure('false 11')
-  const { writeFix } = await import('../src/core/fixes.ts')
-  for (const r of await remembered()) await writeFix(io(), paths, r.hash, { kind: 'elsewhere', at: '2026-10-09T00:00:00Z', files: [], more: 0 } as never)
   opts.state = new Map<string, unknown>([['notice', 'Could not forget the selected record.']])
-  const textLines = (drawn: Drawn[]) => drawn.filter((n) => n.type === 'Text').map(textOf)
-  const tall = textLines(await sized(30))
-  expect(tall.some((l) => l.startsWith('fix '))).toBe(true)
-  expect(tall.some((l) => l.startsWith('fp '))).toBe(true)
   const shown: Record<number, number> = {}
-  for (const bodyRows of [6, 8, 10]) {
+  for (const bodyRows of [4, 5, 6, 8, 10]) {
     const drawn = await sized(bodyRows)
     expect(drawn.some((n) => n.props?.key === 'action-row')).toBe(true)
     expect(shownRows(drawn).length).toBeGreaterThanOrEqual(1)
     expect(drawnLines(drawn)).toBeLessThanOrEqual(bodyRows)
-    expect(textLines(drawn).some((l) => l.startsWith('reason ') || l.startsWith('probe ') || l.startsWith('fix '))).toBe(false)
     shown[bodyRows] = shownRows(drawn).length
   }
-  // The room the detail left goes to rows; the stats go only when even that is short.
-  expect(shown).toEqual({ 6: 1, 8: 2, 10: 4 })
-  expect(textLines(await sized(6)).some((l) => l.startsWith('fp '))).toBe(false)
-  expect(textLines(await sized(8)).some((l) => l.startsWith('fp '))).toBe(true)
-  // The confirm row stays on screen too.
+  // Each row past the chrome and the notice goes to the list: a day label, then rows, the last one to `n more ↓`.
+  expect(shown).toEqual({ 4: 1, 5: 1, 6: 1, 8: 1, 10: 3 })
+  // The notice has its own row once one list row is left beside it.
+  expect((await sized(6)).some((n) => n.props?.key === 'notice')).toBe(true)
+  expect((await sized(5)).some((n) => n.props?.key === 'notice')).toBe(false)
   opts.state.set('confirmAll', true)
-  const confirming = await sized(6)
+  const confirming = await sized(4)
   expect(confirming.some((n) => n.props?.key === 'confirm-row')).toBe(true)
-  expect(drawnLines(confirming)).toBeLessThanOrEqual(6)
+  expect(drawnLines(confirming)).toBeLessThanOrEqual(4)
 })
 
 // ---- Forget all, Cancel, Forget; and a hot reload ----
@@ -1364,10 +1392,574 @@ test('after a hot reload, a forget before any redraw does nothing; after a rende
     reloaded.set(own ? 'tool.call:cassandra' : event, (b ?? a) as Hook)
   }) as unknown as Parameters<typeof install>[0], (i) => wrap(i))
   hooks = reloaded
-  expect(String(state('selected'))).toStartWith(keys[1]!.slice('row:'.length))
+  expect(String(state('selected'))).toBe(keys[1]!.slice('row:'.length))
   await press('forget')
   expect(await remembered()).toHaveLength(2)
   await render()
   await press('forget')
   expect(await idsLeft()).toEqual([keys[0]!])
+})
+
+// ---- view state, keys and the Just warned feed ----
+
+/** The full hash of the row a key names. */
+const hashOf = async (key: string) => (await remembered()).find((r) => r.hash === key.slice('row:'.length))!.hash
+/** Type into, or press Enter in, one of the pane's Inputs. */
+const input = async (element: string, value: string, kind: 'change' | 'submit' = 'submit') => {
+  let passed = 0
+  const r = await paneHook('ui.input')(host, { ...PANE, plugin: 'cassandra', element, kind, value, surface: 'terminal' }, async (e) => { passed += 1; return { element: e.element, value: e.value } })
+  expect(passed).toBe(1)
+  return r
+}
+/** A focus move through the hook, answering what the hook did with it. */
+const moveRing = async (element: string, surface?: string) => {
+  const landed: Array<string | undefined> = []
+  const r = await paneHook('ui.focus')(host, { ...PANE, element, surface, origin: { kind: 'person' } }, async (e) => { landed.push(e.element); return {} })
+  return { r, landed }
+}
+
+test('a warned call keeps its hash and time as the last warning, and redraws the pane', async () => {
+  await call('bun test', failed())
+  const rev = Number(state('rev'))
+  const { r } = await call('bun test', failed())
+  expect(r.context).toHaveLength(1)
+  const { hash, record } = (await remembered())[0]!
+  // The record as it stood when warned, before this call failed again and bumped it.
+  expect(record.count).toBe(2)
+  expect(state('lastWarning')).toEqual({
+    hash, at: expect.any(String), sessionId: 's1', count: 1, lastSeen: expect.any(String),
+    evidence: 'No file under this directory tree has changed since.', reason: 'Exit code 1 boom', fix: null,
+  })
+  expect(Number.isNaN(Date.parse((state('lastWarning') as { at: string }).at))).toBe(false)
+  expect(Number(state('rev'))).toBeGreaterThan(rev)
+})
+
+test('a surface list that cannot be read still warns; a last warning that cannot be kept still warns', async () => {
+  await call('bun test', failed())
+  host = { ...host, session: { ...host.session, surfaces: async () => { throw new Error('no surfaces') } } }
+  expect((await call('bun test', failed())).r.context).toHaveLength(1)
+  opts.stateSetRejects = true
+  expect((await call('bun test', failed())).r.context).toHaveLength(1)
+})
+
+test('dismiss clears the last warning; o and h toggle the full output and the key list', async () => {
+  await call('bun test', failed())
+  await call('bun test', failed())
+  expect(state('lastWarning')).not.toBeNull()
+  await press('dismiss')
+  expect(state('lastWarning')).toBeNull()
+  await press('full')
+  expect(state('showFull')).toBe(true)
+  await press('full')
+  expect(state('showFull')).toBe(false)
+  await press('help')
+  expect(state('showKeys')).toBe(true)
+  expect((await render()).some((n) => n.props?.key === 'keys-title')).toBe(true)
+  // The host's elements have no Input, so the key list offers no search.
+  expect((await render()).filter((n) => n.type === 'Text').map(textOf).some((t) => t.includes('search the calls'))).toBe(false)
+  // A bar key's hidden twin acts as the key itself.
+  await press('twin:help')
+  expect(state('showKeys')).toBe(false)
+})
+
+test('n and p page through the full output this surface drew, clamped to its first and last page', async () => {
+  const long = Array.from({ length: 80 }, (_, i) => `out ${i}`).join('\n')
+  await call('bun test', failed(`Exit code 1\n${long}`))
+  // Nothing drawn here yet: nothing to page.
+  await press('next-page')
+  expect(state('fullPage')).toBeUndefined()
+  await press('full')
+  await render()
+  await press('prev-page')
+  expect(state('fullPage')).toBe(0)
+  await press('next-page')
+  expect(state('fullPage')).toBe(1)
+  await render()
+  await press('twin:prev-page')
+  expect(state('fullPage')).toBe(0)
+  for (let i = 0; i < 40; i++) {
+    await render()
+    await press('next-page')
+  }
+  const last = state('fullPage') as number
+  expect(last).toBeGreaterThan(1)
+  await render()
+  await press('next-page')
+  expect(state('fullPage')).toBe(last)
+  // A page left past the end, as from a drawing of a longer output, steps back from the last.
+  opts.state!.set('fullPage', last + 5)
+  await press('prev-page')
+  expect(state('fullPage')).toBe(last - 1)
+})
+
+test('the full output goes back to its first page when the marker moves, the tab switches, the row closes, o toggles or the pane opens', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  const paged = () => opts.state!.set('fullPage', 3)
+  paged()
+  await press('down')
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await press('up')
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await press('tabkey:warnings')
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await press('full')
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await render()
+  const marked = (await selectedKey())!
+  await press(marked)
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await press(keys.find((k) => k !== marked)!)
+  expect(state('fullPage')).toBe(0)
+  // The focus marking another row is the marker moving; landing on the marked one is not.
+  paged()
+  await focus(marked)
+  expect(state('fullPage')).toBe(0)
+  paged()
+  await focus(marked)
+  expect(state('fullPage')).toBe(3)
+  await command('pane')
+  expect(state('fullPage')).toBe(0)
+})
+
+test('every reset of the page also drops the record it was turned on', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  const paged = () => { opts.state!.set('fullPage', 3); opts.state!.set('fullPageOf', 'abc') }
+  const reset = () => {
+    expect(state('fullPage')).toBe(0)
+    expect(state('fullPageOf')).toBeNull()
+  }
+  for (const key of ['down', 'up', 'tabkey:warnings', 'full']) {
+    paged()
+    await press(key)
+    reset()
+  }
+  paged()
+  await render()
+  const marked = (await selectedKey())!
+  await press(marked)
+  reset()
+  paged()
+  await press(keys.find((k) => k !== marked)!)
+  reset()
+  paged()
+  await focus(marked)
+  reset()
+  paged()
+  await command('pane')
+  reset()
+})
+
+/** The page of the full output belongs to the record it was turned on. */
+const longOutput = (name: string) => Array.from({ length: 80 }, (_, i) => `${name} ${i}`).join('\n')
+/**
+ * The page of the full output drawn now, read off its count line (`lines a–b of n`, on a
+ * page that is not the last), and the record marked. A search row above the list takes a
+ * row from the page, so the page is compared, not the lines.
+ */
+const shownFull = async () => {
+  const drawn = await render()
+  const more = drawn.filter((n) => n.props?.key === 'full-more').map(textOf)[0]?.trim() ?? ''
+  const [, a, b] = /^lines (\d+)–(\d+) of \d+$/.exec(more) ?? []
+  return { page: a === undefined ? null : (Number(a) - 1) / (Number(b) - Number(a) + 1), marked: await selectedKey() }
+}
+const turnedOnce = async () => {
+  await call('bun test', failed(`Exit code 1\n${longOutput('bun')}`))
+  await call('npm test', failed(`Exit code 1\n${longOutput('npm')}`))
+  await press('full')
+  await render()
+  await press('next-page')
+  const at = await shownFull()
+  expect(at.page).toBe(1)
+  const hash = await hashOf(at.marked!)
+  expect(state('fullPage')).toBe(1)
+  expect(state('fullPageOf')).toBe(hash)
+  return hash
+}
+
+test('the page belongs to its record: forgetting the marked record opens the next record\'s full output on its first page', async () => {
+  const hash = await turnedOnce()
+  await press('forget')
+  expect((await remembered()).map((r) => r.hash)).not.toContain(hash)
+  const after = await shownFull()
+  expect(after.marked).toBeDefined()
+  expect(await hashOf(after.marked!)).not.toBe(hash)
+  expect(after.page).toBe(0)
+})
+
+test('the page belongs to its record: a search that drops the marked record opens the next one on its first page; one that keeps it keeps the page', async () => {
+  const hash = await turnedOnce()
+  const display = (await remembered()).find((r) => r.hash === hash)!.record.display
+  // A search the marked record still matches: it stays marked, on the page it was turned to.
+  await press('search')
+  await input('search-field', display)
+  const kept = await shownFull()
+  expect(await hashOf(kept.marked!)).toBe(hash)
+  expect(kept.page).toBe(1)
+  // A search that drops it: the other record opens from its first line.
+  const other = (await remembered()).find((r) => r.hash !== hash)!.record.display
+  await press('search')
+  await input('search-field', other)
+  const moved = await shownFull()
+  expect(await hashOf(moved.marked!)).not.toBe(hash)
+  expect(moved.page).toBe(0)
+  // Cleared, the list holds the first record again; the selection never moved off it, so
+  // it is marked again and its page still applies.
+  await press('search-clear')
+  const back = await shownFull()
+  expect(await hashOf(back.marked!)).toBe(hash)
+  expect(back.page).toBe(1)
+})
+test('r marks the selected record as waiting for its retest confirm, and only a retestable one', async () => {
+  await seedFailure('bun test')
+  await press('retest')
+  // Nothing drawn here yet: nothing to retest.
+  expect(state('confirmRetest')).toBeUndefined()
+  const [key] = await rowKeys()
+  await press('retest')
+  expect(state('confirmRetest')).toBe(await hashOf(key!))
+  opts.state!.set('confirmRetest', null)
+  await call('echo nope', { deny: 'blocked' })
+  await press(`${(await rowKeys()).find((k) => k !== key)!}`)
+  await render()
+  await press('retest')
+  expect(state('confirmRetest')).toBeNull()
+})
+
+test('j and k move the marker along the drawn list, stop at its ends, and take the ring with it', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  await seedFailure('cargo test')
+  const keys = await rowKeys()
+  await press('down')
+  expect(state('selected')).toBe(await hashOf(keys[1]!))
+  expect(opts.focused).toEqual([keys[1]])
+  await press('down')
+  await press('down')
+  expect(state('selected')).toBe(await hashOf(keys[2]!))
+  await press('up')
+  expect(state('selected')).toBe(await hashOf(keys[1]!))
+  for (let i = 0; i < 3; i++) await press('up')
+  expect(state('selected')).toBe(await hashOf(keys[0]!))
+  expect(opts.focused?.at(-1)).toBe(keys[0])
+})
+
+test('j on a surface that drew nothing, or drew no rows, moves nothing', async () => {
+  await press('down')
+  expect(state('selected')).toBeUndefined()
+  await render()
+  await press('down')
+  expect(state('selected')).toBeUndefined()
+  expect(opts.focused).toBeUndefined()
+})
+
+test('Enter on the marked row opens it in place and again closes it; Enter on another row marks it', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  await press(keys[0]!)
+  expect(state('expanded')).toBe(true)
+  expect((await render()).some((n) => n.props?.key === 'detail-why')).toBe(true)
+  await press(keys[0]!)
+  expect(state('expanded')).toBe(false)
+  await press(keys[1]!)
+  expect(state('selected')).toBe(await hashOf(keys[1]!))
+  expect(state('expanded')).toBe(false)
+})
+
+test('switching tab keeps the marked row when the tab lists it, else marks the tab\'s first row, closed', async () => {
+  await seedFailure('bun test')
+  await call('echo nope', { deny: 'blocked' })
+  const denied = (await remembered()).find((r) => r.record.kind === 'denial')!.hash
+  const failed = (await remembered()).find((r) => r.record.kind !== 'denial')!.hash
+  await render()
+  await press(`row:${failed}`)
+  await press(`row:${failed}`)
+  expect(state('expanded')).toBe(true)
+  await press('tabkey:warnings')
+  expect(state('tab')).toBe('warnings')
+  expect(state('selected')).toBe(failed)
+  expect(state('expanded')).toBe(true)
+  await press('tab:denied')
+  expect(state('tab')).toBe('denied')
+  expect(state('selected')).toBe(denied)
+  expect(state('expanded')).toBe(false)
+  expect(await rowKeys()).toEqual([`row:${denied}`])
+})
+
+test('a tab the state holds that is no tab reads as History', async () => {
+  await seedFailure('bun test')
+  opts.state = new Map<string, unknown>([['tab', 'bogus']])
+  expect(await rowKeys()).toHaveLength(1)
+  expect((await render()).some((n) => n.props?.key === 'tab:history' && walk(n).some((t) => t.props?.backgroundColor === 'suggestion'))).toBe(true)
+})
+
+test('s opens the search and moves the ring into it; typing applies nothing, Enter applies one trimmed line, x clears', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  await press('search')
+  expect(state('searching')).toBe(true)
+  expect(opts.focused).toEqual(['search-field'])
+  // This host's table has no Input, as mobile's: the field's cells show what it holds as text.
+  expect((await render()).some((n) => n.props?.key === 'search-field-box')).toBe(true)
+  await input('search-field', 'npm', 'change')
+  expect(state('query')).toBeUndefined()
+  await input('other-field', 'npm')
+  expect(state('query')).toBeUndefined()
+  expect(await input('search-field', '  npm\n test ')).toEqual({ element: 'search-field', value: '  npm\n test ' })
+  expect(state('query')).toBe('npm test')
+  expect(state('searching')).toBe(false)
+  expect(await rowKeys()).toHaveLength(1)
+  expect((await render()).some((n) => n.props?.key === 'search-field-box')).toBe(false)
+  expect((await render()).some((n) => n.props?.key === 'search-clear')).toBe(true)
+  await press('search-clear')
+  expect(state('query')).toBe('')
+  expect(await rowKeys()).toHaveLength(2)
+})
+
+test('Enter in the search whose state cannot be written changes nothing and still passes on', async () => {
+  opts.stateSetRejects = true
+  await input('search-field', 'npm')
+  expect(state('query')).toBeUndefined()
+  const r = await paneHook('ui.input')(host, { ...PANE, plugin: 'cassandra', element: 'search-field', kind: 'submit', value: 'x', surface: 'terminal' }, async () => { throw new Error('beneath') })
+  expect(r).toEqual({ element: 'search-field', value: 'x' })
+})
+
+test('the ring never rests on a hidden twin: it goes to the tab after it, back past it, or stays', async () => {
+  // Forward from outside the tabs onto j's twin: the first tab.
+  expect((await moveRing('down')).landed).toEqual(['tab:history'])
+  // Forward onto the second tab's twin: the second tab.
+  expect((await moveRing('tabkey:warnings')).landed).toEqual(['tab:warnings'])
+  // Back from the second tab onto its own twin: the tab before.
+  expect((await moveRing('tabkey:warnings')).landed).toEqual(['tab:history'])
+  // Back from the first tab onto its twin: nothing before it, the ring stays.
+  expect(await moveRing('tabkey:history')).toEqual({ r: {}, landed: [] })
+  expect(await moveRing('up')).toEqual({ r: {}, landed: [] })
+  // A bar key's twin is never a stop.
+  expect(await moveRing('twin:help')).toEqual({ r: {}, landed: [] })
+  // Any other element lands where it was headed.
+  expect((await moveRing('forget')).landed).toEqual(['forget'])
+})
+
+test('the ring a surface rests on is its own: another surface walking back onto a twin goes forward', async () => {
+  expect((await moveRing('tab:warnings', 'terminal')).landed).toEqual(['tab:warnings'])
+  // The desktop never rested on that tab, so its walk onto the twin is a forward one.
+  expect((await moveRing('tabkey:warnings', 'desktop')).landed).toEqual(['tab:warnings'])
+  // The terminal did, so its walk onto the twin is a backward one.
+  expect((await moveRing('tabkey:warnings', 'terminal')).landed).toEqual(['tab:history'])
+})
+
+test('a ring move that fails beneath is not remembered as where the ring rests', async () => {
+  const r = await paneHook('ui.focus')(host, { ...PANE, element: 'tab:warnings', surface: 'terminal', origin: { kind: 'person' } }, async () => { throw new Error('beneath') })
+  expect(r).toEqual({ deny: 'cassandra: the focus could not move.' })
+  expect((await moveRing('tabkey:warnings', 'terminal')).landed).toEqual(['tab:warnings'])
+})
+
+test('opening the pane drops a waiting retest confirm', async () => {
+  opts.state = new Map<string, unknown>([['confirmRetest', 'abc']])
+  await command('pane')
+  expect(state('confirmRetest')).toBeNull()
+})
+
+test('opening the pane closes an open search field', async () => {
+  opts.state = new Map<string, unknown>([['searching', true]])
+  await command('pane')
+  expect(state('searching')).toBe(false)
+})
+
+/**
+ * Route the mod's own `$.tool.call` back through its tracked hook, as the engine does, with
+ * the engine beneath answering `answer`; `aborted` marks the dispatch interrupted.
+ */
+function retestsThrough(answer: () => ToolCallOutcome, aborted = false, before: () => Promise<void> = async () => undefined): void {
+  opts.toolCall = async (args) => {
+    await before()
+    const next = Object.assign(async () => { ran += 1; return answer() }, { signal: { aborted } as AbortSignal, origin: { plugin: 'cassandra' } })
+    return (hooks.get('tool.call') as unknown as ($: ModEngine, e: ToolCallEvent, n: typeof next) => Promise<ToolCallOutcome>)(host, args as ToolCallEvent, next)
+  }
+}
+
+/** How many retest calls reached the engine beneath. */
+let ran = 0
+
+/** Draw, press `r`, draw the confirm, and press Run. */
+async function retestMarked(): Promise<void> {
+  await render()
+  await press('retest')
+  await render()
+  await press('retest-confirm')
+}
+
+test('a confirmed retest that passes forgets the record, toasts, and logs retest_cleared without a warning', async () => {
+  await seedFailure('bun test # retest')
+  retestsThrough(ok)
+  await retestMarked()
+  expect(opts.toolCalls).toEqual([{ command: 'bun test # retest', tool: 'Bash', consent: 'The user pressed "Run" on Cassandra\'s retest of this call.' }])
+  expect(opts.toasts).toEqual(['Retest passed; forgotten.'])
+  expect(await remembered()).toEqual([])
+  const kinds = (await readStats(io(), await pathsFor(io(), cwd))).map((e) => e.kind)
+  expect(kinds).toContain('retest_cleared')
+  expect(kinds).not.toContain('warned')
+  expect(kinds).not.toContain('false_positive')
+  expect(state('notice')).toBeNull()
+  expect(state('confirmRetest')).toBeNull()
+})
+
+test('a confirmed retest that fails updates the record and logs retest_failed', async () => {
+  await seedFailure('bun test # still')
+  retestsThrough(() => failed())
+  await retestMarked()
+  expect(opts.toasts).toEqual(['Retest failed again; record updated.'])
+  const [r] = await remembered()
+  expect(r!.record.count).toBe(2)
+  expect((await readStats(io(), await pathsFor(io(), cwd))).map((e) => e.kind)).toEqual(['retest_failed'])
+})
+
+test('an interrupted retest changes nothing and says it did not run', async () => {
+  await seedFailure('bun test # interrupted')
+  retestsThrough(() => failed('Interrupted'), true)
+  await retestMarked()
+  expect(opts.toasts).toBeUndefined()
+  expect(state('notice')).toBe('The retest did not run; nothing changed.')
+  expect((await remembered())[0]!.record.count).toBe(1)
+})
+
+test('a deny verdict runs nothing; Run without a confirm drawn here runs nothing either', async () => {
+  await seedFailure('bun test # deny')
+  opts.verdict = 'deny'
+  await retestMarked()
+  expect(opts.toolCalls).toBeUndefined()
+  expect(state('notice')).toBe('Your permission settings deny this call; nothing ran.')
+  opts.verdict = 'allow'
+  // A confirm another surface drew: this one never showed the call.
+  await press('retest')
+  await press('retest-confirm', 'desktop')
+  expect(opts.toolCalls).toBeUndefined()
+  expect(state('confirmRetest')).toBeNull()
+})
+
+test('a retest whose call the engine never lets reach the hook says its outcome was not recorded', async () => {
+  await seedFailure('bun test # unhooked')
+  await retestMarked()
+  expect(opts.toolCalls).toHaveLength(1)
+  expect(state('notice')).toBe('The retest ran, but Cassandra could not record its outcome.')
+})
+
+test('j and tab switches drop a waiting retest; Cancel drops it too', async () => {
+  await seedFailure('bun test # one')
+  await seedFailure('bun test # two')
+  await render()
+  await press('retest')
+  expect(state('confirmRetest')).not.toBeNull()
+  await press('down')
+  expect(state('confirmRetest')).toBeNull()
+  await render()
+  await press('retest')
+  await press('tab:warnings')
+  expect(state('confirmRetest')).toBeNull()
+  await render()
+  await press('retest')
+  await press('retest-cancel')
+  expect(state('confirmRetest')).toBeNull()
+})
+
+test('a retest whose shell moved before the call reaches the hook is refused, and nothing runs', async () => {
+  await seedFailure('bun test # moved')
+  ran = 0
+  retestsThrough(ok, false, async () => { opts.cwd = join(tmp, 'elsewhere') })
+  await render()
+  await press('retest')
+  await render()
+  await press('retest-confirm')
+  expect(ran).toBe(0)
+  opts.cwd = cwd
+  expect(state('notice')).toBe(`Retest refused: the shell is now in ${join(tmp, 'elsewhere')}, not ${cwd}.`)
+  expect((await remembered())[0]!.record.count).toBe(1)
+})
+
+test('the refusal names both directories', async () => {
+  await seedFailure('bun test # moved again')
+  const elsewhere = join(tmp, 'elsewhere')
+  let r: unknown
+  opts.toolCall = async (args) => {
+    opts.cwd = elsewhere
+    const next = Object.assign(async () => ok(), { signal: { aborted: false } as AbortSignal, origin: { plugin: 'cassandra' } })
+    r = await (hooks.get('tool.call') as unknown as ($: ModEngine, e: ToolCallEvent, n: typeof next) => Promise<ToolCallOutcome>)(host, args as ToolCallEvent, next)
+    return r
+  }
+  await retestMarked()
+  opts.cwd = cwd
+  expect(r).toEqual({ deny: `Retest refused: the shell is now in ${elsewhere}, not ${cwd}.` })
+})
+
+test('a model call with the same fingerprint while a retest is pending is warned as usual and leaves the retest its own', async () => {
+  await seedFailure('bun test # twin')
+  let model: ToolCallOutcome | undefined
+  ran = 0
+  // The model repeats the call while the pane's retest waits: it is the engine's, not the plugin's.
+  retestsThrough(ok, false, async () => { model = (await call('bun test # twin', failed())).r })
+  await retestMarked()
+  expect(model!.context?.join('\n')).toContain('cassandra')
+  expect(ran).toBe(1)
+  expect(opts.toasts).toEqual(['Retest passed; forgotten.'])
+  const kinds = (await readStats(io(), await pathsFor(io(), cwd))).map((e) => e.kind)
+  expect(kinds.filter((k) => k === 'warned')).toHaveLength(1)
+  expect(kinds).toContain('retest_cleared')
+})
+
+test('j moves on from a selection outside the window, as long as the drawing lists it', async () => {
+  for (let i = 0; i < 8; i++) await seedFailure(`false # m${i}`)
+  const all = (await render()).filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
+  expect(all).toHaveLength(8)
+  const short = { bodyColumns: 70, scroll: { offset: 0, bodyRows: 8 } }
+  const window = (await render(short)).filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
+  expect(window.length).toBeLessThan(6)
+  // The selection sits below the window this surface drew, without a redraw since.
+  const records = await remembered()
+  const hashOf = (key: string) => records.find((r) => r.hash.startsWith(key.slice(4)))!.hash
+  opts.state!.set('selected', hashOf(all[6]!))
+  await press('down')
+  expect(state('selected')).toBe(hashOf(all[7]!))
+})
+
+test('the Just warned card draws the record as it was when warned; an older last warning reads the live record', async () => {
+  await call('bun test', failed())
+  await call('bun test', failed())
+  // The record is now at two tries; the warning was raised at one.
+  const card = async () => (await render()).filter((n) => n.type === 'Box' && n.props.key === 'warned-matched').map(textOf)[0]
+  expect(await card()).toContain('the same call, 1× before')
+  const { hash } = (await remembered())[0]!
+  opts.state!.set('lastWarning', { hash, at: new Date().toISOString() })
+  expect(await card()).toContain('the same call, 2× before')
+})
+
+test('storeOf reads and writes every pane key through that key\'s own reference', async () => {
+  const values: Record<keyof PaneState, unknown> = {
+    selected: 'abc', confirmAll: true, rev: 7, notice: 'hi', tab: 'history', expanded: true, showFull: true,
+    fullPage: 3, fullPageOf: 'ghi', query: 'q', confirmRetest: 'def', lastWarning: { at: 'x' }, searching: true, showKeys: true,
+  }
+  const refs: { op: string; key: string }[] = []
+  const data = new Map<string, unknown>()
+  const $ = {
+    state: {
+      get: async (ref: { key: string }) => { refs.push({ op: 'get', key: ref.key }); return { value: data.get(ref.key), version: 1 } },
+      set: async (ref: { key: string }, value: unknown) => { refs.push({ op: 'set', key: ref.key }); data.set(ref.key, value) },
+    },
+  } as unknown as ModEngine
+  const store = storeOf($)
+  for (const key of Object.keys(values) as (keyof PaneState)[]) {
+    refs.length = 0
+    await store.set(key, values[key] as never)
+    expect(await store.get(key)).toEqual(values[key] as never)
+    expect(refs).toEqual([{ op: 'set', key }, { op: 'get', key }])
+  }
+  expect(data.size).toBe(Object.keys(values).length)
 })

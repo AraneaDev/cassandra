@@ -1,5 +1,6 @@
 import type { Io } from './io.ts'
 import { OWN_TOOLS } from './own-tools.ts'
+import { redactSecrets } from './redact.ts'
 import type { ToolKind } from './types.ts'
 
 /**
@@ -53,9 +54,10 @@ function significant(toolName: string, toolInput: unknown): string | null {
   return stableStringify(toolInput)
 }
 
-/** A short human label for CLI output and the warning text. */
+/** A short human label for CLI output and the warning text, with likely secrets redacted. */
 export function displayFor(toolName: string, toolInput: unknown): string {
-  const sig = significant(toolName, toolInput) ?? ''
+  // Redacted before the cut, which could leave a secret too short to recognise.
+  const sig = redactSecrets(significant(toolName, toolInput) ?? '')
   const text = classify(toolName) === 'bash' ? sig : `${toolName} ${sig}`
   return text.length > 120 ? `${text.slice(0, 117)}...` : text
 }

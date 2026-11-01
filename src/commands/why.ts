@@ -1,5 +1,6 @@
 import { readRecord } from '../core/record.ts'
 import { labelOf } from '../core/describe.ts'
+import { redactSecrets } from '../core/redact.ts'
 import { fixSentence, readFix } from '../core/fixes.ts'
 import type { Io } from '../core/io.ts'
 import { type Paths } from '../core/paths.ts'
@@ -33,7 +34,8 @@ export async function why(io: Io, paths: Paths, hash: string): Promise<CommandRe
   lines.push(`  last        ${record.lastSeen}`)
   lines.push(`  probe       ${record.stateKind} (${record.stateStamp})`)
   lines.push(`  session     ${record.sessionId || 'unknown'}`)
-  lines.push(`  reason      ${record.errorExcerpt || '(none captured)'}`)
+  // Redacted as read, for a record an older version stored before redaction.
+  lines.push(`  reason      ${redactSecrets(record.errorExcerpt) || '(none captured)'}`)
   const fix = await readFix(io, paths, r.hash)
   if (fix) lines.push(`  fix         ${fixSentence(fix)}`)
   return { code: 0, text: lines.join('\n') }

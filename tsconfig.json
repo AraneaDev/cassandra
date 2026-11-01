@@ -13,5 +13,5 @@
     "jsxFragmentFactory": "Fragment"
   },
   "include": ["src", "test", "scripts", "mod"],
-  "exclude": ["mod/index.ts", "mod/*.test.ts"]
+  "exclude": ["mod/index.ts", "mod/*.test.ts", "mod/*.kit.ts"]
 }

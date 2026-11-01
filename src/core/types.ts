@@ -38,6 +38,16 @@ export interface FailureRecord {
   firstSeen: string
   lastSeen: string
   errorExcerpt: string
+  /** The call's input, kept so the call can be retested; absent when it was too large. */
+  input?: unknown
+  /** True when the input was over the size cap and so not stored. */
+  inputTooLarge?: true
+  /** True when the input looked like it held a secret, so neither it nor `cwd` was stored. */
+  inputSecret?: true
+  /** Where the call ran; absent when the input was not kept for a secret. */
+  cwd?: string
+  /** Sanitised full failure output with likely secrets redacted, multi-line, capped; never shown to the agent. */
+  errorFull?: string
   agentId?: string
   /** HEAD when the call failed, git repositories only. */
   gitHead?: string

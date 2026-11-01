@@ -1,175 +1,28 @@
-import { forget } from '../src/commands/forget.ts'
-import { runCommand, type CommandResult } from '../src/commands/run.ts'
-import { buildBriefing, check, recordBriefing, settle, type Call, type Outcome, type Warning } from '../src/core/engine.ts'
+import { runCommand } from '../src/commands/run.ts'
+import { buildBriefing, callHash, check, recordBriefing, settle, type Call, type Warning } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
-import { paneModel, unreadableModel, type PaneModel, type PaneView } from '../src/core/pane.ts'
+import { lastWarningOf, paneModel, unreadableModel, type PaneModel } from '../src/core/pane.ts'
 import { dataRoot, pathsFor } from '../src/core/paths.ts'
 import { statusText } from '../src/core/status.ts'
 import { bumpCompactions, clearModSession, markModSession, pruneModMarkers } from '../src/core/session.ts'
-import type { BriefBoundary } from '../src/core/stats.ts'
+import { appendStat, type BriefBoundary } from '../src/core/stats.ts'
 import { QUERY_TOOL, RESOLVE_TOOL, TOOL_PREFIX, queryText, resolveFailure } from '../src/core/tools.ts'
 import { listRecords } from '../src/core/record.ts'
-import { resolveHash } from '../src/core/resolve.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
-import { KEY_CANCEL, KEY_CONFIRM, KEY_FORGET, KEY_FORGET_ALL, ROW_KEY_PREFIX, drawPane, paneLayout, type Elements } from './pane.tsx'
-
-/** A user-role row a plugin appends: text blocks the model reads, in the named loop (main when absent). */
-export interface AppendArgs {
-  message: { type: 'user'; content: Array<{ type: 'text'; text: string }> }
-  agentId?: string
-}
-
-/** What an append resolves to: the stored row, or `{ deny }` when a plugin above refused it. */
-export interface AppendResult {
-  deny?: string
-  [key: string]: unknown
-}
-
-/** What the pane keeps in `$.state` between redraws; `types/index.d.ts` declares the same contract to the engine. */
-export interface PaneState {
-  selected: string | null
-  confirmAll: boolean
-  rev: number
-  notice: string | null
-}
-
-/** A reference to one of the pane's values, as `$.state` takes it. */
-export type PaneRef<K extends keyof PaneState> = { readonly plugin: 'cassandra'; readonly key: K }
-
-/** The arguments of `$.ui.open`, as far as the mod passes them. */
-export interface OpenArgs {
-  id: string
-  title: string
-  focus: boolean
-  closeOnEscape: boolean
-}
-
-/** The slice of `$` the hooks use: the core's, the session's identity and its append, tool registration, state and the pane. */
-export type ModEngine = ModHost & {
-  session: { id(): Promise<string>; cwd(): Promise<string>; append(args: AppendArgs): Promise<AppendResult>; surfaces(): Promise<readonly string[]> }
-  tool: { register(spec: { name: string; description: string; inputSchema?: Record<string, unknown> }): Promise<unknown> }
-  command: { register(spec: { name: string; description?: string; argumentHint?: string }): Promise<unknown> }
-  state: {
-    get<K extends keyof PaneState>(ref: PaneRef<K>): Promise<{ value: PaneState[K] | undefined; version: number }>
-    set<K extends keyof PaneState>(ref: PaneRef<K>, value: PaneState[K]): Promise<unknown>
-  }
-  ui: { status(text: string | undefined): void; open(args: OpenArgs): Promise<unknown>; resolve(e: PaneRenderEvent): Elements }
-}
-
-/** Which site the pane hooks match: the one pane this plugin opens. */
-export interface PaneMatcher {
-  component: 'Pane'
-  requestId: string
-}
-
-/** A `ui.render` input for the pane, as far as the mod reads it. */
-export interface PaneRenderEvent {
-  /** Where the tree will be drawn: terminal, desktop, vscode or mobile. */
-  surface?: string
-  props: { bodyColumns?: number; scroll?: { bodyRows: number } }
-  viewport?: { columns: number; rows: number }
-  [key: string]: unknown
-}
-
-/** A `ui.press` input: the key of the Button pressed. */
-export interface PressEvent {
-  element: string
-  /** Where the press came from: the surface whose drawing it pressed. */
-  surface?: string
-  [key: string]: unknown
-}
-
-/** A `ui.focus` input: the key of the element taking the ring, absent for one of the engine's stops. */
-export interface FocusEvent {
-  element?: string
-  [key: string]: unknown
-}
-
-/** A `session.compact` input, as far as the mod reads it. */
-export interface CompactEvent {
-  /** What is compacting; 'precompute' prepares a summary ahead of time and installs nothing. */
-  trigger?: 'manual' | 'auto' | 'plugin' | 'precompute'
-  agentId?: string
-}
-
-/** A `session.append` input: one row a loop of the session keeps. */
-export interface AppendEvent {
-  message: unknown
-  door: string
-  origin: { kind: string; name?: string; [key: string]: unknown }
-  uuid: string
-  agentId?: string
-}
-
-/** An `agent.spawn` input, as far as the mod reads it. */
-export interface SpawnEvent {
-  subagentType: string
-  [key: string]: unknown
-}
-
-/** An `agent.spawn` result: the new loop's id, or the refusal. */
-export interface SpawnResult {
-  agentId?: string
-  deny?: string
-  [key: string]: unknown
-}
+import { TRACKED, outcomeOf, toolInput } from './calls.ts'
+import { drawnOf, type DrawnBySurface } from './drawn.ts'
+import type { CommandEvent, ModEngine, ModOn, Next, PaneRenderEvent, PaneState, ToolCallEvent, ToolCallOutcome } from './engine.ts'
+import { layoutOf, type PaneExtras } from './layout.ts'
+import { drawPane, twinTarget } from './pane.tsx'
+import { onPaneInput, onPanePress, selectRow, type PaneHost } from './press.ts'
+import { retestVerdict, runRetest, type RetestHost, type Retesting } from './retest.ts'
+import { readExtras, readView, type PaneStore } from './view.ts'
 
 /** A note owed to a loop: which boundary it crossed, and how many appends were refused. */
 export interface Owed {
   boundary: BriefBoundary
   attempts: number
 }
-
-/** A `command.run` input, as far as the mod reads it. */
-export interface CommandEvent {
-  command: string
-  args: string
-  /** Where the run came from: the person's Enter ('composer'), their remote client ('bridge'), a headless run ('sdk'), or something else. */
-  origin?: { kind: string; [key: string]: unknown }
-}
-
-/** A `tool.call` input: the tool, the engine's own keys, and the tool's arguments beside them. */
-export interface ToolCallEvent {
-  tool: string
-  tool_use_id?: string
-  agentId?: string
-  [key: string]: unknown
-}
-
-/** A `tool.call` result: answered, errored, or denied. */
-export interface ToolCallOutcome {
-  deny?: string
-  isError?: boolean
-  text?: string
-  context?: readonly string[]
-  [key: string]: unknown
-}
-
-/** A hook's `next`, which carries the dispatch's abort signal. */
-export type Next<E, R> = ((e: E) => Promise<R>) & { signal?: AbortSignal }
-
-/** The overloads of `on` this mod uses, typed structurally so CI can check them without the engine's types. */
-export interface ModOn {
-  (event: 'session.start', hook: ($: ModEngine, e: unknown, next: Next<unknown, unknown>) => Promise<unknown>): unknown
-  (event: 'session.end', hook: ($: ModEngine, e: { sessionId: string }, next: Next<{ sessionId: string }, unknown>) => Promise<unknown>): unknown
-  (event: 'session.compact', hook: ($: ModEngine, e: CompactEvent, next: Next<CompactEvent, { skip?: string }>) => Promise<unknown>): unknown
-  (event: 'session.append', hook: ($: ModEngine, e: AppendEvent, next: Next<AppendEvent, unknown>) => Promise<unknown>): unknown
-  (event: 'agent.spawn', hook: ($: ModEngine, e: SpawnEvent, next: Next<SpawnEvent, SpawnResult>) => Promise<unknown>): unknown
-  (event: 'command.run', matcher: { command: string }, hook: ($: ModEngine, e: CommandEvent, next: Next<CommandEvent, unknown>) => Promise<{ text?: string; exitCode?: number }>): unknown
-  (event: 'tool.call', matcher: { tool: RegExp }, hook: ($: ModEngine, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>) => Promise<ToolCallOutcome>): unknown
-  (event: 'ui.render', matcher: PaneMatcher, hook: ($: ModEngine, e: PaneRenderEvent, next: Next<PaneRenderEvent, unknown>) => Promise<unknown>): unknown
-  (event: 'ui.press', matcher: PaneMatcher, hook: ($: ModEngine, e: PressEvent, next: Next<PressEvent, unknown>) => Promise<unknown>): unknown
-  (event: 'ui.focus', matcher: PaneMatcher, hook: ($: ModEngine, e: FocusEvent, next: Next<FocusEvent, unknown>) => Promise<unknown>): unknown
-}
-
-/**
- * The same calls the binary's hooks match: Bash and every MCP tool, except Cassandra's own two.
- * `classify()` ignores those already; the matcher keeps the hook from being dispatched for them.
- */
-export const TRACKED = /^(?:Bash|mcp__(?!cassandra__(?:query|resolve)$).+)$/
-
-/** Keys the engine puts on a `tool.call` input that are not the tool's arguments. */
-const RESERVED = new Set(['tool', 'tool_use_id', 'consent', 'agentId'])
 
 /** How often a live session rewrites its marker, so a prune by another session never orphans it. */
 const MARKER_REFRESH_MS = 60 * 60 * 1000
@@ -200,6 +53,20 @@ function hostOf($: ModEngine): ModHost {
         }
       },
     },
+  }
+}
+
+/**
+ * The calls a retest makes, each spelled out for the same reason as `hostOf`: the validator
+ * follows `$` only into a function declared in this file.
+ */
+function retestHostOf($: ModEngine, claimed: () => Promise<boolean>): RetestHost {
+  return {
+    cwd: () => $.session.cwd(),
+    claimed,
+    check: (args) => $.tool.check(args),
+    call: (args) => $.tool.call(args),
+    toast: (text) => $.ui.toast(text),
   }
 }
 
@@ -273,16 +140,85 @@ const CONFIRM_ALL = { plugin: 'cassandra', key: 'confirmAll' } as const
 const REV = { plugin: 'cassandra', key: 'rev' } as const
 /** The outcome of the last action, when it failed. */
 const NOTICE = { plugin: 'cassandra', key: 'notice' } as const
+/** The tab the list shows. */
+const TAB = { plugin: 'cassandra', key: 'tab' } as const
+/** Whether the marked row is open in place. */
+const EXPANDED = { plugin: 'cassandra', key: 'expanded' } as const
+/** Whether the marked record's full output shows. */
+const SHOW_FULL = { plugin: 'cassandra', key: 'showFull' } as const
+/** The page of the full output that shows, from 0. */
+const FULL_PAGE = { plugin: 'cassandra', key: 'fullPage' } as const
+/** The hash of the record that page was turned on; any other record shows its first page. */
+const FULL_PAGE_OF = { plugin: 'cassandra', key: 'fullPageOf' } as const
+/** The search the list is filtered by, '' for none. */
+const QUERY = { plugin: 'cassandra', key: 'query' } as const
+/** The hash of the record whose retest waits for its confirm. */
+const CONFIRM_RETEST = { plugin: 'cassandra', key: 'confirmRetest' } as const
+/** The warning this session raised last, until dismissed. */
+const LAST_WARNING = { plugin: 'cassandra', key: 'lastWarning' } as const
+/** Whether the search field is open. */
+const SEARCHING = { plugin: 'cassandra', key: 'searching' } as const
+/** Whether the key list is open. */
+const SHOW_KEYS = { plugin: 'cassandra', key: 'showKeys' } as const
 
-/** What one surface last drew: the row it marked selected, every row it showed, and every record it counted. */
-export interface DrawnPane {
-  selected: string | null
-  hashes: ReadonlySet<string>
-  counted: ReadonlySet<string>
+/**
+ * The pane's values, each key spelled out with its own reference for the same reason as
+ * `hostOf`: the validator follows `$` only into a function declared in this file, and lists
+ * state only from literal references.
+ */
+export function storeOf($: ModEngine): PaneStore {
+  const get = async (key: keyof PaneState): Promise<unknown> => {
+    switch (key) {
+      case 'selected': return (await $.state.get(SELECTED)).value
+      case 'confirmAll': return (await $.state.get(CONFIRM_ALL)).value
+      case 'rev': return (await $.state.get(REV)).value
+      case 'notice': return (await $.state.get(NOTICE)).value
+      case 'tab': return (await $.state.get(TAB)).value
+      case 'expanded': return (await $.state.get(EXPANDED)).value
+      case 'showFull': return (await $.state.get(SHOW_FULL)).value
+      case 'fullPage': return (await $.state.get(FULL_PAGE)).value
+      case 'fullPageOf': return (await $.state.get(FULL_PAGE_OF)).value
+      case 'query': return (await $.state.get(QUERY)).value
+      case 'confirmRetest': return (await $.state.get(CONFIRM_RETEST)).value
+      case 'lastWarning': return (await $.state.get(LAST_WARNING)).value
+      case 'searching': return (await $.state.get(SEARCHING)).value
+      case 'showKeys': return (await $.state.get(SHOW_KEYS)).value
+    }
+  }
+  const set = (key: keyof PaneState, value: unknown): Promise<unknown> => {
+    switch (key) {
+      case 'selected': return $.state.set(SELECTED, value as PaneState['selected'])
+      case 'confirmAll': return $.state.set(CONFIRM_ALL, value as PaneState['confirmAll'])
+      case 'rev': return $.state.set(REV, value as PaneState['rev'])
+      case 'notice': return $.state.set(NOTICE, value as PaneState['notice'])
+      case 'tab': return $.state.set(TAB, value as PaneState['tab'])
+      case 'expanded': return $.state.set(EXPANDED, value as PaneState['expanded'])
+      case 'showFull': return $.state.set(SHOW_FULL, value as PaneState['showFull'])
+      case 'fullPage': return $.state.set(FULL_PAGE, value as PaneState['fullPage'])
+      case 'fullPageOf': return $.state.set(FULL_PAGE_OF, value as PaneState['fullPageOf'])
+      case 'query': return $.state.set(QUERY, value as PaneState['query'])
+      case 'confirmRetest': return $.state.set(CONFIRM_RETEST, value as PaneState['confirmRetest'])
+      case 'lastWarning': return $.state.set(LAST_WARNING, value as PaneState['lastWarning'])
+      case 'searching': return $.state.set(SEARCHING, value as PaneState['searching'])
+      case 'showKeys': return $.state.set(SHOW_KEYS, value as PaneState['showKeys'])
+    }
+  }
+  return { get, set } as PaneStore
 }
 
-/** What each surface last drew, by surface. Forget acts only on rows the person saw. */
-export type DrawnBySurface = Map<string, DrawnPane>
+/** What the pane's presses, inputs and focus moves act through, each call spelled out as in `hostOf`. */
+function paneHostOf($: ModEngine, wrapIo: (io: Io) => Io, retesting: Retesting, claim: (io: Io, id: string) => Promise<boolean>): PaneHost {
+  const claimed = async (): Promise<boolean> => claim(wrapIo(modIo(hostOf($))), await $.session.id())
+  return {
+    store: storeOf($),
+    io: () => wrapIo(modIo(hostOf($))),
+    cwd: () => $.session.cwd(),
+    sessionId: () => $.session.id(),
+    redraw: () => bumpRev($),
+    refresh: (io) => refreshStatus($, io),
+    retest: (io, hash, shown) => retestConfirmed($, io, hash, shown, retesting, claimed),
+  }
+}
 
 /** What /cassandra pane answers once the pane is open. */
 const PANE_OPENED = 'Opened the Cassandra pane.'
@@ -330,22 +266,19 @@ async function dropEmptyConfirm($: ModEngine, io: Io): Promise<void> {
   }
 }
 
-/** What the pane remembers, read fresh. Rejects when the state cannot be read. */
-async function readView($: ModEngine): Promise<PaneView> {
-  const selected = (await $.state.get(SELECTED)).value ?? null
-  const confirmAll = (await $.state.get(CONFIRM_ALL)).value ?? false
-  const notice = (await $.state.get(NOTICE)).value ?? null
-  return { selected, confirmAll, notice }
-}
-
 /**
- * Open the pane, unless nothing can show one. The confirmation never survives into a
- * fresh open, and neither does an old notice. Rejects on a host failure.
+ * Open the pane, unless nothing can show one. Neither confirmation survives into a fresh
+ * open, nor an open search field, nor an old notice, nor a later page of the full output.
+ * Rejects on a host failure.
  */
 async function openPane($: ModEngine): Promise<{ text: string; exitCode: number }> {
   if ((await $.session.surfaces()).length === 0) return { text: PANE_HEADLESS, exitCode: 1 }
   await $.state.set(CONFIRM_ALL, false)
+  await $.state.set(CONFIRM_RETEST, null)
+  await $.state.set(SEARCHING, false)
   await $.state.set(NOTICE, null)
+  await $.state.set(FULL_PAGE, 0)
+  await $.state.set(FULL_PAGE_OF, null)
   await $.ui.open({ id: PANE_ID, title: 'Cassandra', focus: true, closeOnEscape: true })
   return { text: PANE_OPENED, exitCode: 0 }
 }
@@ -358,157 +291,57 @@ async function openPane($: ModEngine): Promise<{ text: string; exitCode: number 
 async function renderPane($: ModEngine, e: PaneRenderEvent, next: Next<PaneRenderEvent, unknown>, wrapIo: (io: Io) => Io, drawn: DrawnBySurface): Promise<unknown> {
   try {
     const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
-    const layout = paneLayout(e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24)
+    const bodyRows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 24
     let model: PaneModel
+    let extras: PaneExtras | undefined
+    const io = wrapIo(modIo(hostOf($)))
+    const store = storeOf($)
+    const elements = $.ui.resolve(e)
     try {
       // Read so that a bump of the revision draws the pane again.
-      await $.state.get(REV)
-      model = await paneModel(wrapIo(modIo(hostOf($))), await $.session.cwd(), await readView($), layout.maxRows)
+      await store.get('rev')
+      model = await paneModel(io, await $.session.cwd(), await readView(store), await $.session.id())
+      // The key list counts its rows as this surface draws them: no search without a text field.
+      extras = await readExtras(store, model, elements.Input !== undefined)
     } catch {
       model = unreadableModel()
     }
+    const layout = layoutOf(model, columns, bodyRows, extras)
     // Not state: a render may not write it, and a press only needs this session's own drawing.
-    drawn.set(e.surface ?? '', { selected: model.selected, hashes: new Set(model.rows.map((r) => r.hash)), counted: new Set(model.hashes) })
-    return drawPane($.ui.resolve(e), model, columns, layout)
+    drawn.set(e.surface ?? '', await drawnOf(io, model, layout))
+    return drawPane(elements, model, columns, layout)
   } catch {
     return next(e)
   }
 }
 
-/** Select the row a key names, when it is a row still remembered. Never throws. */
-async function selectRow($: ModEngine, wrapIo: (io: Io) => Io, key: string | undefined): Promise<void> {
-  if (!key?.startsWith(ROW_KEY_PREFIX)) return
-  try {
-    const io = wrapIo(modIo(hostOf($)))
-    const r = await resolveHash(io, await pathsFor(io, await $.session.cwd()), key.slice(ROW_KEY_PREFIX.length))
-    if (r.ok) await $.state.set(SELECTED, r.hash)
-  } catch {
-    // The selection stays where it was.
-  }
-}
-
-/** Run one forget for the pane: its failure becomes the notice, and any change redraws. Never throws. */
-async function paneForget($: ModEngine, io: Io, run: () => Promise<CommandResult | null>, failure: string): Promise<void> {
+/**
+ * Run the retest the person confirmed, then show what it came to and redraw. Never throws.
+ * Top-level because it takes `$`: the validator follows `$` nowhere else.
+ */
+async function retestConfirmed($: ModEngine, io: Io, hash: string, shown: string, retesting: Retesting, claimed: () => Promise<boolean>): Promise<void> {
   let notice: string | null
   try {
-    const r = await run()
-    if (r === null) {
-      // Nothing seen to act on: redraw, so the person sees the store as it is now,
-      // without the outcome of an older action beside it.
-      await $.state.set(NOTICE, null).catch(() => undefined)
-      await bumpRev($)
-      return
-    }
-    notice = r.code === 0 ? null : r.text
+    notice = (await runRetest(retestHostOf($, claimed), io, hash, shown, retesting)).notice
   } catch {
-    notice = failure
+    notice = 'The retest could not be run; nothing changed.'
   }
-  try {
-    await $.state.set(NOTICE, notice)
-  } catch {
-    // The pane shows the outcome at its next redraw, or not at all.
-  }
-  await refreshStatus($, io)
-}
-
-/** Act on a press in the pane, by the key of the Button pressed. Never throws. */
-/**
- * The record Forget acts on: a row this surface drew. The row focus selected, when it was
- * drawn here (the ring sits on it even before the redraw), else the row drawn as
- * selected. Null when nothing was drawn here or that record is gone.
- */
-async function forgetTarget($: ModEngine, io: Io, cwd: string, drawn: DrawnPane | undefined): Promise<string | null> {
-  if (!drawn) return null
-  const selected = (await $.state.get(SELECTED)).value ?? null
-  const target = selected !== null && drawn.hashes.has(selected) ? selected : drawn.selected
-  if (target === null) return null
-  const stored = await listRecords(io, await pathsFor(io, cwd))
-  return stored.some((r) => r.hash === target) ? target : null
-}
-
-/** The notice of a confirm that could not forget every record. */
-const FORGET_ALL_FAILED = 'Could not forget every record.'
-
-/**
- * Forget exactly the records this surface counted on its confirm button, and no others.
- * A newer record stays and is named in the notice; a counted record already gone is
- * skipped. Nothing drawn here, or nothing counted left, deletes nothing: the confirmation
- * drops and the pane redraws. A store that cannot be counted deletes nothing either, and
- * says so. Rejects on a state failure.
- */
-async function confirmForgetAll($: ModEngine, io: Io, cwd: string, drawn: DrawnPane | undefined): Promise<void> {
-  let stored: string[]
-  try {
-    stored = (await listRecords(io, await pathsFor(io, cwd))).map((r) => r.hash)
-  } catch {
-    await $.state.set(NOTICE, FORGET_ALL_FAILED)
-    await bumpRev($)
-    return
-  }
-  const targets = stored.filter((h) => drawn?.counted.has(h))
-  if (stored.length === 0 || targets.length === 0) {
-    // Nothing counted is left to confirm: drop the row and redraw the store as it is.
-    await $.state.set(CONFIRM_ALL, false)
-    await $.state.set(NOTICE, null)
-    await bumpRev($)
-    return
-  }
-  const kept = stored.length - targets.length
-  await $.state.set(CONFIRM_ALL, false)
-  let failed = false
-  const paths = await pathsFor(io, cwd)
-  for (const hash of targets) {
-    try {
-      if ((await forget(io, paths, hash, false)).code !== 0) failed = true
-    } catch {
-      failed = true
-    }
-  }
-  // A delete that fails quietly leaves the record behind: count it as a failure.
-  try {
-    const left = new Set((await listRecords(io, paths)).map((r) => r.hash))
-    if (targets.some((h) => left.has(h))) failed = true
-  } catch {
-    failed = true
-  }
-  const n = targets.length
-  const notice = failed
-    ? FORGET_ALL_FAILED
-    : kept === 0 ? null : `Forgot ${n} ${n === 1 ? 'record' : 'records'}; ${kept} newer ${kept === 1 ? 'record was' : 'records were'} kept.`
   await $.state.set(NOTICE, notice).catch(() => undefined)
   await refreshStatus($, io)
 }
 
-async function onPanePress($: ModEngine, e: PressEvent, wrapIo: (io: Io) => Io, drawn: DrawnBySurface): Promise<void> {
+/**
+ * Remember the warning this call raised, with its record as it stood then (before this call
+ * settles it), so the pane's Just warned card shows what was warned, and redraw an open
+ * pane. Never throws: a lost card must not cost the warning itself.
+ */
+async function noteWarning($: ModEngine, io: Io, call: Call, hash: string): Promise<void> {
   try {
-    const io = wrapIo(modIo(hostOf($)))
-    const cwd = await $.session.cwd()
-    switch (e.element) {
-      case KEY_FORGET:
-        await paneForget($, io, async () => {
-          const target = await forgetTarget($, io, cwd, drawn.get(e.surface ?? ''))
-          return target === null ? null : forget(io, await pathsFor(io, cwd), target, false)
-        }, 'Could not forget the selected record.')
-        return
-      // An old failure line must not sit beside the confirm row, nor outlive the cancel.
-      case KEY_FORGET_ALL:
-        await $.state.set(NOTICE, null)
-        // Nothing to confirm on an empty store.
-        if ((await listRecords(io, await pathsFor(io, cwd))).length > 0) await $.state.set(CONFIRM_ALL, true)
-        return
-      case KEY_CANCEL:
-        await $.state.set(NOTICE, null)
-        await $.state.set(CONFIRM_ALL, false)
-        return
-      case KEY_CONFIRM:
-        await confirmForgetAll($, io, cwd, drawn.get(e.surface ?? ''))
-        return
-      default:
-        await selectRow($, wrapIo, e.element).catch(() => undefined)
-    }
+    await $.state.set(LAST_WARNING, await lastWarningOf(io, call.cwd, hash, call.sessionId))
   } catch {
-    // The press changes nothing.
+    // The card misses this warning; the agent still gets it.
   }
+  await bumpRev($)
 }
 
 /** What /cassandra shows when it cannot answer; the engine already labels it "cassandra: ". */
@@ -540,11 +373,6 @@ async function answerCommand($: ModEngine, io: Io, args: string | undefined, ori
   }
 }
 
-/** The tool's own arguments, as the classic hook's `tool_input` carries them. */
-export function toolInput(e: ToolCallEvent): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(e).filter(([k]) => !RESERVED.has(k)))
-}
-
 /** Serve one of Cassandra's own tools. Never calls `next`: nothing beneath serves them. */
 async function answerTool($: ModEngine, wrapIo: (io: Io) => Io, e: ToolCallEvent): Promise<ToolCallOutcome> {
   try {
@@ -561,38 +389,35 @@ async function answerTool($: ModEngine, wrapIo: (io: Io) => Io, e: ToolCallEvent
 }
 
 /**
- * The text of an errored result that means the call never ran. A permission rule or an
- * ungranted approval does not come back as `{ deny }` from the engine: it is an errored,
- * non-aborted result with this text (found by a spike against the real engine). The
- * classic binary records nothing for these, so neither does the mod.
+ * Run the pane's retest of a call and settle it as any call is settled, with no warning
+ * before it: a pass forgets the record (with its fix note) and logs `retest_cleared`, a
+ * failure updates the record and logs `retest_failed` (only when it was recorded: one that
+ * was not stays `running`, which the retest reports as an outcome it could not record);
+ * neither is a warning's outcome, so no `false_positive` or `confirmed`. A call that never
+ * ran (a denial, a refused permission, an interrupt) changes nothing. What it came to is
+ * left in `retesting` for the retest that is waiting on it. The result comes back as the
+ * engine gave it.
  */
-export const NOT_RUN_TEXT = /^(?:Permission to use .* has been denied\.|[^\n]*requires approval[^\n]*|[^\n]*haven't granted[^\n]*)$/
-
-/**
- * A Bash result the engine wrapped as a tool-use error: input it refused or a hook that
- * blocked the call, so the command never ran. A command that ran and failed comes back
- * as plain text (`Exit code N …`). Bash only, because other tools use the same wrapper
- * for failures that did happen.
- */
-export const BASH_NOT_RUN_TEXT = /^<tool_use_error>/
-
-/**
- * What a call came to, from what the engine answered.
- *
- * An explicit `{ deny }` (from another plugin) is a denial. An errored result is the
- * user's interrupt when the dispatch was aborted, a call that never ran when the text
- * says a permission was refused (or, for Bash, the engine refused or a hook blocked it),
- * and otherwise a failure.
- */
-export function outcomeOf(r: ToolCallOutcome, aborted: boolean, tool?: string): Outcome {
-  if (r.deny !== undefined) return { kind: 'denial', reason: r.deny }
-  if (r.isError === true) {
-    if (aborted) return { kind: 'interrupt' }
-    if (r.text !== undefined && NOT_RUN_TEXT.test(r.text)) return { kind: 'not_run' }
-    if (tool === 'Bash' && r.text !== undefined && BASH_NOT_RUN_TEXT.test(r.text)) return { kind: 'not_run' }
-    return { kind: 'failure', reason: r.text }
+async function settleRetest($: ModEngine, io: Io, call: Call, hash: string, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>, retesting: Retesting): Promise<ToolCallOutcome> {
+  const result = await next(e)
+  const entry = retesting.get(hash) ?? { state: 'running', cwd: call.cwd }
+  try {
+    const outcome = outcomeOf(result, next.signal?.aborted === true, call.tool)
+    const verdict = retestVerdict(outcome)
+    if (verdict === null) {
+      retesting.set(hash, { ...entry, state: 'not_run' })
+      return result
+    }
+    const changed = await settle(io, call, outcome, null)
+    // A failure that was not recorded stays `running`, so the retest says its outcome was lost.
+    if (verdict.state === 'failed' && !changed) return result
+    await appendStat(io, await pathsFor(io, call.cwd), { kind: verdict.stat, hash })
+    retesting.set(hash, { ...entry, state: verdict.state })
+    if (changed) await refreshStatus($, io)
+  } catch {
+    // The call happened; only the bookkeeping is lost.
   }
-  return { kind: 'success' }
+  return result
 }
 
 /**
@@ -729,25 +554,52 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
   })
 
   const drawn: DrawnBySurface = new Map()
+  // The retests the pane started, until the tracked hook below has settled each one.
+  const retesting: Retesting = new Map()
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => renderPane($, e, next, wrapIo, drawn))
 
   // Presses and focus moves run one at a time, in order, so a Forget reads the selection
   // the press or the move before it left.
-  let pressing: Promise<void> = Promise.resolve()
+  let pressing: Promise<unknown> = Promise.resolve()
   on('ui.press', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
-    const done = pressing.then(() => onPanePress($, e, wrapIo, drawn))
+    const done = pressing.then(() => onPanePress(paneHostOf($, wrapIo, retesting, claim), e, drawn))
     pressing = done
-    await done
+    const { ring, retest } = await done
     // A press that fails beneath still counts as taken here: the action already ran.
-    return next(e).catch(() => ({ element: e.element }))
+    const pressed = await next(e).catch(() => ({ element: e.element }))
+    // After the press, never inside it: the move raises ui.focus, which waits its turn behind this press.
+    if (ring !== null) await $.ui.focus({ requestId: PANE_ID, key: ring }).catch(() => undefined)
+    // Outside the queue, so the pane still answers while the call runs (or its permission prompt waits).
+    if (retest) await retest()
+    return pressed
   })
 
+  on('ui.input', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
+    const done = pressing.then(() => onPaneInput(storeOf($), e))
+    pressing = done
+    await done
+    return next(e).catch(() => ({ element: e.element, value: e.value }))
+  })
+
+  // The element the ring was last moved onto, by surface, so a backward walk onto a hidden twin is told apart.
+  const focused = new Map<string, string>()
   on('ui.focus', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
-    const done = pressing.then(() => selectRow($, wrapIo, e.element)).catch(() => undefined)
+    const twin = e.element === undefined ? undefined : twinTarget(e.element, focused.get(e.surface ?? '') ?? null)
+    // Backward past the first tab: the ring stays where it is.
+    if (twin === null) return {}
+    const element = twin ?? e.element
+    const done = pressing.then(() => selectRow(paneHostOf($, wrapIo, retesting, claim), element)).catch(() => undefined)
     pressing = done
     await done
     // A move that fails beneath leaves the ring where it was.
-    return next(e).catch(() => ({ deny: 'cassandra: the focus could not move.' }))
+    try {
+      const moved = await next(twin === undefined ? e : { ...e, element: twin })
+      if (element === undefined) focused.delete(e.surface ?? '')
+      else focused.set(e.surface ?? '', element)
+      return moved
+    } catch {
+      return { deny: 'cassandra: the focus could not move.' }
+    }
   })
 
   on('tool.call', { tool: new RegExp(`^${TOOL_PREFIX}(?:${QUERY_TOOL.name}|${RESOLVE_TOOL.name})$`) }, async ($, e) => answerTool($, wrapIo, e))
@@ -755,17 +607,39 @@ export function install(on: ModOn, wrapIo: (io: Io) => Io = (io) => io): void {
   on('tool.call', { tool: TRACKED }, async ($, e, next) => {
     let io: Io
     let call: Call
-    let warning: Warning | null
+    let warning: Warning | null = null
+    let retested: string | null = null
+    let refused: string | null = null
     try {
       io = wrapIo(modIo(hostOf($)))
       const sessionId = await $.session.id()
       // An unclaimed session is the binary's: stand aside through the same path as a core error.
       if (!(await claim(io, sessionId))) throw new Error('cassandra: session not claimed')
-      call = { tool: e.tool, input: toolInput(e), cwd: await $.session.cwd(), sessionId, agentId: e.agentId }
-      warning = await check(io, call)
+      // A surface list that cannot be read only words the warning without the pane.
+      const surfaces = await $.session.surfaces().catch(() => [])
+      call = { tool: e.tool, input: toolInput(e), cwd: await $.session.cwd(), sessionId, agentId: e.agentId, paneAvailable: surfaces.length > 0 }
+      // The pane's own retest, raised by this plugin: the person asked for it, so it is not
+      // warned about. A model's call of the same fingerprint is any other call.
+      const hash = retesting.size > 0 && next.origin?.plugin === PLUGIN_NAME ? await callHash(io, call) : null
+      const pending = hash === null ? undefined : retesting.get(hash)
+      if (hash !== null && pending?.state === 'pending') {
+        // It runs only from the directory its confirm showed.
+        if (call.cwd !== pending.cwd) {
+          refused = `Retest refused: the shell is now in ${call.cwd}, not ${pending.cwd}.`
+          retesting.set(hash, { ...pending, state: 'not_run', reason: refused })
+        } else {
+          retesting.set(hash, { ...pending, state: 'running' })
+          retested = hash
+        }
+      } else {
+        warning = await check(io, call)
+      }
     } catch {
       return next(e)
     }
+    if (refused !== null) return { deny: refused }
+    if (retested !== null) return settleRetest($, io, call, retested, e, next, retesting)
+    if (warning) await noteWarning($, io, call, warning.hash)
 
     const result = await next(e)
 

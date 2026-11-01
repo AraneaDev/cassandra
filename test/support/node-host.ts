@@ -25,10 +25,20 @@ export interface NodeHostOptions {
   surfaces?: readonly string[]
   /** Every pane the mod opened with `$.ui.open`, in order. */
   opened?: unknown[]
+  /** Every element the mod moved the focus ring onto with `$.ui.focus`, by key, in order. */
+  focused?: string[]
   /** The plugin's `$.state`, in memory, by key. */
   state?: Map<string, unknown>
   /** Make `$.state.set` reject. */
   stateSetRejects?: boolean
+  /** What `$.tool.check` answers; allow when absent. */
+  verdict?: 'allow' | 'ask' | 'deny'
+  /** Every call the mod raised with `$.tool.call`, in order. */
+  toolCalls?: Array<Record<string, unknown>>
+  /** What a `$.tool.call` resolves to; when absent the call is answered `{ result: 'ok' }`. */
+  toolCall?: (args: Record<string, unknown>) => Promise<unknown>
+  /** Every text the mod toasted with `$.ui.toast`, in order. */
+  toasts?: string[]
 }
 
 /** The element table `$.ui.resolve` hands out here: each element is its own name. */
@@ -46,12 +56,18 @@ export type NodeHost = ModHost & {
     get(ref: { plugin: string; key: string }): Promise<{ value: never; version: number }>
     set(ref: { plugin: string; key: string }, value: unknown): Promise<{ isSet: boolean; version: number }>
   }
-  tool: { register(spec: { name: string; description: string }): Promise<unknown> }
+  tool: {
+    register(spec: { name: string; description: string }): Promise<unknown>
+    check(args: { tool: string; input: unknown }): Promise<{ decision: 'allow' | 'ask' | 'deny' }>
+    call(args: { tool: string; [key: string]: unknown }): Promise<unknown>
+  }
   command: { register(spec: { name: string; description?: string; argumentHint?: string }): Promise<unknown> }
   ui: {
     status(text: string | undefined): void
     open(args: unknown): Promise<{ isPlaced: boolean }>
     resolve(e: unknown): typeof FAKE_ELEMENTS
+    focus(args: { requestId: string; key: string }): Promise<{ deny?: string }>
+    toast(text: string): void
   }
 }
 
@@ -138,6 +154,13 @@ export function nodeHost(opts: NodeHostOptions = {}): NodeHost {
         ;(opts.registered ??= []).push({ name: spec.name, description: spec.description })
         return {}
       },
+      async check() {
+        return { decision: opts.verdict ?? 'allow' }
+      },
+      async call(args) {
+        ;(opts.toolCalls ??= []).push(args)
+        return opts.toolCall ? opts.toolCall(args) : { result: 'ok' }
+      },
     },
     command: {
       async register(spec: { name: string }) {
@@ -155,6 +178,13 @@ export function nodeHost(opts: NodeHostOptions = {}): NodeHost {
       },
       resolve() {
         return FAKE_ELEMENTS
+      },
+      async focus(args) {
+        ;(opts.focused ??= []).push(args.key)
+        return {}
+      },
+      toast(text) {
+        ;(opts.toasts ??= []).push(text)
       },
     },
   }

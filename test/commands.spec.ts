@@ -80,3 +80,15 @@ test('forget <hash> drops the record and its fix note; a note that cannot be rem
   expect(r.code).toBe(1)
   expect(r.text).toContain('Could not remove its fix note')
 })
+
+test('list and why print a record an older version stored in plaintext redacted', async () => {
+  const paths = await pathsFor(nodeIo, cwd)
+  await upsertRecord(nodeIo, paths, 'aa11bb22cc33dd44', { ...seed, display: 'deploy --token=hunter2secret', errorExcerpt: 'Exit code 1 TOKEN=hunter2secret' })
+  const listed = (await list(nodeIo, paths)).text
+  const shown = (await why(nodeIo, paths, 'aa11bb22cc33dd44')).text
+  for (const text of [listed, shown]) {
+    expect(text).not.toContain('hunter2secret')
+    expect(text).toContain('deploy --token=[redacted]')
+  }
+  expect(shown).toContain('reason      Exit code 1 TOKEN=[redacted]')
+})

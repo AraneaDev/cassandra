@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { settle } from '../src/core/engine.ts'
 import { isMissingSubtree, nodeIo } from '../src/io/node.ts'
 
 const roots: string[] = []
@@ -68,4 +69,77 @@ test('modIo removes its staging file when the host write rejects part-way', asyn
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('writes and appends are owner-only: files 0600, the directories they create 0700', async () => {
+  const root = tmp()
+  const mode = (p: string): number => statSync(p).mode & 0o777
+  await nodeIo.writeText(join(root, 'records', 'ab', 'abcd.json'), '{}')
+  await nodeIo.appendText(join(root, 'logs', 'stats.jsonl'), 'x\n')
+  expect(mode(join(root, 'records', 'ab', 'abcd.json'))).toBe(0o600)
+  expect(mode(join(root, 'logs', 'stats.jsonl'))).toBe(0o600)
+  for (const dir of ['records', 'records/ab', 'logs']) expect(mode(join(root, dir))).toBe(0o700)
+})
+
+test('the store root is made owner-only at its first write under it, old files inside it included', async () => {
+  const root = join(tmp(), 'store')
+  mkdirSync(join(root, 'old'), { recursive: true, mode: 0o755 })
+  chmodSync(root, 0o755)
+  writeFileSync(join(root, 'old', 'record.json'), '{}', { mode: 0o644 })
+  const mode = (p: string): number => statSync(p).mode & 0o777
+  nodeIo.ownStore(root)
+  // Registering touches nothing, and a write elsewhere leaves the root as it was.
+  expect(mode(root)).toBe(0o755)
+  await nodeIo.writeText(join(tmp(), 'elsewhere.txt'), 'x')
+  expect(mode(root)).toBe(0o755)
+  await nodeIo.appendText(join(root, 'stats.jsonl'), 'x\n')
+  expect(mode(root)).toBe(0o700)
+})
+
+test('a store root that does not exist yet is created owner-only by the first write into it', async () => {
+  const root = join(tmp(), 'fresh', 'store')
+  nodeIo.ownStore(root)
+  await nodeIo.writeText(join(root, 'p', 'records', 'ab', 'x.json'), '{}')
+  expect(statSync(root).mode & 0o777).toBe(0o700)
+})
+
+/** Record one failure through `nodeIo` with exactly these root variables set, and return the root's mode. */
+async function recordUnder(vars: { CASSANDRA_HOME?: string; CLAUDE_PLUGIN_DATA?: string }, root: string, home = tmp()): Promise<number> {
+  mkdirSync(root, { recursive: true, mode: 0o755 })
+  chmodSync(root, 0o755)
+  const work = tmp()
+  writeFileSync(join(work, 'a.txt'), 'one')
+  const saved = { CASSANDRA_HOME: process.env.CASSANDRA_HOME, CLAUDE_PLUGIN_DATA: process.env.CLAUDE_PLUGIN_DATA, HOME: process.env.HOME }
+  const set = (k: keyof typeof saved, v: string | undefined) => (v === undefined ? delete process.env[k] : (process.env[k] = v))
+  set('CASSANDRA_HOME', vars.CASSANDRA_HOME)
+  set('CLAUDE_PLUGIN_DATA', vars.CLAUDE_PLUGIN_DATA)
+  // The pointer to the data root goes under a home of the test's own.
+  set('HOME', home)
+  try {
+    expect(await settle(nodeIo, { tool: 'Bash', input: { command: 'bun test' }, cwd: work, sessionId: 's1' }, { kind: 'failure', reason: 'boom' }, null)).toBe(true)
+  } finally {
+    for (const k of Object.keys(saved) as Array<keyof typeof saved>) set(k, saved[k])
+  }
+  return statSync(root).mode & 0o777
+}
+
+test('recording a failure makes the plugin data root owner-only', async () => {
+  const data = join(tmp(), 'data')
+  expect(await recordUnder({ CLAUDE_PLUGIN_DATA: data }, data)).toBe(0o700)
+})
+
+test('a root named by CASSANDRA_HOME keeps its own mode', async () => {
+  const home = join(tmp(), 'home')
+  expect(await recordUnder({ CASSANDRA_HOME: home }, home)).toBe(0o755)
+})
+
+test('a pointer naming a CASSANDRA_HOME directory leaves it its mode; the default directory is made owner-only', async () => {
+  const home = tmp()
+  const named = join(tmp(), 'named')
+  mkdirSync(join(home, '.cassandra'), { recursive: true })
+  writeFileSync(join(home, '.cassandra', 'data-root'), named)
+  // No variable set, as in a shell: the root comes from the pointer.
+  expect(await recordUnder({}, named, home)).toBe(0o755)
+  const bare = tmp()
+  expect(await recordUnder({}, join(bare, '.cassandra'), bare)).toBe(0o700)
 })

@@ -7,13 +7,30 @@ import { basename, dirname, isAbsolute, join, normalize } from './path.ts'
  * directory to fall back on, which every caller treats as silence.
  */
 export async function dataRoot(io: Io): Promise<string> {
-  const explicit = (await io.env('CASSANDRA_HOME')) ?? (await io.env('CLAUDE_PLUGIN_DATA'))
+  const { root, owned } = await resolveDataRoot(io)
+  // Owner-only from the store's first write (see `Io.ownStore`), but only a directory
+  // Cassandra owns: one named by CASSANDRA_HOME may be the person's, and keeps its mode.
+  if (owned) io.ownStore(root)
+  return root
+}
+
+/**
+ * The data root, and whether Cassandra owns it: the plugin data directory, or the default
+ * `~/.cassandra`. A CASSANDRA_HOME is not, and neither is any other root the pointer names,
+ * since the pointer does not say where that root came from (one naming the plugin data
+ * directory is made owner-only by the front end that sees CLAUDE_PLUGIN_DATA).
+ */
+async function resolveDataRoot(io: Io): Promise<{ root: string; owned: boolean }> {
+  const home = await io.env('CASSANDRA_HOME')
+  const explicit = home ?? (await io.env('CLAUDE_PLUGIN_DATA'))
   if (explicit) {
     await rememberDataRoot(io, explicit)
-    return explicit
+    return { root: explicit, owned: home === undefined }
   }
-  const home = await homeBase(io)
-  return (await readRememberedDataRoot(io, home)) ?? join(home, '.cassandra')
+  const base = await homeBase(io)
+  const fallback = join(base, '.cassandra')
+  const root = (await readRememberedDataRoot(io, base)) ?? fallback
+  return { root, owned: root === fallback }
 }
 
 /**

@@ -13,7 +13,8 @@
     "src/**/*.ts",
     "scripts/**/*.ts",
     "test/**/*.ts",
-    "mod/**/*.ts"
+    "mod/**/*.ts",
+    "mod/**/*.tsx"
   ],
   "ignoreDependencies": [
     "claude-code"
