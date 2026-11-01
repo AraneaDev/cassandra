@@ -1,3 +1,4 @@
+import type { Outcome } from '../src/core/engine.ts'
 import type { Io } from '../src/core/io.ts'
 import { stableStringify } from '../src/core/fingerprint.ts'
 import { pathsFor } from '../src/core/paths.ts'
@@ -37,6 +38,17 @@ export type Retesting = Map<string, { state: RetestState; cwd: string; reason?: 
  */
 export async function callDigest(io: Io, tool: string, input: unknown, cwd: string): Promise<string> {
   return io.sha256(stableStringify({ tool, input, cwd }))
+}
+
+/**
+ * What a retest's call came to, as the tracked hook settles it: a pass is `passed` and logs
+ * `retest_cleared`, a failure is `failed` and logs `retest_failed`. Null for a call that
+ * never ran (a denial, a refused permission, an interrupt), which settles nothing.
+ */
+export function retestVerdict(outcome: Outcome): { state: 'passed' | 'failed'; stat: 'retest_cleared' | 'retest_failed' } | null {
+  if (outcome.kind === 'success') return { state: 'passed', stat: 'retest_cleared' }
+  if (outcome.kind === 'failure') return { state: 'failed', stat: 'retest_failed' }
+  return null
 }
 
 /** The person's own words for the press that raised the call, as the engine reads `consent`. */
