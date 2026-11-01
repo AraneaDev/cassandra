@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.33](https://github.com/AraneaDev/cassandra/compare/v0.0.32...v0.0.33) (2026-11-01)
+
+
+### Fixes
+
+* **hooks:** leave quietly while the classic binary is not built ([#84](https://github.com/AraneaDev/cassandra/issues/84)) ([603ccb5](https://github.com/AraneaDev/cassandra/commit/603ccb527a6a2000127491bfc2bafaefaff4c4b5))
+
 ## [0.0.32](https://github.com/AraneaDev/cassandra/compare/v0.0.31...v0.0.32) (2026-11-01)
 
 
