@@ -24,17 +24,17 @@ test('narrow and short: no branch, short counters inside the header, digit tabs,
 })
 
 test('medium: branch, the counter band, tab names, a blank row before each card', () => {
-  // 30 rows less header, tabs, the band's 4, the key bar, and gap, title and blank of History: 20; Just warned takes its gap and 7.
+  // 30 rows less header, the head spacing's 4, tabs, the band's 4, the key bar, and gap, title and blank of History: 16; Just warned takes its gap and 7.
   expect(layoutOf(model(10, { warned: true }), 70, 30)).toEqual({
     tier: 'medium', tooShort: false, height: 30, gaps: true, header: { branch: true, commit: false }, counters: 'tiles',
-    tabs: 'names', justWarned: true, historyTitle: true, historyGap: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 12 }, detail: 'none', retest: null, full: null,
+    tabs: 'names', justWarned: true, historyTitle: true, historyGap: true, notice: false, search: null, keys: 0, list: { start: 0, count: 6, more: 4, rows: 8 }, detail: 'none', retest: null, full: null,
   })
 })
 
 test('wide: branch, commit and the counter band', () => {
   expect(layoutOf(model(10, { selected: 0, expanded: true }), 120, 50)).toEqual({
     tier: 'wide', tooShort: false, height: 50, gaps: true, header: { branch: true, commit: true }, counters: 'tiles',
-    tabs: 'names', justWarned: false, historyTitle: true, historyGap: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 31 }, detail: 'full', retest: null, full: null,
+    tabs: 'names', justWarned: false, historyTitle: true, historyGap: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 27 }, detail: 'full', retest: null, full: null,
   })
 })
 
@@ -47,7 +47,7 @@ test('narrow and tall: the counters keep their one short line', () => {
 test('the counter band costs four rows: its top edge, figures, labels and bottom edge', () => {
   expect(ROWS.tiles).toBe(4)
   // Tall medium against short medium: the band, and the blank rows before the History card.
-  expect(layoutOf(model(0), 70, 22).list.rows).toBe(22 - 1 - 1 - ROWS.tiles - 1 - ROWS.cardGap - ROWS.historyTitle - ROWS.titleGap)
+  expect(layoutOf(model(0), 70, 22).list.rows).toBe(22 - 1 - ROWS.headSpacing - 1 - ROWS.tiles - 1 - ROWS.cardGap - ROWS.historyTitle - ROWS.titleGap)
   expect(layoutOf(model(0), 70, 21).list.rows).toBe(21 - 1 - 1 - 1 - ROWS.historyTitle - ROWS.titleGap)
 })
 
@@ -123,7 +123,7 @@ test('an expanded detail on a short pane drops to compact before the list loses 
 })
 
 test('an empty list has an empty window', () => {
-  expect(layoutOf(model(0), 70, 30).list).toEqual({ start: 0, count: 0, more: 0, rows: 20 })
+  expect(layoutOf(model(0), 70, 30).list).toEqual({ start: 0, count: 0, more: 0, rows: 16 })
 })
 
 test('a notice takes its own row from the list, while one list row is left', () => {

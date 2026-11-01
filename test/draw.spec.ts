@@ -122,10 +122,10 @@ describe('drawPane', () => {
     const medium = draw(model(), 70, 30)
     expect(medium.texts[0]).toContain('ci/release-please')
     expect(medium.texts[0]).not.toContain('0cc107b')
-    expect(medium.texts[1]).toContain('Warnings²')
+    expect(medium.texts[2]).toContain('Warnings²')
     const wide = draw(model(), 120, 50)
     expect(wide.texts[0]).toContain('ci/release-please · 0cc107b')
-    expect(wide.texts[1]).toMatch(/History⁴ +Warnings² +Stale¹ +Denied¹/)
+    expect(wide.texts[2]).toMatch(/History⁴ +Warnings² +Stale¹ +Denied¹/)
   })
 
   test('the header: the project bold, the status pill against the right edge in a status colour', () => {
@@ -154,13 +154,13 @@ describe('drawPane', () => {
   test('counters: a framed band when medium or wide and tall, one short line when narrow, in the header when short', () => {
     for (const columns of [70, 120]) {
       const tall = draw(model(), columns, 50)
-      expect(tall.texts[2]!.trim()).toMatch(/^╭─+╮$/)
-      expect(tall.texts[3]).toMatch(/│ 2 +│ 4 +│ 3 +│ 1 +│/)
-      expect(tall.texts[4]).toMatch(/│ warn now +│ remembered +│ warnings today +│ cleared by retest +│/)
-      expect(tall.texts[5]!.trim()).toMatch(/^╰─+╯$/)
-      expect(tall.texts[6]!.trim()).toBe('')
+      expect(tall.texts[6]!.trim()).toMatch(/^╭─+╮$/)
+      expect(tall.texts[7]).toMatch(/│ 2 +│ 4 +│ 3 +│ 1 +│/)
+      expect(tall.texts[8]).toMatch(/│ warn now +│ remembered +│ warnings today +│ cleared by retest +│/)
+      expect(tall.texts[9]!.trim()).toMatch(/^╰─+╯$/)
+      expect(tall.texts[10]!.trim()).toBe('')
     }
-    expect(draw(model(), 40, 30).texts[2]).toContain('2 warn  4 kept  3 today  1 cleared')
+    expect(draw(model(), 40, 30).texts[6]).toContain('2 warn  4 kept  3 today  1 cleared')
     const short = draw(model(), 70, 15)
     expect(short.texts[0]).toContain('4 remembered')
     expect(short.texts[2]).toContain('◷ History')
@@ -695,7 +695,7 @@ describe('spacing and narrow counters', () => {
       for (let columns = 40; columns <= 55; columns++) {
         const { texts, layout } = draw(model({ counters }), columns, 30)
         expect(layout.counters).toBe('short')
-        const line = texts[2]!
+        const line = texts[6]!
         expect(cells(line)).toBe(columns)
         expect(line).not.toContain('…')
         for (const n of Object.values(counters)) expect(line).toMatch(new RegExp(`(^| )${n} [a-z]`))
@@ -760,37 +760,52 @@ describe('the design: cards, the counter band, the footer and the ground', () =>
       const { lines, texts, layout } = showing(columns, 40)
       expect(layout.counters).toBe('tiles')
       const pad = ' '.repeat(2)
-      expect(texts[2]).toBe(`${pad}╭${'─'.repeat(columns - 6)}╮${pad}`)
-      expect(texts[5]).toBe(`${pad}╰${'─'.repeat(columns - 6)}╯${pad}`)
-      for (const at of [3, 4]) {
+      expect(texts[6]).toBe(`${pad}╭${'─'.repeat(columns - 6)}╮${pad}`)
+      expect(texts[9]).toBe(`${pad}╰${'─'.repeat(columns - 6)}╯${pad}`)
+      for (const at of [7, 8]) {
         expect(texts[at]!.startsWith(`${pad}│ `)).toBe(true)
         expect(texts[at]!.endsWith(` │${pad}`)).toBe(true)
         expect(cells(texts[at]!)).toBe(columns)
       }
       // The rules between the tiles stand in the same columns on the figure and the label line.
       const bars = (t: string) => [...t].flatMap((c, i) => (c === '│' ? [i] : []))
-      expect(bars(texts[3]!)).toHaveLength(5)
-      expect(bars(texts[3]!)).toEqual(bars(texts[4]!))
-      expect(texts[3]!.split('│').slice(1, 5).map((s) => s.trim())).toEqual(['2', '4', '3', '1'])
-      const labels = texts[4]!.split('│').slice(1, 5).map((s) => s.trim())
+      expect(bars(texts[7]!)).toHaveLength(5)
+      expect(bars(texts[7]!)).toEqual(bars(texts[8]!))
+      expect(texts[7]!.split('│').slice(1, 5).map((s) => s.trim())).toEqual(['2', '4', '3', '1'])
+      const labels = texts[8]!.split('│').slice(1, 5).map((s) => s.trim())
       expect(labels).toEqual(columns >= 70 ? ['warn now', 'remembered', 'warnings today', 'cleared by retest'] : ['warn now', 'remembered', 'today', 'cleared'])
       // Each tile is its label wide, the room left shared out evenly between them.
-      const slots = bars(texts[3]!).slice(1).map((b, i) => b - bars(texts[3]!)[i]! - 3)
+      const slots = bars(texts[7]!).slice(1).map((b, i) => b - bars(texts[7]!)[i]! - 3)
       const spare = slots.map((w, i) => w - cells(labels[i]!))
       expect(Math.max(...spare) - Math.min(...spare)).toBeLessThanOrEqual(1)
       expect(slots.reduce((a, b) => a + b, 0) + 9).toBe(columns - 8)
       // The frame and the rules between tiles in the frame colour; the figures bold in their colours.
-      for (const at of [2, 3, 4, 5]) {
+      for (const at of [6, 7, 8, 9]) {
         for (const n of walk(lines[at]!).filter((x) => x.type === 'Text' && /[╭╮╰╯│─]/.test(text(x)))) expect(n.props.color).toBe('subtle')
       }
-      const figure = walk(lines[3]!).find((n) => n.type === 'Text' && text(n).trim() === '2')!
+      const figure = walk(lines[7]!).find((n) => n.type === 'Text' && text(n).trim() === '2')!
       expect([figure.props.bold, figure.props.color]).toEqual([true, 'error'])
     }
     // Narrow keeps its one summary line.
     const narrow = showing(40, 40)
     expect(narrow.layout.counters).toBe('short')
-    expect(narrow.texts[2]).not.toContain('╭')
-    expect(narrow.texts[2]).toContain('2 warn')
+    expect(narrow.texts[6]).not.toContain('╭')
+    expect(narrow.texts[6]).toContain('2 warn')
+  })
+
+  test('a tall pane spaces out the head: blank, tabs, blank, a rule, blank, then the counters', () => {
+    for (const columns of [40, 70, 120]) {
+      const { texts } = showing(columns, 40)
+      expect(texts[1]!.trim()).toBe('')
+      expect(texts[2]).toContain('History⁴')
+      expect(texts[3]!.trim()).toBe('')
+      expect(texts[4]!.trim()).toMatch(/^─+$/)
+      expect(cells(texts[4]!)).toBe(columns)
+      expect(texts[5]!.trim()).toBe('')
+      expect(texts[6]).toMatch(columns >= 56 ? /╭─+╮/ : /2 warn/)
+    }
+    // A short pane keeps the tabs right under the header.
+    expect(showing(70, 15).texts[1]).toContain('History⁴')
   })
 
   test('the key bar ends the pane at every height, filled with blank rows over a short list', () => {
