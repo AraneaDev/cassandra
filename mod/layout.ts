@@ -133,11 +133,13 @@ const WIDE_FROM = 100
 
 /** Rows each part of the pane costs: the layout budgets these, and the drawing draws exactly these. */
 export const ROWS = {
-  header: 1, tabs: 1, tiles: 4, shortCounters: 1, cardGap: 1, titleGap: 1, justWarned: 7, historyTitle: 1, notice: 1, search: 1, keysTitle: 1, keyBar: 1,
+  header: 1, headSpacing: 4, tabs: 1, tiles: 4, shortCounters: 1, cardGap: 1, titleGap: 1, justWarned: 7, historyTitle: 1, notice: 1, search: 1, keysTitle: 1, keyBar: 1,
   fullDetail: 9, compactDetail: 3, retestGap: 1, retestTitle: 1, fullTitle: 1, fullMore: 1,
 } as const
 const HEADER_ROWS = ROWS.header
 const TABS_ROWS = ROWS.tabs
+/** A tall pane's room around the tabs: a blank row each side of them, a rule, and a blank row under it. */
+const HEAD_SPACING_ROWS = ROWS.headSpacing
 const TILES_ROWS = ROWS.tiles
 const SHORT_COUNTERS_ROWS = ROWS.shortCounters
 const JUST_WARNED_ROWS = ROWS.justWarned
@@ -234,7 +236,7 @@ export function layoutOf(model: PaneModel, columns: number, rows: number, extras
   const gaps = rows >= COUNTERS_IN_HEADER_BELOW
   const gap = gaps ? CARD_GAP_ROWS : 0
   const counterRows = counters === 'tiles' ? TILES_ROWS : counters === 'short' ? SHORT_COUNTERS_ROWS : 0
-  const chrome = HEADER_ROWS + TABS_ROWS + counterRows + KEY_BAR_ROWS + gap + HISTORY_TITLE_ROWS + TITLE_GAP_ROWS
+  const chrome = HEADER_ROWS + (gaps ? HEAD_SPACING_ROWS : 0) + TABS_ROWS + counterRows + KEY_BAR_ROWS + gap + HISTORY_TITLE_ROWS + TITLE_GAP_ROWS
   let available = rows - chrome
   // The card goes first when it would leave the list nothing.
   const justWarned = model.justWarned !== null && available - gap - JUST_WARNED_ROWS >= 1

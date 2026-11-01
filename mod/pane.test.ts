@@ -69,14 +69,16 @@ test('at every size each drawn line is exactly the pane wide and the pane fits i
       // Every glyph drawn here takes one cell, so its length is its width.
       for (const l of lines) expect([...l].length).toBe(columns)
       expect(lines[0]).toContain('proj')
+      // The tabs sit under the header, with a blank row between them on a tall pane.
+      const tabs = lines[rows >= 22 ? 2 : 1]!
       if (columns === 40) {
         expect(lines[0]).not.toContain('main')
-        expect(lines[1]).toContain(' History¹² ')
-        expect(lines[1]).toContain(' 2')
-        expect(lines[1]).not.toContain('Warnings')
+        expect(tabs).toContain(' History¹² ')
+        expect(tabs).toContain(' 2')
+        expect(tabs).not.toContain('Warnings')
       } else {
         expect(lines[0]).toContain('main')
-        expect(lines[1]).toMatch(/History¹² +Warnings¹² +Stale⁰ +Denied⁰/)
+        expect(tabs).toMatch(/History¹² +Warnings¹² +Stale⁰ +Denied⁰/)
       }
       if (columns === 120) expect(lines[0]).toContain('main · 0cc107b')
       expect(lines[0]).toContain('12 would warn')
@@ -186,7 +188,7 @@ test('an expanded row with a fix note shows the fix line', async ($, on) => {
   // Fails, then passes (a fix note is kept and the record forgotten), then fails again.
   on('tool.call', { tool: 'Bash' }, async () => (++calls === 2 ? { result: 'ok' } : { isError: true, result: 'Exit code 1', text: 'Exit code 1\nboom' }))
   for (let i = 0; i < 3; i++) await $.tool.call({ tool: 'Bash', command: 'bun test # fixed once' })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  const ui = await $.ui.mount({ ...PANE, props: sized(120, 50), surface: 'terminal', viewport })
   const [key] = await rowKeys(ui)
   await ui.press({ key: key! })
   const lines = await paneLines(ui)

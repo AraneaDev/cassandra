@@ -681,7 +681,10 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, layout
   const gap = (k: string): Line[] => (layout.gaps ? [blankLine(k)] : [])
   const body: Line[] = [
     header(f, model, layout),
+    // A tall pane spaces the tabs out: a blank row each side, then a rule and a blank row before the counters.
+    ...gap('head-gap'),
     tabs(f, model, layout),
+    ...(layout.gaps ? [blankLine('tabs-gap'), line(f, 'head-rule', [{ text: '─'.repeat(f.inner), color: FAINT }]), blankLine('rule-gap')] : []),
     ...counters(f, model, layout),
     ...(layout.justWarned ? [...gap('warned-gap'), ...justWarned(fs, model)] : []),
     ...(layout.historyTitle ? [...gap('history-gap'), titleRule(f, 'history-title', glyph, tab, historyNote(model, layout))] : []),
