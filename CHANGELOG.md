@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.32](https://github.com/AraneaDev/cassandra/compare/v0.0.31...v0.0.32) (2026-11-01)
+
+
+### Features
+
+* **pane:** give the tabs room on a tall pane ([#82](https://github.com/AraneaDev/cassandra/issues/82)) ([fcac94d](https://github.com/AraneaDev/cassandra/commit/fcac94deef55e9b6ca0f3e930ae857797ddd33ec))
+
 ## [0.0.31](https://github.com/AraneaDev/cassandra/compare/v0.0.30...v0.0.31) (2026-11-01)
 
 
