@@ -3,26 +3,26 @@
   <rect x="0.5" y="0.5" width="387" height="670" rx="8" fill="none" stroke="#26303d"/>
   <rect x="248.2" y="22" width="109.2" height="19" fill="#cf6a63"/>
   <rect x="29.8" y="41" width="78.0" height="19" fill="#9a8fd0"/>
-  <rect x="22.0" y="345" width="31.2" height="19" fill="#1d2633"/>
-  <rect x="53.2" y="345" width="54.6" height="19" fill="#1d2633"/>
-  <rect x="107.8" y="345" width="85.8" height="19" fill="#1d2633"/>
-  <rect x="193.6" y="345" width="171.6" height="19" fill="#1d2633"/>
-  <rect x="22.0" y="364" width="171.6" height="19" fill="#1d2633"/>
-  <rect x="193.6" y="364" width="62.4" height="19" fill="#cf6a63"/>
-  <rect x="256.0" y="364" width="109.2" height="19" fill="#1d2633"/>
-  <rect x="22.0" y="383" width="343.2" height="19" fill="#1d2633"/>
-  <rect x="22.0" y="402" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="22.0" y="402" width="23.4" height="19" fill="#1d2633"/>
+  <rect x="45.4" y="402" width="54.6" height="19" fill="#1d2633"/>
+  <rect x="100.0" y="402" width="93.6" height="19" fill="#1d2633"/>
   <rect x="193.6" y="402" width="171.6" height="19" fill="#1d2633"/>
   <rect x="22.0" y="421" width="171.6" height="19" fill="#1d2633"/>
-  <rect x="193.6" y="421" width="171.6" height="19" fill="#1d2633"/>
-  <rect x="22.0" y="440" width="171.6" height="19" fill="#1d2633"/>
-  <rect x="193.6" y="440" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="193.6" y="421" width="62.4" height="19" fill="#cf6a63"/>
+  <rect x="256.0" y="421" width="109.2" height="19" fill="#1d2633"/>
+  <rect x="22.0" y="440" width="343.2" height="19" fill="#1d2633"/>
   <rect x="22.0" y="459" width="171.6" height="19" fill="#1d2633"/>
   <rect x="193.6" y="459" width="171.6" height="19" fill="#1d2633"/>
   <rect x="22.0" y="478" width="171.6" height="19" fill="#1d2633"/>
   <rect x="193.6" y="478" width="171.6" height="19" fill="#1d2633"/>
   <rect x="22.0" y="497" width="171.6" height="19" fill="#1d2633"/>
   <rect x="193.6" y="497" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="22.0" y="516" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="193.6" y="516" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="22.0" y="535" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="193.6" y="535" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="22.0" y="554" width="171.6" height="19" fill="#1d2633"/>
+  <rect x="193.6" y="554" width="171.6" height="19" fill="#1d2633"/>
   <rect x="22.0" y="630" width="7.8" height="19" fill="#171e28"/>
   <rect x="29.8" y="630" width="23.4" height="19" fill="#171e28"/>
   <rect x="53.2" y="630" width="46.8" height="19" fill="#171e28"/>
@@ -36,34 +36,34 @@
   <text x="22" y="36" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> acme-api                    </tspan><tspan fill="#10151d" font-weight="bold"> 3 would warn </tspan><tspan fill="#ece5d5"> </tspan></text>
   <text x="22" y="55" xml:space="preserve"><tspan fill="#ece5d5"> </tspan><tspan fill="#10151d" font-weight="bold"> History⁶ </tspan><tspan fill="#ece5d5"> </tspan><tspan fill="#7a8593"> 2³ </tspan><tspan fill="#ece5d5"> </tspan><tspan fill="#7a8593"> 3² </tspan><tspan fill="#ece5d5"> </tspan><tspan fill="#7a8593"> 4¹ </tspan><tspan fill="#ece5d5">                  </tspan></text>
   <text x="22" y="74" xml:space="preserve"><tspan fill="#cf6a63" font-weight="bold"> 3</tspan><tspan fill="#7a8593"> warn  </tspan><tspan fill="#ece5d5" font-weight="bold">6</tspan><tspan fill="#7a8593"> kept  </tspan><tspan fill="#d8a13f" font-weight="bold">2</tspan><tspan fill="#7a8593"> today  </tspan><tspan fill="#7fb3a3" font-weight="bold">1</tspan><tspan fill="#7a8593"> cleared         </tspan></text>
-  <text x="22" y="93" xml:space="preserve"><tspan fill="#3a4553"> ── </tspan><tspan fill="#d8a13f" font-weight="bold">! </tspan><tspan fill="#d97757" font-weight="bold">Just warned </tspan><tspan fill="#3a4553">───── </tspan><tspan fill="#7a8593">14:31 </tspan><tspan fill="#ece5d5">d: </tspan><tspan fill="#ece5d5">Dismiss</tspan><tspan fill="#3a4553"> ── </tspan></text>
-  <text x="22" y="112" xml:space="preserve"><tspan fill="#7a8593"> you ran   </tspan><tspan fill="#ece5d5">bun test test/billing.test.ts    </tspan></text>
-  <text x="22" y="131" xml:space="preserve"><tspan fill="#7a8593"> matched   </tspan><tspan fill="#ece5d5">the same call, 3× before </tspan><tspan fill="#7a8593">(last … </tspan></text>
-  <text x="22" y="150" xml:space="preserve"><tspan fill="#7a8593"> because   </tspan><tspan fill="#cf6a63">Exit code 1 (fail) invoice tota… </tspan></text>
-  <text x="22" y="169" xml:space="preserve"><tspan fill="#7a8593"> still bad </tspan><tspan fill="#ece5d5">Repository unchanged since: HEA… </tspan></text>
-  <text x="22" y="188" xml:space="preserve"><tspan fill="#7a8593"> fix       </tspan><tspan fill="#7fb3a3">Last time this started working … </tspan></text>
-  <text x="22" y="207" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
-  <text x="22" y="226" xml:space="preserve"><tspan fill="#3a4553"> ── </tspan><tspan fill="#7a8593">◷ </tspan><tspan fill="#d97757" font-weight="bold">History </tspan><tspan fill="#3a4553">──────────────── </tspan><tspan fill="#7a8593">6 records</tspan><tspan fill="#3a4553"> ── </tspan></text>
-  <text x="22" y="245" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> Today                                      </tspan></text>
-  <text x="22" y="264" xml:space="preserve"><tspan fill="#cf6a63">  ▸ </tspan><tspan fill="#7a8593">14:29  </tspan><tspan fill="#ece5d5">bun test test/billing.test.ts</tspan><tspan fill="#7a8593"> ×3 </tspan></text>
-  <text x="22" y="283" xml:space="preserve"><tspan fill="#7a8593">  ▸ 11:05  gh pr create --base m… ×2  stale </tspan></text>
-  <text x="22" y="302" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
-  <text x="22" y="321" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> Yesterday                                  </tspan></text>
-  <text x="22" y="340" xml:space="preserve"><tspan fill="#cf6a63">  ▸ </tspan><tspan fill="#7a8593">16:40  </tspan><tspan fill="#ece5d5">mcp__db__query {"sql":"selec…</tspan><tspan fill="#7a8593"> ×1 </tspan></text>
-  <text x="22" y="359" xml:space="preserve"><tspan fill="#cf6a63">  ▾ </tspan><tspan fill="#7a8593">09:40  </tspan><tspan fill="#ece5d5">bun run li…</tspan><tspan fill="#7a8593"> (in packages/web) ×2 </tspan></text>
-  <text x="22" y="378" xml:space="preserve"><tspan fill="#7a8593">    why it failed     </tspan><tspan fill="#10151d" font-weight="bold"> exit 2 </tspan><tspan fill="#ece5d5">              </tspan></text>
-  <text x="22" y="397" xml:space="preserve"><tspan fill="#cf6a63">                      Exit code 2 src/rout… </tspan></text>
-  <text x="22" y="416" xml:space="preserve"><tspan fill="#7a8593">    would it warn now </tspan><tspan fill="#cf6a63" font-weight="bold">yes                   </tspan></text>
-  <text x="22" y="435" xml:space="preserve"><tspan fill="#7a8593">      then            </tspan><tspan fill="#ece5d5">HEAD a3f9c2e, 1 unco… </tspan></text>
-  <text x="22" y="454" xml:space="preserve"><tspan fill="#7a8593">      now             </tspan><tspan fill="#ece5d5">HEAD a3f9c2e, 1 unco… </tspan></text>
-  <text x="22" y="473" xml:space="preserve"><tspan fill="#7a8593">    seen              </tspan><tspan fill="#ece5d5">10-28 09:12 → 10-29 … </tspan></text>
-  <text x="22" y="492" xml:space="preserve"><tspan fill="#7a8593">    session           </tspan><tspan fill="#ece5d5">in this session       </tspan></text>
-  <text x="22" y="511" xml:space="preserve"><tspan fill="#7a8593">    fix               </tspan><tspan fill="#7fb3a3">Last time this start… </tspan></text>
-  <text x="22" y="530" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
-  <text x="22" y="549" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> Wednesday                                  </tspan></text>
-  <text x="22" y="568" xml:space="preserve"><tspan fill="#d8a13f">  ▸ </tspan><tspan fill="#7a8593">15:03  </tspan><tspan fill="#ece5d5">curl -fsSL https://s…</tspan><tspan fill="#7a8593"> ×1</tspan><tspan fill="#d8a13f">  denied </tspan></text>
-  <text x="22" y="587" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
-  <text x="22" y="606" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> Last week                                  </tspan></text>
-  <text x="22" y="625" xml:space="preserve"><tspan fill="#7a8593">  ▸ 10-21  docker compose up -d … ×1  stale </tspan></text>
+  <text x="22" y="93" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="112" xml:space="preserve"><tspan fill="#3a4553"> ── </tspan><tspan fill="#d8a13f" font-weight="bold">! </tspan><tspan fill="#d97757" font-weight="bold">Just warned </tspan><tspan fill="#3a4553">───── </tspan><tspan fill="#7a8593">14:31 </tspan><tspan fill="#ece5d5">d: </tspan><tspan fill="#ece5d5">Dismiss</tspan><tspan fill="#3a4553"> ── </tspan></text>
+  <text x="22" y="131" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="150" xml:space="preserve"><tspan fill="#7a8593"> you ran   </tspan><tspan fill="#ece5d5">bun test test/billing.test.ts    </tspan></text>
+  <text x="22" y="169" xml:space="preserve"><tspan fill="#7a8593"> matched   </tspan><tspan fill="#ece5d5">the same call, 3× before </tspan><tspan fill="#7a8593">(last … </tspan></text>
+  <text x="22" y="188" xml:space="preserve"><tspan fill="#7a8593"> because   </tspan><tspan fill="#cf6a63">Exit code 1 (fail) invoice tota… </tspan></text>
+  <text x="22" y="207" xml:space="preserve"><tspan fill="#7a8593"> still bad </tspan><tspan fill="#ece5d5">Repository unchanged since: HEA… </tspan></text>
+  <text x="22" y="226" xml:space="preserve"><tspan fill="#7a8593"> fix       </tspan><tspan fill="#7fb3a3">Last time this started working … </tspan></text>
+  <text x="22" y="245" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="264" xml:space="preserve"><tspan fill="#3a4553"> ── </tspan><tspan fill="#7a8593">◷ </tspan><tspan fill="#d97757" font-weight="bold">History </tspan><tspan fill="#3a4553">──────────────── </tspan><tspan fill="#7a8593">6 records</tspan><tspan fill="#3a4553"> ── </tspan></text>
+  <text x="22" y="283" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="302" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> Today                                      </tspan></text>
+  <text x="22" y="321" xml:space="preserve"><tspan fill="#cf6a63"> ▸ </tspan><tspan fill="#7a8593">14:29  </tspan><tspan fill="#ece5d5">bun test test/billing.test.ts </tspan><tspan fill="#7a8593"> ×3 </tspan></text>
+  <text x="22" y="340" xml:space="preserve"><tspan fill="#7a8593"> ▸ 11:05  gh pr create --base ma… ×2  stale </tspan></text>
+  <text x="22" y="359" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="378" xml:space="preserve"><tspan fill="#ece5d5" font-weight="bold"> Yesterday                                  </tspan></text>
+  <text x="22" y="397" xml:space="preserve"><tspan fill="#cf6a63"> ▸ </tspan><tspan fill="#7a8593">16:40  </tspan><tspan fill="#ece5d5">mcp__db__query {"sql":"select…</tspan><tspan fill="#7a8593"> ×1 </tspan></text>
+  <text x="22" y="416" xml:space="preserve"><tspan fill="#cf6a63"> ▾ </tspan><tspan fill="#7a8593">09:40  </tspan><tspan fill="#ece5d5">bun run lint</tspan><tspan fill="#7a8593"> (in packages/web) ×2 </tspan></text>
+  <text x="22" y="435" xml:space="preserve"><tspan fill="#7a8593">    why it failed     </tspan><tspan fill="#10151d" font-weight="bold"> exit 2 </tspan><tspan fill="#ece5d5">              </tspan></text>
+  <text x="22" y="454" xml:space="preserve"><tspan fill="#cf6a63">                      Exit code 2 src/rout… </tspan></text>
+  <text x="22" y="473" xml:space="preserve"><tspan fill="#7a8593">    would it warn now </tspan><tspan fill="#cf6a63" font-weight="bold">yes                   </tspan></text>
+  <text x="22" y="492" xml:space="preserve"><tspan fill="#7a8593">      then            </tspan><tspan fill="#ece5d5">HEAD a3f9c2e, 1 unco… </tspan></text>
+  <text x="22" y="511" xml:space="preserve"><tspan fill="#7a8593">      now             </tspan><tspan fill="#ece5d5">HEAD a3f9c2e, 1 unco… </tspan></text>
+  <text x="22" y="530" xml:space="preserve"><tspan fill="#7a8593">    seen              </tspan><tspan fill="#ece5d5">10-28 09:12 → 10-29 … </tspan></text>
+  <text x="22" y="549" xml:space="preserve"><tspan fill="#7a8593">    session           </tspan><tspan fill="#ece5d5">in this session       </tspan></text>
+  <text x="22" y="568" xml:space="preserve"><tspan fill="#7a8593">    fix               </tspan><tspan fill="#7fb3a3">Last time this start… </tspan></text>
+  <text x="22" y="587" xml:space="preserve"><tspan fill="#7a8593"> 2 more ↓                                   </tspan></text>
+  <text x="22" y="606" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
+  <text x="22" y="625" xml:space="preserve"><tspan fill="#ece5d5">                                            </tspan></text>
   <text x="22" y="644" xml:space="preserve"><tspan fill="#ece5d5"> </tspan><tspan fill="#ece5d5">r: </tspan><tspan fill="#ece5d5">Retest</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">f: </tspan><tspan fill="#ece5d5">Forget</tspan><tspan fill="#ece5d5">  </tspan><tspan fill="#ece5d5">a: </tspan><tspan fill="#ece5d5">Forget all</tspan><tspan fill="#ece5d5">        </tspan></text>
 </svg>
