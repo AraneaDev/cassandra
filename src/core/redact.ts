@@ -32,14 +32,16 @@ const WHOLE: readonly RegExp[] = [
 ]
 
 /**
- * An ANSI CSI sequence (`\x1b[32m` and the like). Dropped before matching: an SGR code ends
- * in a letter, which would otherwise read as part of the name before a secret and hide it.
+ * A terminal escape sequence: a CSI (`\x1b[32m`, or the C1 form `\x9b32m`), an nF one
+ * (`\x1b(B`, which `tput sgr0` emits), or a two-byte one (`\x1b7`, `\x1bM`). Dropped before
+ * matching: each ends in a character that would otherwise read as part of the name before
+ * a secret and hide it. Every alternative is anchored at its introducer, so it is linear.
  */
-const CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g
+const ESCAPE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|[ -/]+[0-~]|[0-_])|\x9b[0-?]*[ -/]*[@-~]/g
 /** `scheme://user:pass@`, the `user:pass` only; a scheme is only tried from the start of a name. */
 const URL_CREDENTIALS = /(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/g
-/** `Authorization: Basic <base64>`, the credentials only. */
-const BASIC = /(?<![A-Za-z0-9_-])(authorization\s*:\s*basic\s+)[A-Za-z0-9+/]+=*/gi
+/** `Authorization: Basic <base64>` (or `Proxy-Authorization`, or a quoted JSON header), the credentials only. */
+const BASIC = /(?<![A-Za-z0-9_-])((?:proxy-)?authorization["']?\s*:\s*["']?basic\s+)[A-Za-z0-9+/]+=*/gi
 /** `Bearer <token>`, the token only. */
 const BEARER = /(?<![A-Za-z0-9])(bearer\s+)[A-Za-z0-9._~+/=-]+/gi
 /** Where a name starts: not inside another name. */
@@ -50,12 +52,12 @@ const KEY_VALUE = new RegExp(String.raw`(${NAME_START}${KEY_NAME}["']?\s*[:=]\s*
 /** `--key value` and `--key=value`, the value only; a following flag is not a value. */
 const FLAG_VALUE = new RegExp(String.raw`(${NAME_START}--${KEY_NAME}(?:=|\s+))(?!-)${VALUE}`, 'gi')
 
-/** The text without its ANSI CSI sequences. */
-const withoutColour = (text: string): string => text.replace(CSI, '')
+/** The text without its terminal escape sequences. */
+const withoutEscapes = (text: string): string => text.replace(ESCAPE, '')
 
-/** The text with its ANSI CSI sequences dropped and every likely secret replaced by `[redacted]`. Idempotent. */
+/** The text with its terminal escape sequences dropped and every likely secret replaced by `[redacted]`. Idempotent. */
 export function redactSecrets(text: string): string {
-  let out = withoutColour(text)
+  let out = withoutEscapes(text)
   for (const re of WHOLE) out = out.replace(re, REDACTED)
   return out
     .replace(URL_CREDENTIALS, `$1${REDACTED}@`)
@@ -66,7 +68,7 @@ export function redactSecrets(text: string): string {
 }
 
 /**
- * Whether redaction would change any of a call's input beyond dropping colour codes. For
+ * Whether redaction would change any of a call's input beyond dropping escape sequences. For
  * Bash only the command is judged, since the rest (a model-written `description`, flags)
  * is never run as such and must not cost the call its retest; any other tool's input is
  * judged whole: its JSON (which catches a secret under a key, `{"password": "…"}`) and
@@ -85,5 +87,5 @@ export function inputLooksSecret(input: unknown, tool = ''): boolean {
   return strings(input).some(changes)
 }
 
-/** Whether redaction replaces anything in the text, colour codes aside. */
-const changes = (text: string): boolean => redactSecrets(text) !== withoutColour(text)
+/** Whether redaction replaces anything in the text, escape sequences aside. */
+const changes = (text: string): boolean => redactSecrets(text) !== withoutEscapes(text)

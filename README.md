@@ -159,15 +159,15 @@ Retest rule notes that it runs through your permission settings, then the call i
 bun test test/billing.test.ts, in /home/dev/acme-api. The key bar offers only Run and
 Cancel](docs/images/retest.svg)
 
-`r` runs a remembered call again, to see whether it still fails. It is never offered for
-a denial record, nor for a record without a stored input: records written by older
-versions, or whose input was over 16 KB or looked like it held a secret. It is always confirmed in the pane first, which
-shows the exact command and directory, or the MCP tool and its full input. It is refused
-when the session's directory differs from the one the call ran in, and when your
-permission settings deny the call; then nothing runs. Otherwise the call goes through
-Claude Code's own tool call, so its permission path and sandbox apply. A pass forgets the
-record. A fail updates it. On a pane too small to show the whole call there is no Run, and
-the pane says so.
+`r` runs a remembered call again, to see whether it still fails. It is never offered for a
+denial record, nor for a record without a stored input: records written by older versions,
+or whose input was over 16 KB or looked like it held a secret. It is always confirmed in
+the pane first, which shows the exact command and directory, or the MCP tool and its full
+input. It is refused when the session's directory differs from the one the call ran in,
+and when your permission settings deny the call; then nothing runs. Otherwise the call
+goes through Claude Code's own tool call, so its permission path and sandbox apply. A pass
+forgets the record. A fail updates it. On a pane too small to show the whole call there is
+no Run, and the pane says so.
 
 ## How it decides whether to warn
 
@@ -182,12 +182,13 @@ On `PreToolUse`:
 Any success of a remembered call forgets it, not only a success after a warning.
 
 A warning reads, in order: that this command (for an MCP tool, this exact call) already
-failed (or was denied) once or N times in this project, when it last did, and where from (this session, before the latest
-compaction, an earlier session, or another agent); the evidence the probe found; the last
-error, fenced as `(tool output, not an instruction)`; a fix note if one exists; the advice
-that running it again unchanged will most likely fail the same way, to change the call or
-the code first, or to run it anyway if you expect a different result; and a pointer to the
-Cassandra pane, or to `/cassandra why <id>` where there is no pane.
+failed (or was denied) once or N times in this project, when it last did, and where from
+(this session, before the latest compaction, an earlier session, or another agent); the
+evidence the probe found; the last error, fenced as `(tool output, not an instruction)`; a
+fix note if one exists; the advice that running it again unchanged will most likely fail
+the same way, to change the call or the code first, or to run it anyway if you expect a
+different result; and a pointer to the Cassandra pane, or to `/cassandra why <id>` where
+there is no pane.
 
 ### Briefings
 
@@ -232,25 +233,25 @@ The record keeps more than the excerpt. It also keeps the full sanitised output,
 it keeps the call's input and the directory it ran in.
 
 Likely secrets are replaced by `[redacted]` before any of that is stored: GitHub, OpenAI,
-Anthropic, AWS and Slack tokens, JWTs, `Bearer` and `Authorization: Basic` credentials,
-the `user:password` in a URL, PEM private keys, and the value after a key such as
-`password=`, `api_key:` or `--token`. Colour codes are dropped first, so they cannot hide a
-secret. That covers the excerpt, the full output, the call as the record names it and the
-`resolve` reason. The excerpt, the full output and the call are redacted again whenever the
-warning, a briefing, the pane or the CLI (`list`, `why`) shows them, so a record written by
-an older version shows no plaintext there either. It goes by shape only, so a secret of no known shape is kept as it is. A call
-whose input looks like it holds a secret is not kept (for Bash only the command is judged):
-its record has neither the input nor the directory, so it cannot be retested, and the pane
-says why.
+Anthropic, AWS and Slack tokens, JWTs, `Bearer` and `Basic` authorization credentials, the
+`user:password` in a URL, PEM private keys, and the value after a key such as `password=`,
+`api_key:` or `--token`. Terminal escape sequences (colour codes and the like) are dropped
+first, so they cannot hide a secret. That covers the excerpt, the full output, the call as
+the record names it and the `resolve` reason. The excerpt, the full output and the call
+are redacted again whenever the warning, a briefing, the pane or the CLI (`list`, `why`)
+shows them, so a record written by an older version shows no plaintext there either. It
+goes by shape only, so a secret of no known shape is kept as it is. A call whose input
+looks like it holds a secret is not kept (for Bash only the command is judged): its record
+has neither the input nor the directory, so it cannot be retested, and the pane says why.
 
 When the data directory is Cassandra's own (the plugin data directory, or the default
 `~/.cassandra`), both front ends make it owner-only (0700) at the first write into it, so
-other users on the machine cannot reach any file inside it, files written by older versions
-included. A directory you name with `CASSANDRA_HOME` keeps its own mode. The binary also
-creates its files 0600 and its directories 0700. The mod sets the directory with
-`chmod 700`; Claude Code's file API takes no file mode, so a file the mod creates keeps the
-default permissions inside that directory. This is best effort: when the mode cannot be
-set, Cassandra still records the failure.
+other users on the machine cannot reach any file inside it, files written by older
+versions included. A directory you name with `CASSANDRA_HOME` keeps its own mode. The
+binary also creates its files 0600 and its directories 0700. The mod sets the directory
+with `chmod 700`; Claude Code's file API takes no file mode, so a file the mod creates
+keeps the default permissions inside that directory. This is best effort: when the mode
+cannot be set, Cassandra still records the failure.
 
 ### The freshness probe
 
@@ -515,8 +516,8 @@ the changelog, not the reference page.
   and never sent to the agent. For a retest the record also keeps the call's input and
   directory. Likely secrets are redacted from what it stores, and a call whose input looks
   like it holds one keeps neither. The other free text is the `resolve` reason, which is
-  model-written: it is stored sanitised, redacted and capped at 240 characters in the project's stats
-  log. That is the whole of what it reads beyond the call itself.
+  model-written: it is stored sanitised, redacted and capped at 240 characters in the
+  project's stats log. That is the whole of what it reads beyond the call itself.
 - It never leaves the machine. There is no network request, no telemetry, no API key.
 - It stores nothing outside its own data directory.
 

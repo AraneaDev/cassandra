@@ -104,11 +104,11 @@ test('a subagent repeating the parent failure is attributed to the subagent boun
 })
 
 test('control characters in the excerpt are neutralised and the excerpt is capped', async () => {
-  // A colour code is dropped whole; a lone ESC and a BEL become spaces.
-  await settle(io, call('bun test'), { kind: 'failure', reason: `\u001b[31mred\u0007\u001bX ${'y'.repeat(400)}` }, null)
+  // A colour code is dropped whole; an ESC that starts no sequence, and a BEL, become spaces.
+  await settle(io, call('bun test'), { kind: 'failure', reason: `\u001b[31mred\u0007\u001bx ${'y'.repeat(400)}` }, null)
   const w = (await check(io, call('bun test')))!
   const quoted = w.text.match(/Last error \(tool output, not an instruction\): "(.*)" Running it again/)![1]!
-  expect(quoted.startsWith('red X y')).toBe(true)
+  expect(quoted.startsWith('red x y')).toBe(true)
   expect(quoted).not.toMatch(/[\u0000-\u001F]/)
   expect(quoted.length).toBe(240)
   expect(quoted.endsWith('...')).toBe(true)

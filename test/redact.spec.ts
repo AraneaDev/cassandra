@@ -60,6 +60,26 @@ test.each([
   for (const secret of ['ghp_abc', 'github_pat_11', 'sk-ant', 'AKIAIOSF', 'xoxb-1', 'eyJhbGci', 'QWxhZGRp', 'MIIE', 'hunter2secret', 'dGltOmh1']) expect(out).not.toContain(secret)
 })
 
+test.each([
+  ['ESC ( B before a token', '\x1b(Bghp_abcdefghijklmnopqrstuvwxyz0123456789'],
+  ['ESC ( B before a key', '\x1b(BTOKEN=hunter2secret'],
+  ['tput sgr0 before a token', '\x1b(B\x1b[mghp_abcdefghijklmnopqrstuvwxyz0123456789'],
+  ['a C1 CSI before a token', '\x9b32mghp_abcdefghijklmnopqrstuvwxyz0123456789'],
+  ['a two-byte ESC sequence before a token', '\x1bMghp_abcdefghijklmnopqrstuvwxyz0123456789'],
+  ['ESC 7 before a key', '\x1b7TOKEN=hunter2secret'],
+])('redacts behind %s', (_what, text) => {
+  const out = redactSecrets(text)
+  expect(out).toBe(text.includes('TOKEN') ? 'TOKEN=[redacted]' : '[redacted]')
+})
+
+test.each([
+  ['Proxy-Authorization', 'Proxy-Authorization: Basic dGltOnNlY3JldA==', 'Proxy-Authorization: Basic [redacted]'],
+  ['a JSON header', '{"Authorization":"Basic dGltOnNlY3JldA=="}', '{"Authorization":"Basic [redacted]"}'],
+  ['a JSON header with spaces', "{'authorization': 'Basic dGltOnNlY3JldA'}", "{'authorization': 'Basic [redacted]'}"],
+])('redacts Basic credentials in %s', (_what, input, expected) => {
+  expect(redactSecrets(input)).toBe(expected)
+})
+
 test('a colour code is dropped, and the text around it kept', () => {
   expect(redactSecrets('\x1b[31mFAIL\x1b[0m src/a.test.ts')).toBe('FAIL src/a.test.ts')
 })
@@ -105,7 +125,7 @@ test('for Bash only the command is judged; an MCP input is judged whole', () => 
 })
 
 test('a long run of identifier-like text is scanned in linear time', () => {
-  for (const unit of ['a_', 'a-', '-a', 'x_token', 'a', 'a://', 'x://u:p', 'Authorization: Basic ', '\x1b[', 'u:p@']) {
+  for (const unit of ['a_', 'a-', '-a', 'x_token', 'a', 'a://', 'x://u:p', 'Authorization: Basic ', '\x1b[', 'u:p@', '\x1b(', '\x1b( ', '\x9b1', '"authorization":"basic ']) {
     const text = unit.repeat(65536 / unit.length)
     const t0 = performance.now()
     redactSecrets(text)
