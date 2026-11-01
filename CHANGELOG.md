@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.29](https://github.com/AraneaDev/cassandra/compare/v0.0.28...v0.0.29) (2026-11-01)
+
+
+### Features
+
+* **pane:** tabs, history, retest and a clearer warning ([#74](https://github.com/AraneaDev/cassandra/issues/74)) ([316f73c](https://github.com/AraneaDev/cassandra/commit/316f73cefb331840064dd04a094dfb09dc8e32f8))
+
 ## [0.0.28](https://github.com/AraneaDev/cassandra/compare/v0.0.27...v0.0.28) (2026-10-09)
 
 
