@@ -244,6 +244,24 @@ test('a failing retest bumps the count, logs retest_failed, keeps the record, an
   await ui.unmount()
 })
 
+test('a failing retest whose outcome could not be recorded logs no retest_failed and says so', async ($, on) => {
+  const host = memoryHost(on)
+  on('tool.call', { tool: 'Bash' }, async () => FAIL)
+  verdict(on, 'allow')
+  const said = toasts(on)
+  await $.tool.call({ tool: 'Bash', command: 'bun test # still broken' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
+  await ui.press({ key: 'retest' })
+  // The directory is gone by the time it runs: no state stamp, so settle records nothing.
+  host.files.delete(`${CWD}/a.txt`)
+  await ui.press({ key: 'retest-confirm' })
+  expect(stored(host).record.count).toBe(1)
+  expect(statKinds(host)).not.toContain('retest_failed')
+  expect(said).toEqual([])
+  expect((await paneLines(ui)).join('\n')).toContain('The retest ran, but Cassandra could not record its outcome.')
+  await ui.unmount()
+})
+
 test('the retest carries the consent of the press and raises no Just warned card', async ($, on) => {
   memoryHost(on)
   const seen: Array<Record<string, unknown>> = []
