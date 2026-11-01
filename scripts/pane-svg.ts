@@ -53,7 +53,8 @@ function tree(model: PaneModel, columns: number, rows: number, extras?: PaneExtr
   g.h = (type: string, props: Record<string, unknown> | null, ...children: unknown[]): Node => ({ type, props: props ?? {}, children: children.flat() })
   g.Fragment = 'Fragment'
   try {
-    return drawPane({ Box: 'Box', Text: 'Text', Button: 'Button' }, model, columns, layoutOf(model, columns, rows, extras)) as Node
+    // The terminal's elements, Input included, so the bar offers Search as it does there.
+    return drawPane({ Box: 'Box', Text: 'Text', Button: 'Button', Input: 'Input' }, model, columns, layoutOf(model, columns, rows, extras)) as Node
   } finally {
     g.h = saved.h
     g.Fragment = saved.Fragment
