@@ -65,9 +65,9 @@ function model(over: Partial<PaneModel> = {}, view: Partial<PaneView> = {}): Pan
 const warned = { hash: '00000000ffffffff', at: iso(1), display: 'bun test case-0', count: 3, lastSeen: iso(2), reason: 'boom', evidence: 'Repository unchanged since: HEAD 0cc107b, the same working tree clean.', fix: null }
 
 /** The pane drawn at a size, through its own layout, as nodes and as its lines. */
-function draw(m: PaneModel, columns: number, rows: number) {
+function draw(m: PaneModel, columns: number, rows: number, elements: typeof el & { Input?: string } = el) {
   const layout = layoutOf(m, columns, rows)
-  const root = pane.drawPane(el, m, columns, layout) as Node
+  const root = pane.drawPane(elements, m, columns, layout) as Node
   const lines = root.children as Node[]
   return { root, all: walk(root), lines, texts: lines.map(drawnText), layout }
 }
@@ -243,7 +243,7 @@ describe('drawPane', () => {
     const bar = lines.at(-1)!
     expect([bar.props.key, bar.props.backgroundColor]).toEqual(['action-row', 'composerSidebarBackground'])
     expect(texts.at(-1)).toContain('r: Retest  f: Forget  a: Forget all  o: Full output  h: Keys')
-    expect(draw(model(), 120, 50).texts.at(-1)).toContain('r: Retest  f: Forget  a: Forget all  o: Full output  s: Search  h: Keys')
+    expect(draw(model(), 120, 50, { ...el, Input: 'Input' }).texts.at(-1)).toContain('r: Retest  f: Forget  a: Forget all  o: Full output  s: Search  h: Keys')
     // Narrow, the keys that matter least give way; Forget and Forget all stay.
     const narrow = draw(model(), 40, 15).texts.at(-1)!
     expect(narrow).toContain('f: Forget  a: Forget all')
@@ -488,6 +488,25 @@ describe('search, the key list and the hidden twins', () => {
     expect(line).toContain('bun test')
     expect(line).toContain('x: Clear')
     expect(drawWith(model({}, { query: 'bun' }), 80, 5, {}).layout.search).toBeNull()
+  })
+
+  test('a surface with no Input offers no Search, not even on a hidden twin; an applied query still shows and x clears it', () => {
+    const keysOf = (elements: typeof el, m: PaneModel, columns: number, rows: number) =>
+      buttons(walk(pane.drawPane(elements, m, columns, layoutOf(m, columns, rows)) as Node)).map((b) => String(b.props.key))
+    for (const columns of [40, 120]) {
+      expect(keysOf(withInput, model(), columns, 30).some((k) => k === pane.KEY_SEARCH || k === `${pane.KEY_TWIN_PREFIX}${pane.KEY_SEARCH}`)).toBe(true)
+      const without = keysOf(el, model(), columns, 30)
+      expect(without).not.toContain(pane.KEY_SEARCH)
+      expect(without).not.toContain(`${pane.KEY_TWIN_PREFIX}${pane.KEY_SEARCH}`)
+    }
+    // An applied query: on its own row with Clear, or, too short for that row, on the bar.
+    const shown = drawWith(model({}, { query: 'bun' }), 80, 30, {})
+    expect(shown.texts.find((t) => t.includes('search'))).toContain('bun')
+    for (const rows of [30, 5]) {
+      const keys = keysOf(el, model({}, { query: 'bun' }), 80, rows)
+      expect(keys.some((k) => k === pane.KEY_SEARCH_CLEAR || k === `${pane.KEY_TWIN_PREFIX}${pane.KEY_SEARCH_CLEAR}`)).toBe(true)
+      expect(keys).not.toContain(pane.KEY_SEARCH)
+    }
   })
 
   test('the key list opens under the list, rates first, and never pushes the pane past its rows', () => {

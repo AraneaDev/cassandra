@@ -115,7 +115,7 @@ and so does another record taking the marker after a forget or a search.
 | Enter | open or close the marked row |
 | `o` | the marked record's full output, in the open row (it opens the row) |
 | `n` `p` | the next or previous page of the full output, when it runs to more than one |
-| `s` | search the calls; Enter applies, `x` clears |
+| `s` | search the calls; Enter applies, `x` clears (not offered where the pane has no text field) |
 | `h` | the key list, which also holds the warning rates (false-positive and `same_context`) |
 | `r` | retest the marked call |
 | `f` | forget the marked record |

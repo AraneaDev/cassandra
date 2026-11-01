@@ -500,8 +500,9 @@ function keyList(f: Frame, model: PaneModel, rows: number): Line[] {
  * ones that matter least left out when the width is short (their hotkeys kept on hidden
  * twins). While a Forget all waits for its answer, the confirm and Cancel; while a retest
  * does, Run (only under the whole call) and Cancel. A notice the layout gave no row of its own follows the keys.
+ * Search only where `searchable`: a surface with no text field could never submit one.
  */
-function keyBar(f: Frame, model: PaneModel, layout: PaneLayout): Line {
+function keyBar(f: Frame, model: PaneModel, layout: PaneLayout, searchable: boolean): Line {
   const bg = { bg: BAR_BG }
   const text = noticeOf(model, layout)
   const notice: Seg[] = text && !layout.notice ? [{ text: '  ' }, { text, color: WARNING }] : []
@@ -524,7 +525,7 @@ function keyBar(f: Frame, model: PaneModel, layout: PaneLayout): Line {
   const full = layout.full
   if (full !== null && full.page < full.pages - 1) keys.push({ seg: key(KEY_NEXT_PAGE, 'Next page', 'n'), keep: 2.5 })
   if (full !== null && full.page > 0) keys.push({ seg: key(KEY_PREV_PAGE, 'Previous page', 'p'), keep: 2.5 })
-  if (model.total > 0) keys.push({ seg: key(KEY_SEARCH, 'Search', 's'), keep: 5 })
+  if (model.total > 0 && searchable) keys.push({ seg: key(KEY_SEARCH, 'Search', 's'), keep: 5 })
   // A search applied where the pane has no row for it: clearing it stays in reach.
   if (model.view.query && layout.search === null) keys.push({ seg: key(KEY_SEARCH_CLEAR, 'Clear search', 'x'), keep: 1.5 })
   keys.push({ seg: key(KEY_HELP, 'Keys', 'h'), keep: 3 })
@@ -610,7 +611,7 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, layout
   const Box = el.Box as Tag
   const Text = el.Text as Tag
   const Button = el.Button as Tag
-  // Mobile draws no text field: there the search shows what it holds as text.
+  // Mobile draws no text field: there the search shows what it holds as text, and is not offered.
   const Input = el.Input as Tag | undefined
 
   const one = (s: string): unknown => <Box flexDirection="column"><Text wrap="truncate-end">{fit(s, columns)}</Text></Box>
@@ -632,7 +633,7 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, layout
     ...(layout.keys > 0 ? keyList(f, model, layout.keys) : []),
     ...(layout.retest !== null && layout.retest !== 'too-small' ? retestLines(f, layout.retest.lines) : []),
     ...(layout.notice && noticeOf(model, layout) ? [noticeLine(f, noticeOf(model, layout)!)] : []),
-    keyBar(f, model, layout),
+    keyBar(f, model, layout, Input !== undefined),
   ]
 
   const drawSeg = (s: Seg): unknown => {
