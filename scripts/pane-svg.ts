@@ -105,6 +105,22 @@ function paint(r: Run): string {
   return r.bold === true ? `fill="${fill}" font-weight="bold"` : `fill="${fill}"`
 }
 
+/** Box-drawing characters as paths in a cell whose top-left corner is (x, y). */
+const BOX: Record<string, (x: number, y: number) => string> = (() => {
+  const w = CHAR_WIDTH
+  const h = LINE_HEIGHT
+  const f = (n: number): string => n.toFixed(1)
+  const mid = (x: number, y: number): [number, number] => [x + w / 2, y + h / 2]
+  return {
+    '─': (x, y) => `M${f(x)} ${f(y + h / 2)}H${f(x + w)}`,
+    '│': (x, y) => `M${f(x + w / 2)} ${f(y)}V${f(y + h)}`,
+    '╭': (x, y) => { const [cx, cy] = mid(x, y); return `M${f(x + w)} ${f(cy)}Q${f(cx)} ${f(cy)} ${f(cx)} ${f(y + h)}` },
+    '╮': (x, y) => { const [cx, cy] = mid(x, y); return `M${f(x)} ${f(cy)}Q${f(cx)} ${f(cy)} ${f(cx)} ${f(y + h)}` },
+    '╰': (x, y) => { const [cx, cy] = mid(x, y); return `M${f(cx)} ${f(y)}Q${f(cx)} ${f(cy)} ${f(x + w)} ${f(cy)}` },
+    '╯': (x, y) => { const [cx, cy] = mid(x, y); return `M${f(cx)} ${f(y)}Q${f(cx)} ${f(cy)} ${f(x)} ${f(cy)}` },
+  }
+})()
+
 /** The pane's rows as an SVG card: grounds as rectangles behind, one `<text>` per row. */
 export function svgOf(lines: Run[][], columns: number): string {
   const width = Math.ceil(columns * CHAR_WIDTH + PAD * 2)
@@ -122,13 +138,22 @@ export function svgOf(lines: Run[][], columns: number): string {
     }
   })
   lines.forEach((runs, row) => {
-    // Each run starts at its own column, as its ground does: a font whose advance is not
-    // exactly CHAR_WIDTH would otherwise drift the text off its ground along the row.
+    // Every character sits on its own cell, as in a terminal: a font whose advance is not
+    // exactly CHAR_WIDTH would otherwise drift text off its ground. Box rules are drawn as
+    // lines in their cells, since a fallback font can draw them wider than a cell.
     let col = 0
     const spans = runs.map((r) => {
-      const span = `<tspan x="${(PAD + col * CHAR_WIDTH).toFixed(1)}" ${paint(r)}>${escapeXml(r.text)}</tspan>`
-      col += cells(r.text)
-      return span
+      const xs: string[] = []
+      let text = ''
+      for (const ch of Array.from(r.text)) {
+        const x = PAD + col * CHAR_WIDTH
+        const rule = BOX[ch]
+        if (rule !== undefined) drawn.push(`  <path d="${rule(x, top(row))}" fill="none" stroke="${THEME[r.color ?? 'text'] ?? THEME.text}" stroke-width="1"/>`)
+        xs.push(x.toFixed(1))
+        text += rule === undefined ? ch : ' '
+        col += cells(ch)
+      }
+      return `<tspan x="${xs.join(' ')}" ${paint(r)}>${escapeXml(text)}</tspan>`
     }).join('')
     drawn.push(`  <text x="${PAD}" y="${top(row) + LINE_HEIGHT - 5}" xml:space="preserve">${spans}</text>`)
   })
