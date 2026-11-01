@@ -68,20 +68,21 @@ test('at every size each drawn line is exactly the pane wide and the pane fits i
       expect(lines.length).toBeLessThanOrEqual(rows)
       // Every glyph drawn here takes one cell, so its length is its width.
       for (const l of lines) expect([...l].length).toBe(columns)
-      expect(lines[0]).toContain('proj')
-      // The tabs sit under the header, with a blank row between them on a tall pane.
-      const tabs = lines[rows >= 22 ? 2 : 1]!
+      // A tall pane puts a blank row above the header and another between it and the tabs.
+      const head = rows >= 22 ? 1 : 0
+      const tabs = lines[head + (rows >= 22 ? 2 : 1)]!
+      expect(lines[head]).toContain('proj')
       if (columns === 40) {
-        expect(lines[0]).not.toContain('main')
+        expect(lines[head]).not.toContain('main')
         expect(tabs).toContain(' History¹² ')
         expect(tabs).toContain(' 2')
         expect(tabs).not.toContain('Warnings')
       } else {
-        expect(lines[0]).toContain('main')
+        expect(lines[head]).toContain('main')
         expect(tabs).toMatch(/History¹² +Warnings¹² +Stale⁰ +Denied⁰/)
       }
-      if (columns === 120) expect(lines[0]).toContain('main · 0cc107b')
-      expect(lines[0]).toContain('12 would warn')
+      if (columns === 120) expect(lines[head]).toContain('main · 0cc107b')
+      expect(lines[head]).toContain('12 would warn')
       expect(lines.at(-1)).toContain('f: Forget  a: Forget all')
       await ui.unmount()
     }

@@ -24,17 +24,17 @@ test('narrow and short: no branch, short counters inside the header, digit tabs,
 })
 
 test('medium: branch, the counter band, tab names, a blank row before each card', () => {
-  // 30 rows less header, the head spacing's 4, tabs, the band's 4, the key bar, and gap, title and blank of History: 16; Just warned takes its gap and 7.
+  // 30 rows less header, the head spacing's 5, tabs, the band's 4, the key bar, and gap, title and blank of History: 15; Just warned takes its gap and 7.
   expect(layoutOf(model(10, { warned: true }), 70, 30)).toEqual({
     tier: 'medium', tooShort: false, height: 30, gaps: true, header: { branch: true, commit: false }, counters: 'tiles',
-    tabs: 'names', justWarned: true, historyTitle: true, historyGap: true, notice: false, search: null, keys: 0, list: { start: 0, count: 6, more: 4, rows: 8 }, detail: 'none', retest: null, full: null,
+    tabs: 'names', justWarned: true, historyTitle: true, historyGap: true, notice: false, search: null, keys: 0, list: { start: 0, count: 5, more: 5, rows: 7 }, detail: 'none', retest: null, full: null,
   })
 })
 
 test('wide: branch, commit and the counter band', () => {
   expect(layoutOf(model(10, { selected: 0, expanded: true }), 120, 50)).toEqual({
     tier: 'wide', tooShort: false, height: 50, gaps: true, header: { branch: true, commit: true }, counters: 'tiles',
-    tabs: 'names', justWarned: false, historyTitle: true, historyGap: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 27 }, detail: 'full', retest: null, full: null,
+    tabs: 'names', justWarned: false, historyTitle: true, historyGap: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 26 }, detail: 'full', retest: null, full: null,
   })
 })
 
@@ -123,7 +123,7 @@ test('an expanded detail on a short pane drops to compact before the list loses 
 })
 
 test('an empty list has an empty window', () => {
-  expect(layoutOf(model(0), 70, 30).list).toEqual({ start: 0, count: 0, more: 0, rows: 16 })
+  expect(layoutOf(model(0), 70, 30).list).toEqual({ start: 0, count: 0, more: 0, rows: 15 })
 })
 
 test('a notice takes its own row from the list, while one list row is left', () => {
