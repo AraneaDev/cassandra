@@ -2,9 +2,8 @@ import { forget } from '../src/commands/forget.ts'
 import type { CommandResult } from '../src/commands/run.ts'
 import type { Io } from '../src/core/io.ts'
 import { paneModel, type PaneTab } from '../src/core/pane.ts'
-import { pathsFor } from '../src/core/paths.ts'
-import { listRecords } from '../src/core/record.ts'
-import { resolveHash } from '../src/core/resolve.ts'
+import { isFingerprint, pathsFor } from '../src/core/paths.ts'
+import { listRecords, readRecord } from '../src/core/record.ts'
 import { markedRow, steppedRow, turnedPage, type DrawnBySurface, type DrawnPane } from './drawn.ts'
 import type { InputEvent, PressEvent } from './engine.ts'
 import {
@@ -40,10 +39,14 @@ interface Pressed {
   retest?: () => Promise<void>
 }
 
-/** The record a row key names, when it is a row still remembered; null otherwise. */
+/**
+ * The record a row key names, by its full hash, when it is a row still remembered; null
+ * otherwise. Never a prefix lookup: two records may share the id a row displays.
+ */
 async function rowHash(host: PaneHost, io: Io, key: string): Promise<string | null> {
-  const r = await resolveHash(io, await pathsFor(io, await host.cwd()), key.slice(ROW_KEY_PREFIX.length))
-  return r.ok ? r.hash : null
+  const hash = key.slice(ROW_KEY_PREFIX.length)
+  if (!isFingerprint(hash)) return null
+  return (await readRecord(io, await pathsFor(io, await host.cwd()), hash)) === null ? null : hash
 }
 
 /**
@@ -94,7 +97,7 @@ async function moveMarker(store: PaneStore, drawn: DrawnPane | undefined, by: 1 
   await store.set('showFull', false)
   await firstPage(store)
   await store.set('confirmRetest', null)
-  return `${ROW_KEY_PREFIX}${to.slice(0, 8)}`
+  return `${ROW_KEY_PREFIX}${to}`
 }
 
 /**

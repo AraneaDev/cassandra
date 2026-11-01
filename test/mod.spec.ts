@@ -837,7 +837,7 @@ test('/cassandra pane whose open fails answers with the fallback text', async ()
 test('the render hook draws one row per remembered record', async () => {
   await seedFailure('bun test')
   await seedFailure('npm test')
-  const ids = (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)
+  const ids = (await remembered()).map((r) => `row:${r.hash}`)
   expect((await rowKeys()).sort()).toEqual(ids.sort())
 })
 
@@ -866,7 +866,27 @@ test('pressing a row selects it', async () => {
   const keys = await rowKeys()
   await press(keys[1]!)
   expect(await selectedKey()).toBe(keys[1])
-  expect(String(state('selected'))).toStartWith(keys[1]!.slice('row:'.length))
+  expect(String(state('selected'))).toBe(keys[1]!.slice('row:'.length))
+})
+
+test('two records sharing an 8-character prefix each draw their own row, and a press selects the one pressed', async () => {
+  await seedFailure('bun test')
+  const [{ hash, record }] = await remembered()
+  const twin = `${hash.slice(0, 8)}${hash.slice(8) === '00000000' ? '11111111' : '00000000'}`
+  const { recordPath } = await import('../src/core/paths.ts')
+  await io().writeText(recordPath(await pathsFor(io(), cwd), twin), JSON.stringify({ ...record, display: 'npm test' }))
+  expect((await rowKeys()).sort()).toEqual([`row:${hash}`, `row:${twin}`].sort())
+  await press(`row:${twin}`)
+  expect(state('selected')).toBe(twin)
+  await press(`row:${hash}`)
+  expect(state('selected')).toBe(hash)
+})
+
+test('a row key holding only a prefix of a remembered hash selects nothing', async () => {
+  await seedFailure('bun test')
+  const [{ hash }] = await remembered()
+  await press(`row:${hash.slice(0, 8)}`)
+  expect(state('selected')).toBeUndefined()
 })
 
 test('pressing a row that is gone changes nothing', async () => {
@@ -893,7 +913,7 @@ test('forget forgets exactly the selected record, bumps rev and refreshes the st
   opts.statuses = []
   const rev = Number(state('rev') ?? 0)
   await press('forget')
-  expect((await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)).toEqual([keys[0]!])
+  expect((await remembered()).map((r) => `row:${r.hash}`)).toEqual([keys[0]!])
   expect(Number(state('rev'))).toBeGreaterThan(rev)
   expect(opts.statuses).toEqual(['1 live failure'])
   expect(state('notice')).toBeNull()
@@ -1051,7 +1071,7 @@ test('the window follows the selection: newer records push it down, and forget s
   // The newest record goes above the window; the selected row stays in it.
   expect(shownRows(await sized(two))).toEqual(before)
   await press('forget')
-  const left = (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)
+  const left = (await remembered()).map((r) => `row:${r.hash}`)
   expect(left).not.toContain(before[1])
   expect(left).toHaveLength(2)
 })
@@ -1088,7 +1108,7 @@ test('a focus move and a forget right after it act in order: the forget takes th
   await seedFailure('npm test')
   const keys = await rowKeys()
   await Promise.all([focus(keys[1]!), press('forget')])
-  expect((await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`)).toEqual([keys[0]!])
+  expect((await remembered()).map((r) => `row:${r.hash}`)).toEqual([keys[0]!])
 })
 
 test('forget-all on an empty store asks nothing, and a confirmation the store emptied under is dropped', async () => {
@@ -1106,7 +1126,7 @@ test('forget-all on an empty store asks nothing, and a confirmation the store em
 
 // ---- Ruling 14: Forget acts only on what this surface drew ----
 
-const idsLeft = async () => (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`).sort()
+const idsLeft = async () => (await remembered()).map((r) => `row:${r.hash}`).sort()
 
 test('a newer record recorded between the draw and the press is not forgotten: the drawn row is', async () => {
   await seedFailure('bun test')
@@ -1114,7 +1134,7 @@ test('a newer record recorded between the draw and the press is not forgotten: t
   const drawnSel = await selectedKey()
   const keys = await rowKeys()
   await seedFailure('make')
-  const newest = (await remembered()).map((r) => `row:${r.hash.slice(0, 8)}`).find((k) => !keys.includes(k))!
+  const newest = (await remembered()).map((r) => `row:${r.hash}`).find((k) => !keys.includes(k))!
   await press('forget')
   expect(await idsLeft()).toEqual([...keys.filter((k) => k !== drawnSel), newest].sort())
 })
@@ -1372,7 +1392,7 @@ test('after a hot reload, a forget before any redraw does nothing; after a rende
     reloaded.set(own ? 'tool.call:cassandra' : event, (b ?? a) as Hook)
   }) as unknown as Parameters<typeof install>[0], (i) => wrap(i))
   hooks = reloaded
-  expect(String(state('selected'))).toStartWith(keys[1]!.slice('row:'.length))
+  expect(String(state('selected'))).toBe(keys[1]!.slice('row:'.length))
   await press('forget')
   expect(await remembered()).toHaveLength(2)
   await render()
@@ -1383,7 +1403,7 @@ test('after a hot reload, a forget before any redraw does nothing; after a rende
 // ---- view state, keys and the Just warned feed ----
 
 /** The full hash of the row a key names. */
-const hashOf = async (key: string) => (await remembered()).find((r) => r.hash.startsWith(key.slice('row:'.length)))!.hash
+const hashOf = async (key: string) => (await remembered()).find((r) => r.hash === key.slice('row:'.length))!.hash
 /** Type into, or press Enter in, one of the pane's Inputs. */
 const input = async (element: string, value: string, kind: 'change' | 'submit' = 'submit') => {
   let passed = 0
@@ -1656,8 +1676,8 @@ test('switching tab keeps the marked row when the tab lists it, else marks the t
   const denied = (await remembered()).find((r) => r.record.kind === 'denial')!.hash
   const failed = (await remembered()).find((r) => r.record.kind !== 'denial')!.hash
   await render()
-  await press(`row:${failed.slice(0, 8)}`)
-  await press(`row:${failed.slice(0, 8)}`)
+  await press(`row:${failed}`)
+  await press(`row:${failed}`)
   expect(state('expanded')).toBe(true)
   await press('tabkey:warnings')
   expect(state('tab')).toBe('warnings')
@@ -1667,7 +1687,7 @@ test('switching tab keeps the marked row when the tab lists it, else marks the t
   expect(state('tab')).toBe('denied')
   expect(state('selected')).toBe(denied)
   expect(state('expanded')).toBe(false)
-  expect(await rowKeys()).toEqual([`row:${denied.slice(0, 8)}`])
+  expect(await rowKeys()).toEqual([`row:${denied}`])
 })
 
 test('a tab the state holds that is no tab reads as History', async () => {

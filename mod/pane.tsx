@@ -4,7 +4,7 @@ import { FULL_INDENT_CELLS, RETEST_LABEL_CELLS, ROWS, fullDetailRows, padOf, typ
 
 export { fit } from './draw-text.ts'
 
-/** Key prefix of a row Button; the id follows. */
+/** Key prefix of a row Button; the record's full hash follows, so two records sharing a displayed id never share a key. */
 export const ROW_KEY_PREFIX = 'row:'
 /** Key of the Forget button. */
 export const KEY_FORGET = 'forget'
@@ -337,9 +337,9 @@ function rowLine(f: Frame, r: PaneRow, marked: boolean, open: boolean): Line {
   } else if (room >= MIN_DISPLAY) {
     call = [{ text: fit(`${r.display}${r.where}`, room), color: callColor }]
   } else {
-    return line(f, `row-${r.id}`, [...head, { text: `${r.display}${r.where}`, color: callColor }], { button: `${ROW_KEY_PREFIX}${r.id}`, ...(marked ? { bg: MARKED_BG } : {}) })
+    return line(f, `row-${r.hash}`, [...head, { text: `${r.display}${r.where}`, color: callColor }], { button: `${ROW_KEY_PREFIX}${r.hash}`, ...(marked ? { bg: MARKED_BG } : {}) })
   }
-  return line(f, `row-${r.id}`, spread([...head, ...call], tail, f.inner), { button: `${ROW_KEY_PREFIX}${r.id}`, ...(marked ? { bg: MARKED_BG } : {}) })
+  return line(f, `row-${r.hash}`, spread([...head, ...call], tail, f.inner), { button: `${ROW_KEY_PREFIX}${r.hash}`, ...(marked ? { bg: MARKED_BG } : {}) })
 }
 
 /** The exit code as a chip, when the output began with one. */
@@ -448,8 +448,8 @@ function listLines(f: Frame, model: PaneModel, layout: PaneLayout): Line[] {
   const out: Line[] = []
   shown.forEach((r, i) => {
     const prev = i === 0 ? null : shown[i - 1]!.group
-    if (prev !== null && prev !== r.group) out.push(blankLine(`gap-${r.id}`))
-    if ((i === 0 && firstLabel) || (prev !== null && prev !== r.group)) out.push(line(f, `group-${r.id}`, [{ text: r.group, color: HEADING, bold: true }]))
+    if (prev !== null && prev !== r.group) out.push(blankLine(`gap-${r.hash}`))
+    if ((i === 0 && firstLabel) || (prev !== null && prev !== r.group)) out.push(line(f, `group-${r.hash}`, [{ text: r.group, color: HEADING, bold: true }]))
     const marked = r.hash === model.selected
     out.push(rowLine(f, r, marked, marked && open))
     if (marked && open) out.push(...detailLines(f, model.detail!, layout.detail as 'full' | 'compact'))

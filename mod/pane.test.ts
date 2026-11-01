@@ -17,7 +17,7 @@ test('the pane refuses a plugin origin, draws the remembered failure, forgets it
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...PANE, surface, viewport })
     const keys = (await ui.findAll({ type: 'Button' })).map((b) => b.key)
-    expect(keys.filter((k) => /^row:[0-9a-f]{8}$/.test(String(k)))).toHaveLength(1)
+    expect(keys.filter((k) => /^row:[0-9a-f]{16}$/.test(String(k)))).toHaveLength(1)
     expect(keys).toContain('forget')
     expect(keys).toContain('forget-all')
 

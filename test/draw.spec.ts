@@ -198,7 +198,7 @@ describe('drawPane', () => {
     expect(texts[label('Last week') - 1]!.trim()).toBe('')
     expect(walk(lines[label('Today')]!).find((n) => n.type === 'Text' && text(n).includes('Today'))!.props.bold).toBe(true)
     const rows = buttons(all).filter((b) => String(b.props.key).startsWith(pane.ROW_KEY_PREFIX))
-    expect(rows.map((r) => r.props.key)).toEqual(['row:00000000', 'row:00000001', 'row:00000002', 'row:00000003'])
+    expect(rows.map((r) => r.props.key)).toEqual(['row:00000000ffffffff', 'row:00000001ffffffff', 'row:00000002ffffffff', 'row:00000003ffffffff'])
     const tint = (b: Node) => walk(b).filter((n) => n.type === 'Text').every((n) => n.props.backgroundColor === 'userMessageBackground')
     expect(rows.map(tint)).toEqual([true, false, false, false])
     expect(text(rows[2]!)).toMatch(/×2 {2}stale +$/)
@@ -414,10 +414,10 @@ describe('drawPane', () => {
   test('the package suffix stays and the call gives way; nothing is wider than the pane', () => {
     const r = row(0, { display: 'bun run test --coverage --watch', where: ' (in packages/a)' })
     const m = model({ rows: [r], total: 1 })
-    const narrow = text(byKey(draw(m, 40, 15).all, 'row:00000000')!)
+    const narrow = text(byKey(draw(m, 40, 15).all, 'row:00000000ffffffff')!)
     expect(cells(narrow)).toBe(40)
     expect(narrow).toBe('  ▸ 12:39  bun run … (in packages/a) ×2 ')
-    expect(text(byKey(draw(m, 120, 50).all, 'row:00000000')!)).toContain('bun run test --coverage --watch (in packages/a)')
+    expect(text(byKey(draw(m, 120, 50).all, 'row:00000000ffffffff')!)).toContain('bun run test --coverage --watch (in packages/a)')
     for (const columns of [24, 12]) for (const t of draw(m, columns, 15).texts) expect(cells(t)).toBe(columns)
   })
 
@@ -607,7 +607,7 @@ describe('redraw cost', () => {
         const rows = all.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:'))
         expect(rows).toHaveLength(layout.list.count)
         const marked = rows.find((n) => walk(n).some((t) => t.props.backgroundColor === 'userMessageBackground'))
-        expect(marked?.props.key).toBe(`row:${h.slice(0, 8)}`)
+        expect(marked?.props.key).toBe(`row:${h}`)
       }
       const ms = Math.max(...runs)
       expect(ms).toBeLessThan(2000)
