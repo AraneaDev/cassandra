@@ -161,7 +161,7 @@ Cancel](docs/images/retest.svg)
 
 `r` runs a remembered call again, to see whether it still fails. It is never offered for
 a denial record, nor for a record without a stored input: records written by older
-versions, or whose input was over 16 KB. It is always confirmed in the pane first, which
+versions, or whose input was over 16 KB or looked like it held a secret. It is always confirmed in the pane first, which
 shows the exact command and directory, or the MCP tool and its full input. It is refused
 when the session's directory differs from the one the call ran in, and when your
 permission settings deny the call; then nothing runs. Otherwise the call goes through
@@ -219,14 +219,27 @@ between the call's directory and the repository root that holds one of `package.
 repository root, outside git and to MCP tools are unchanged. The "anything changed since"
 check stays repository-wide.
 
-There is one piece of free text it reads from the call's outcome, and it is worth knowing
-about (the `resolve` reason, below, is the other). When a call
-fails or is denied, Cassandra keeps a 240-character excerpt of that tool's own
-`error_message` or `denial_reason`, writes it to the record on disk, and quotes it back in
-the warning so you can see why the call died last time. That excerpt is output from a
-command, not from you and not from the model, and it is treated as untrusted: control
-characters are stripped before it is stored, and the warning fences it and labels it as
-tool output rather than as an instruction.
+The free text it reads from the call's outcome is worth knowing about (the `resolve`
+reason, below, is the only other). When a call fails or is denied, Cassandra keeps a
+240-character excerpt of that tool's own `error_message` or `denial_reason`, writes it to
+the record on disk, and quotes it back in the warning so you can see why the call died
+last time. That excerpt is output from a command, not from you and not from the model, and
+it is treated as untrusted: control characters are stripped before it is stored, and the
+warning fences it and labels it as tool output rather than as an instruction.
+
+The record keeps more than the excerpt. It also keeps the full sanitised output, up to
+16384 characters, for the pane's `o` view; that is never sent to the agent. For a retest
+it keeps the call's input and the directory it ran in.
+
+Likely secrets are replaced by `[redacted]` before any of that is stored: GitHub, OpenAI,
+Anthropic, AWS and Slack tokens, JWTs, `Bearer` tokens, PEM private keys, and the value
+after a key such as `password=`, `api_key:` or `--token`. That covers the excerpt, the full
+output and the call as the record names it. It goes by shape only, so a secret of no known
+shape is kept as it is. A call whose input looks like it holds a secret is not kept: its
+record has neither the input nor the directory, so it cannot be retested, and the pane says
+why. The binary writes the store owner-only, files 0600 in directories 0700. The mod writes
+through Claude Code's file API, which takes no file mode, so a file the mod creates gets
+the default permissions.
 
 ### The freshness probe
 
@@ -485,11 +498,14 @@ the changelog, not the reference page.
 - It never reads your prompts. The match is on structured `tool_name` and `tool_input`
   JSON. The one place the model's own words reach it is the `reason` it passes to
   `resolve`.
-- It does keep two pieces of free text. One is a 240-character excerpt of the failing
-  tool's own error output or denial reason, stored with the record and quoted back,
-  fenced, in the warning. The other is the `resolve` reason, which is model-written: it is
-  stored sanitised and capped at 240 characters in the project's stats log. Those are the
-  whole of what it reads beyond the call itself.
+- It does keep free text. From the failing tool it keeps a 240-character excerpt of its
+  error output or denial reason, stored with the record and quoted back, fenced, in the
+  warning, and the full sanitised output, up to 16384 characters, shown only in the pane
+  and never sent to the agent. For a retest the record also keeps the call's input and
+  directory. Likely secrets are redacted from what it stores, and a call whose input looks
+  like it holds one keeps neither. The other free text is the `resolve` reason, which is
+  model-written: it is stored sanitised and capped at 240 characters in the project's stats
+  log. That is the whole of what it reads beyond the call itself.
 - It never leaves the machine. There is no network request, no telemetry, no API key.
 - It stores nothing outside its own data directory.
 
