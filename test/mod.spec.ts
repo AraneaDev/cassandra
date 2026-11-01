@@ -683,7 +683,7 @@ test('/cassandra answers with the CLI text and exit code for each subcommand (Re
   }
   const listed = await cli([])
   expect(listed.exitCode).toBe(0)
-  expect(await command('')).toEqual(listed)
+  expect(await command('list')).toEqual(listed)
   const why = await cli(['why'])
   expect(why.exitCode).toBe(1)
   expect(await command('  why   ')).toEqual(why)
@@ -730,10 +730,11 @@ test('a command whose io cannot be built still answers with the fallback text', 
   expect(await command('stats')).toEqual({ text: 'could not read what this project remembers.', exitCode: 1 })
 })
 
-test('a bare /cassandra with no args at all gets the list text', async () => {
+test('a bare /cassandra with no args at all gets the list text where no pane can be shown', async () => {
   await seedFailure()
   const { runCommand } = await import('../src/commands/run.ts')
   const listed = await runCommand(io(), cwd, [])
+  opts.surfaces = []
   expect(await command(undefined)).toEqual({ text: listed.text, exitCode: 0 })
 })
 
@@ -821,6 +822,30 @@ test('/cassandra pane opens the pane focused, answers, and resets the confirmati
   expect(opts.opened).toEqual([{ id: 'cassandra', title: 'Cassandra', focus: true, closeOnEscape: true }])
   expect(state('confirmAll')).toBe(false)
   expect(state('notice')).toBeNull()
+})
+
+test('a bare /cassandra you type opens the pane where a surface exists', async () => {
+  for (const args of [undefined, '', '   ']) {
+    expect(await command(args)).toEqual({ text: 'Opened the Cassandra pane.', exitCode: 0 })
+  }
+  const open = { id: 'cassandra', title: 'Cassandra', focus: true, closeOnEscape: true }
+  expect(opts.opened).toEqual([open, open, open])
+})
+
+test('a bare /cassandra lists instead when no surface can show the pane, or a plugin or schedule sent it', async () => {
+  await seedFailure()
+  const { runCommand } = await import('../src/commands/run.ts')
+  const r = await runCommand(io(), cwd, [])
+  const listed = { text: r.text, exitCode: r.code }
+  for (const kind of ['plugin', 'scheduled-trigger']) expect(await command('', { kind })).toEqual(listed)
+  expect(await command('', undefined)).toEqual(listed)
+  expect(opts.opened).toBeUndefined()
+  opts.surfaces = []
+  expect(await command('', { kind: 'sdk' })).toEqual(listed)
+  expect(await command('')).toEqual(listed)
+  expect(opts.opened).toBeUndefined()
+  host = { ...host, session: { ...host.session, surfaces: async () => { throw new Error('no surfaces') } } }
+  expect(await command('')).toEqual(listed)
 })
 
 test('/cassandra pane with no surface answers that it needs an interactive session and opens nothing', async () => {

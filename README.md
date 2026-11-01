@@ -36,7 +36,7 @@ then and now, seen twice, in this session, and the fix note naming
 packages/web/eslint.config.js. A key bar at the bottom offers Retest, Forget, Forget all, Full
 output, Search and Keys](docs/images/pane.svg)
 
-Type `/cassandra pane` in Claude Code and a pane opens beside the chat. The header names the
+Type `/cassandra` in Claude Code and a pane opens beside the chat. The header names the
 project, its branch and commit, and how many remembered calls would warn now. Below it sit the
 counters, the warning this session just raised with the evidence it stood on, and every
 remembered call grouped by day. Open a row to see why it failed, whether it would warn now,
@@ -87,7 +87,8 @@ without mods. The mod needs none.
 
 ## The pane
 
-`/cassandra pane` opens a pane beside the conversation with the project's records. It has
+`/cassandra` (or `/cassandra pane`) opens a pane beside the conversation with the project's
+records. It has
 a header with a status pill (how many records would warn now), four tabs, counters, and
 the records grouped by day. The selected row is tinted, a stale row is suffixed `stale`
 and a denied one `denied`.
@@ -140,9 +141,10 @@ first; their letters still work.
 
 The pane needs a mod build and an interactive session; with no interactive surface, as in
 `claude -p`, `/cassandra pane` answers "The pane needs an interactive session." and
-exits 1. Only your own command opens it: from a plugin or a schedule, `/cassandra pane`
-answers "The pane opens only from your own /cassandra command." and exits 1. The shell
-CLI does not know `pane`.
+exits 1, and a bare `/cassandra` prints the list instead. Only your own command opens it:
+from a plugin or a schedule, `/cassandra pane` answers "The pane opens only from your own
+/cassandra command." and exits 1, and a bare `/cassandra` prints the list. `/cassandra list`
+always prints it. The shell CLI does not know `pane`.
 
 The pane is not live. Records written by other sessions show up when this pane next
 redraws, for instance after this session's own store changes.
@@ -378,8 +380,9 @@ the mod always acts on the session's working directory. From the mod, `forget --
 runs when the person types it, or in a headless run; any other origin is refused and
 nothing is forgotten. On builds without mods, `/cassandra` is the plugin's markdown
 command, which takes your request in plain words and runs the CLI through Bun. On mod
-builds that command is still reachable as `/cassandra:cassandra`. `/cassandra pane` opens
-[the pane](#the-pane).
+builds that command is still reachable as `/cassandra:cassandra`. A bare `/cassandra` you
+type in an interactive session opens [the pane](#the-pane), as `/cassandra pane` does;
+`/cassandra list` prints the list.
 
 ## Two front ends
 
