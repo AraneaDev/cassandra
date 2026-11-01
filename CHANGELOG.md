@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.31](https://github.com/AraneaDev/cassandra/compare/v0.0.30...v0.0.31) (2026-11-01)
+
+
+### Features
+
+* **pane:** /cassandra opens the pane, and the pane matches the design ([#78](https://github.com/AraneaDev/cassandra/issues/78)) ([1f3eed2](https://github.com/AraneaDev/cassandra/commit/1f3eed23e7e28f5939aa3dc53a0f98c67f74a779))
+
 ## [0.0.30](https://github.com/AraneaDev/cassandra/compare/v0.0.29...v0.0.30) (2026-11-01)
 
 
