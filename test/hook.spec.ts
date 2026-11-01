@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { handle } from '../src/hook'
+import { handle, readStdin } from '../src/hook'
 import { pathsFor, pendingDir, pendingPath } from '../src/core/paths.ts'
 import { nodeIo } from '../src/io/node.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
@@ -483,4 +483,12 @@ test('an interrupted call consumes its marker', async () => {
   expect(existsSync(file)).toBe(true)
   await handle({ hook_event_name: 'PostToolUseFailure', session_id: 's1', cwd, tool_name: 'Bash', tool_input: { command: 'sleep 600' }, tool_use_id: 'i1', is_interrupt: true })
   expect(existsSync(file)).toBe(false)
+})
+
+test('readStdin hands back what the reader read', async () => {
+  expect(await readStdin(async () => '{"hook_event_name":"Stop"}')).toBe('{"hook_event_name":"Stop"}')
+})
+
+test('readStdin hands back an empty payload when the read fails', async () => {
+  expect(await readStdin(async () => { throw new Error('stdin closed') })).toBe('')
 })

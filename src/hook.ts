@@ -94,9 +94,19 @@ export async function run(raw: string, io: Io = nodeIo): Promise<string | null> 
   }
 }
 
+/** The raw stdin payload, or '' when it cannot be read. Never throws. */
+export async function readStdin(read: () => Promise<string> = () => Bun.stdin.text()): Promise<string> {
+  try {
+    return await read()
+  } catch {
+    // A closed or broken stdin is an empty payload, which `run` leaves quietly.
+    return ''
+  }
+}
+
 if (import.meta.main) {
   // Nothing below may throw or exit non-zero. A hook that fails is a session that fails.
-  const out = await run(await Bun.stdin.text().catch(() => ''))
+  const out = await run(await readStdin())
   if (out) process.stdout.write(`${out}\n`)
   process.exit(0)
 }
