@@ -122,7 +122,14 @@ export function svgOf(lines: Run[][], columns: number): string {
     }
   })
   lines.forEach((runs, row) => {
-    const spans = runs.map((r) => `<tspan ${paint(r)}>${escapeXml(r.text)}</tspan>`).join('')
+    // Each run starts at its own column, as its ground does: a font whose advance is not
+    // exactly CHAR_WIDTH would otherwise drift the text off its ground along the row.
+    let col = 0
+    const spans = runs.map((r) => {
+      const span = `<tspan x="${(PAD + col * CHAR_WIDTH).toFixed(1)}" ${paint(r)}>${escapeXml(r.text)}</tspan>`
+      col += cells(r.text)
+      return span
+    }).join('')
     drawn.push(`  <text x="${PAD}" y="${top(row) + LINE_HEIGHT - 5}" xml:space="preserve">${spans}</text>`)
   })
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="${FONT}" font-size="${FONT_SIZE}">
