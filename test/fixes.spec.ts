@@ -392,3 +392,12 @@ describe('content hashes of already-dirty files', () => {
     })
   })
 })
+
+test('a stored file name is cut to 60 characters keeping its end behind an ellipsis', async () => {
+  const paths = await pathsFor(nodeIo, repo())
+  const h = 'aa11bb22cc33dd44'
+  const long = `${'a'.repeat(40)}/x/billing/${'c'.repeat(48)}`
+  await nodeIo.writeText(fixPath(paths, h), JSON.stringify({ kind: 'changed', files: [long, 'short.ts'], more: 0, at: '2026-10-09T00:00:00.000Z' }))
+  const n = (await readFix(nodeIo, paths, h))!
+  expect(n.files).toEqual([`…/x/billing/${'c'.repeat(48)}`, 'short.ts'])
+})

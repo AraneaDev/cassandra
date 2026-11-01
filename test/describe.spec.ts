@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { ago, evidence, history, inScope, labelOf, origin, reason, scopeOf, warningText } from '../src/core/describe.ts'
+import { ago, capName, evidence, history, inScope, labelOf, origin, reason, scopeOf, warningText } from '../src/core/describe.ts'
 import type { FailureRecord } from '../src/core/types.ts'
 
 const base: FailureRecord = {
@@ -73,8 +73,8 @@ test('evidence says what was checked', () => {
   expect(evidence({ ...git, dirty: ['a', 'b'], dirtyTruncated: true })).toBe('Repository unchanged since: HEAD abcdef0, at least the same 2 uncommitted files (a, b…).')
   const long = `src/${'deep/'.repeat(20)}billing/invoice.ts`
   const capped = evidence({ ...git, dirty: [long, 'short.ts', 'b', 'c'] })
-  expect(capped).toBe('Repository unchanged since: HEAD abcdef0, the same 4 uncommitted files (…/deep/deep/deep/deep/deep/deep/deep/billing/invoice.ts, short.ts, b…).')
-  expect(Array.from('…/deep/deep/deep/deep/deep/deep/deep/billing/invoice.ts').length).toBeLessThanOrEqual(60)
+  expect(capped).toBe('Repository unchanged since: HEAD abcdef0, the same 4 uncommitted files (…/deep/deep/deep/deep/deep/deep/deep/deep/billing/invoice.ts, short.ts, b…).')
+  expect(Array.from('…/deep/deep/deep/deep/deep/deep/deep/deep/billing/invoice.ts').length).toBeLessThanOrEqual(60)
   expect(evidence({ ...git, dirty: ['x'.repeat(100)] })).toBe(`Repository unchanged since: HEAD abcdef0, the same 1 uncommitted file (…${'x'.repeat(59)}).`)
   expect(evidence(base)).toBe('Nothing in this repository has changed since.')
   expect(evidence({ ...base, stateKind: 'mtime' })).toBe('No file under this directory tree has changed since.')
@@ -93,4 +93,10 @@ test('warningText is one advisory paragraph', () => {
     'cassandra (advisory): this exact call already was denied once in this project (in packages/a), last 1 hour ago in this session. '
     + `No file under this directory tree has changed since. Fix. ${tail} The user can see it with /cassandra why abcd1234.`,
   )
+})
+
+test('a name whose cut lands on a directory boundary keeps that segment', () => {
+  const name = `${'a'.repeat(40)}/x/billing/${'c'.repeat(48)}`
+  expect(capName(name)).toBe(`…/x/billing/${'c'.repeat(48)}`)
+  expect(Array.from(capName(name))).toHaveLength(60)
 })

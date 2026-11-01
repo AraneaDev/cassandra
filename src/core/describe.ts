@@ -76,12 +76,12 @@ export function origin(b: Boundary): string {
 const MAX_NAME = 60
 
 /** A path of at most 60 characters: a longer one keeps its end, from a directory boundary when there is one, behind `…`. */
-function capName(path: string): string {
+export function capName(path: string): string {
   const chars = Array.from(path)
   if (chars.length <= MAX_NAME) return path
   const tail = chars.slice(chars.length - (MAX_NAME - 1)).join('')
-  const slash = tail.indexOf('/', 1)
-  return `…${slash > 0 ? tail.slice(slash) : tail}`
+  const slash = tail.startsWith('/') ? 0 : tail.indexOf('/')
+  return `…${slash >= 0 ? tail.slice(slash) : tail}`
 }
 
 /**

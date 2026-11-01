@@ -165,7 +165,7 @@ const SHOW_KEYS = { plugin: 'cassandra', key: 'showKeys' } as const
  * `hostOf`: the validator follows `$` only into a function declared in this file, and lists
  * state only from literal references.
  */
-function storeOf($: ModEngine): PaneStore {
+export function storeOf($: ModEngine): PaneStore {
   const get = async (key: keyof PaneState): Promise<unknown> => {
     switch (key) {
       case 'selected': return (await $.state.get(SELECTED)).value

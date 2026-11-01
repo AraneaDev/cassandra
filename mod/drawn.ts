@@ -61,6 +61,6 @@ export function steppedRow(drawn: DrawnPane, selected: string | null, by: 1 | -1
 /** The page of the full output `by` turns to from `page`, held to the pages this surface drew (at least one). */
 export function turnedPage(drawn: DrawnPane, page: number, by: 1 | -1): number {
   const last = drawn.fullPages - 1
-  const at = Math.min(last, Math.max(0, page))
+  const at = Math.min(last, Math.max(0, Math.trunc(page) || 0))
   return Math.min(last, Math.max(0, at + by))
 }

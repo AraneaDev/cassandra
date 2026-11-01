@@ -2,8 +2,8 @@ import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ModEngine, Next, ToolCallEvent, ToolCallOutcome } from '../mod/engine.ts'
-import { install } from '../mod/install.ts'
+import type { ModEngine, Next, PaneState, ToolCallEvent, ToolCallOutcome } from '../mod/engine.ts'
+import { install, storeOf } from '../mod/install.ts'
 import type { Io } from '../src/core/io.ts'
 import { modIo } from '../src/io/mod.ts'
 import { fingerprint } from '../src/core/fingerprint.ts'
@@ -1824,4 +1824,27 @@ test('the Just warned card draws the record as it was when warned; an older last
   const { hash } = (await remembered())[0]!
   opts.state!.set('lastWarning', { hash, at: new Date().toISOString() })
   expect(await card()).toContain('the same call, 2× before')
+})
+
+test('storeOf reads and writes every pane key through that key\'s own reference', async () => {
+  const values: Record<keyof PaneState, unknown> = {
+    selected: 'abc', confirmAll: true, rev: 7, notice: 'hi', tab: 'history', expanded: true, showFull: true,
+    fullPage: 3, query: 'q', confirmRetest: 'def', lastWarning: { at: 'x' }, searching: true, showKeys: true,
+  }
+  const refs: { op: string; key: string }[] = []
+  const data = new Map<string, unknown>()
+  const $ = {
+    state: {
+      get: async (ref: { key: string }) => { refs.push({ op: 'get', key: ref.key }); return { value: data.get(ref.key), version: 1 } },
+      set: async (ref: { key: string }, value: unknown) => { refs.push({ op: 'set', key: ref.key }); data.set(ref.key, value) },
+    },
+  } as unknown as ModEngine
+  const store = storeOf($)
+  for (const key of Object.keys(values) as (keyof PaneState)[]) {
+    refs.length = 0
+    await store.set(key, values[key] as never)
+    expect(await store.get(key)).toEqual(values[key] as never)
+    expect(refs).toEqual([{ op: 'set', key }, { op: 'get', key }])
+  }
+  expect(data.size).toBe(Object.keys(values).length)
 })

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { turnedPage, type DrawnPane } from '../mod/drawn.ts'
 import { visible, wrapCells } from '../mod/draw-text.ts'
 import { FULL_NOT_KEPT, fullBody, fullDetailRows, layoutOf, PANE_MIN_LINES, retestBody, ROWS } from '../mod/layout.ts'
 import { unreadableModel, type JustWarned, type PaneDetail, type PaneModel, type PaneRow } from '../src/core/pane.ts'
@@ -250,4 +251,11 @@ describe('paging the full output', () => {
     const page = layoutOf(showing, 70, 30)
     expect(closed.list.rows - page.list.rows).toBe(ROWS.fullTitle + page.full!.lines.length + ROWS.fullMore)
   })
+})
+
+test('a page that is not a number never sticks while turning', () => {
+  const drawn = { fullPages: 4 } as DrawnPane
+  expect(turnedPage(drawn, Number.NaN, 1)).toBe(1)
+  expect(turnedPage(drawn, Number.NaN, -1)).toBe(0)
+  expect(turnedPage(drawn, 1.7, 1)).toBe(2)
 })
