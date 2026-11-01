@@ -236,7 +236,7 @@ Likely secrets are replaced by `[redacted]` before any of that is stored: GitHub
 Anthropic, AWS and Slack tokens, JWTs, `Bearer` and `Basic` authorization credentials, the
 `user:password` in a URL, PEM private keys, and the value after a key such as `password=`,
 `api_key:` or `--token`. Terminal escape sequences (colour codes and the like) are dropped
-first, so they cannot hide a secret. That covers the excerpt, the full output, the call as
+first, so ordinary coloured output cannot hide one. That covers the excerpt, the full output, the call as
 the record names it and the `resolve` reason. The excerpt, the full output and the call
 are redacted again whenever the warning, a briefing, the pane or the CLI (`list`, `why`)
 shows them, so a record written by an older version shows no plaintext there either. It
