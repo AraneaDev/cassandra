@@ -52,3 +52,13 @@ test('an input looks secret when any of it would be redacted', () => {
   expect(inputLooksSecret({ command: 'grep -r "token:" src' })).toBe(false)
   expect(inputLooksSecret(undefined)).toBe(false)
 })
+
+test('a long run of identifier-like text is scanned in linear time', () => {
+  for (const unit of ['a_', 'a-', '-a', 'x_token']) {
+    const text = unit.repeat(65536 / unit.length)
+    const t0 = performance.now()
+    redactSecrets(text)
+    inputLooksSecret({ command: text })
+    expect(performance.now() - t0).toBeLessThan(1000)
+  }
+})

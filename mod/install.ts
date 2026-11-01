@@ -391,9 +391,10 @@ async function answerTool($: ModEngine, wrapIo: (io: Io) => Io, e: ToolCallEvent
  * before it: a pass forgets the record (with its fix note) and logs `retest_cleared`, a
  * failure updates the record and logs `retest_failed` (only when it was recorded: one that
  * was not stays `running`, which the retest reports as an outcome it could not record);
- * neither is a warning's outcome, so no `false_positive` or `confirmed`. A call that never ran (a denial, a refused
- * permission, an interrupt) changes nothing. What it came to is left in `retesting` for
- * the retest that is waiting on it. The result comes back as the engine gave it.
+ * neither is a warning's outcome, so no `false_positive` or `confirmed`. A call that never
+ * ran (a denial, a refused permission, an interrupt) changes nothing. What it came to is
+ * left in `retesting` for the retest that is waiting on it. The result comes back as the
+ * engine gave it.
  */
 async function settleRetest($: ModEngine, io: Io, call: Call, hash: string, e: ToolCallEvent, next: Next<ToolCallEvent, ToolCallOutcome>, retesting: Retesting): Promise<ToolCallOutcome> {
   const result = await next(e)

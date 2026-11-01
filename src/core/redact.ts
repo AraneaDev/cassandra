@@ -6,7 +6,12 @@
 
 const REDACTED = '[redacted]'
 
-/** A key name that says its value is a secret, with any `PREFIX_` segments before it (`AWS_SECRET_ACCESS_KEY`). */
+/**
+ * A key name that says its value is a secret, with any `PREFIX_` segments before it
+ * (`AWS_SECRET_ACCESS_KEY`). It is only tried from the start of a name (see `NAME_START`):
+ * tried from every `_` or `-` inside a long name, the prefix would be walked again from
+ * each, which is quadratic in output an attacker can shape.
+ */
 const KEY_NAME = String.raw`(?:[A-Za-z0-9]+[_-])*(?:password|passwd|secret[_-]?key|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret)`
 
 /** A value: quoted whole, or unquoted up to a space, quote, backslash or separator. */
@@ -28,10 +33,13 @@ const WHOLE: readonly RegExp[] = [
 
 /** `Bearer <token>`, the token only. */
 const BEARER = /(?<![A-Za-z0-9])(bearer\s+)[A-Za-z0-9._~+/=-]+/gi
+/** Where a name starts: not inside another name. */
+const NAME_START = String.raw`(?<![A-Za-z0-9_-])`
+
 /** `key=value`, `key: value` and `"key": "value"`, the value only. */
-const KEY_VALUE = new RegExp(String.raw`((?<![A-Za-z0-9])${KEY_NAME}["']?\s*[:=]\s*)${VALUE}`, 'gi')
-/** `--key value`, the value only; a following flag is not a value. */
-const FLAG_VALUE = new RegExp(String.raw`(--${KEY_NAME}\s+)(?!-)${VALUE}`, 'gi')
+const KEY_VALUE = new RegExp(String.raw`(${NAME_START}${KEY_NAME}["']?\s*[:=]\s*)${VALUE}`, 'gi')
+/** `--key value` and `--key=value`, the value only; a following flag is not a value. */
+const FLAG_VALUE = new RegExp(String.raw`(${NAME_START}--${KEY_NAME}(?:=|\s+))(?!-)${VALUE}`, 'gi')
 
 /** The text with every likely secret replaced by `[redacted]`. Idempotent. */
 export function redactSecrets(text: string): string {
