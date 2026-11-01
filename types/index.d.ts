@@ -15,6 +15,7 @@ declare module 'claude-code' {
       expanded: boolean
       showFull: boolean
       fullPage: number
+      fullPageOf: CassandraHash | null
       query: string
       confirmRetest: CassandraHash | null
       lastWarning: { hash: CassandraHash; at: string; count?: number; lastSeen?: string; evidence?: string } | null

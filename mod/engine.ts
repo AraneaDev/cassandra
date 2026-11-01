@@ -24,6 +24,8 @@ export interface PaneState {
   expanded: boolean
   showFull: boolean
   fullPage: number
+  /** The record `fullPage` was turned on; any other record shows its first page. */
+  fullPageOf: string | null
   query: string
   confirmRetest: string | null
   lastWarning: LastWarning | null

@@ -149,6 +149,8 @@ const EXPANDED = { plugin: 'cassandra', key: 'expanded' } as const
 const SHOW_FULL = { plugin: 'cassandra', key: 'showFull' } as const
 /** The page of the full output that shows, from 0. */
 const FULL_PAGE = { plugin: 'cassandra', key: 'fullPage' } as const
+/** The hash of the record that page was turned on; any other record shows its first page. */
+const FULL_PAGE_OF = { plugin: 'cassandra', key: 'fullPageOf' } as const
 /** The search the list is filtered by, '' for none. */
 const QUERY = { plugin: 'cassandra', key: 'query' } as const
 /** The hash of the record whose retest waits for its confirm. */
@@ -176,6 +178,7 @@ export function storeOf($: ModEngine): PaneStore {
       case 'expanded': return (await $.state.get(EXPANDED)).value
       case 'showFull': return (await $.state.get(SHOW_FULL)).value
       case 'fullPage': return (await $.state.get(FULL_PAGE)).value
+      case 'fullPageOf': return (await $.state.get(FULL_PAGE_OF)).value
       case 'query': return (await $.state.get(QUERY)).value
       case 'confirmRetest': return (await $.state.get(CONFIRM_RETEST)).value
       case 'lastWarning': return (await $.state.get(LAST_WARNING)).value
@@ -193,6 +196,7 @@ export function storeOf($: ModEngine): PaneStore {
       case 'expanded': return $.state.set(EXPANDED, value as PaneState['expanded'])
       case 'showFull': return $.state.set(SHOW_FULL, value as PaneState['showFull'])
       case 'fullPage': return $.state.set(FULL_PAGE, value as PaneState['fullPage'])
+      case 'fullPageOf': return $.state.set(FULL_PAGE_OF, value as PaneState['fullPageOf'])
       case 'query': return $.state.set(QUERY, value as PaneState['query'])
       case 'confirmRetest': return $.state.set(CONFIRM_RETEST, value as PaneState['confirmRetest'])
       case 'lastWarning': return $.state.set(LAST_WARNING, value as PaneState['lastWarning'])
@@ -275,6 +279,7 @@ async function openPane($: ModEngine): Promise<{ text: string; exitCode: number 
   await $.state.set(SEARCHING, false)
   await $.state.set(NOTICE, null)
   await $.state.set(FULL_PAGE, 0)
+  await $.state.set(FULL_PAGE_OF, null)
   await $.ui.open({ id: PANE_ID, title: 'Cassandra', focus: true, closeOnEscape: true })
   return { text: PANE_OPENED, exitCode: 0 }
 }

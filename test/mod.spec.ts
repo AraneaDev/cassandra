@@ -1503,6 +1503,96 @@ test('the full output goes back to its first page when the marker moves, the tab
   expect(state('fullPage')).toBe(0)
 })
 
+test('every reset of the page also drops the record it was turned on', async () => {
+  await seedFailure('bun test')
+  await seedFailure('npm test')
+  const keys = await rowKeys()
+  const paged = () => { opts.state!.set('fullPage', 3); opts.state!.set('fullPageOf', 'abc') }
+  const reset = () => {
+    expect(state('fullPage')).toBe(0)
+    expect(state('fullPageOf')).toBeNull()
+  }
+  for (const key of ['down', 'up', 'tabkey:warnings', 'full']) {
+    paged()
+    await press(key)
+    reset()
+  }
+  paged()
+  await render()
+  const marked = (await selectedKey())!
+  await press(marked)
+  reset()
+  paged()
+  await press(keys.find((k) => k !== marked)!)
+  reset()
+  paged()
+  await focus(marked)
+  reset()
+  paged()
+  await command('pane')
+  reset()
+})
+
+/** The page of the full output belongs to the record it was turned on. */
+const longOutput = (name: string) => Array.from({ length: 80 }, (_, i) => `${name} ${i}`).join('\n')
+/**
+ * The page of the full output drawn now, read off its count line (`lines a–b of n`, on a
+ * page that is not the last), and the record marked. A search row above the list takes a
+ * row from the page, so the page is compared, not the lines.
+ */
+const shownFull = async () => {
+  const drawn = await render()
+  const more = drawn.filter((n) => n.props?.key === 'full-more').map(textOf)[0]?.trim() ?? ''
+  const [, a, b] = /^lines (\d+)–(\d+) of \d+$/.exec(more) ?? []
+  return { page: a === undefined ? null : (Number(a) - 1) / (Number(b) - Number(a) + 1), marked: await selectedKey() }
+}
+const turnedOnce = async () => {
+  await call('bun test', failed(`Exit code 1\n${longOutput('bun')}`))
+  await call('npm test', failed(`Exit code 1\n${longOutput('npm')}`))
+  await press('full')
+  await render()
+  await press('next-page')
+  const at = await shownFull()
+  expect(at.page).toBe(1)
+  const hash = await hashOf(at.marked!)
+  expect(state('fullPage')).toBe(1)
+  expect(state('fullPageOf')).toBe(hash)
+  return hash
+}
+
+test('the page belongs to its record: forgetting the marked record opens the next record\'s full output on its first page', async () => {
+  const hash = await turnedOnce()
+  await press('forget')
+  expect((await remembered()).map((r) => r.hash)).not.toContain(hash)
+  const after = await shownFull()
+  expect(after.marked).toBeDefined()
+  expect(await hashOf(after.marked!)).not.toBe(hash)
+  expect(after.page).toBe(0)
+})
+
+test('the page belongs to its record: a search that drops the marked record opens the next one on its first page; one that keeps it keeps the page', async () => {
+  const hash = await turnedOnce()
+  const display = (await remembered()).find((r) => r.hash === hash)!.record.display
+  // A search the marked record still matches: it stays marked, on the page it was turned to.
+  await press('search')
+  await input('search-field', display)
+  const kept = await shownFull()
+  expect(await hashOf(kept.marked!)).toBe(hash)
+  expect(kept.page).toBe(1)
+  // A search that drops it: the other record opens from its first line.
+  const other = (await remembered()).find((r) => r.hash !== hash)!.record.display
+  await press('search')
+  await input('search-field', other)
+  const moved = await shownFull()
+  expect(await hashOf(moved.marked!)).not.toBe(hash)
+  expect(moved.page).toBe(0)
+  // Cleared, the list holds the first record again; the selection never moved off it, so
+  // it is marked again and its page still applies.
+  await press('search-clear')
+  const back = await shownFull()
+  expect(await hashOf(back.marked!)).toBe(hash)
+  expect(back.page).toBe(1)
+})
 test('r marks the selected record as waiting for its retest confirm, and only a retestable one', async () => {
   await seedFailure('bun test')
   await press('retest')
@@ -1829,7 +1919,7 @@ test('the Just warned card draws the record as it was when warned; an older last
 test('storeOf reads and writes every pane key through that key\'s own reference', async () => {
   const values: Record<keyof PaneState, unknown> = {
     selected: 'abc', confirmAll: true, rev: 7, notice: 'hi', tab: 'history', expanded: true, showFull: true,
-    fullPage: 3, query: 'q', confirmRetest: 'def', lastWarning: { at: 'x' }, searching: true, showKeys: true,
+    fullPage: 3, fullPageOf: 'ghi', query: 'q', confirmRetest: 'def', lastWarning: { at: 'x' }, searching: true, showKeys: true,
   }
   const refs: { op: string; key: string }[] = []
   const data = new Map<string, unknown>()

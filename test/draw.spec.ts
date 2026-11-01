@@ -271,7 +271,7 @@ describe('drawPane', () => {
     for (const t of texts) expect(cells(t)).toBe(70)
     // All of it when it fits, and no count.
     const small = draw(model({ detail: { ...detail, full: 'one\ntwo' } }, { expanded: true, showFull: true }), 70, 30)
-    expect(small.layout.full).toEqual({ lines: ['one', 'two'], first: 0, total: 2, page: 0, pages: 1 })
+    expect(small.layout.full).toEqual({ lines: ['one', 'two'], first: 0, total: 2, page: 0, pages: 1, per: 2 })
     expect(small.texts.some((t) => /lines \d/.test(t))).toBe(false)
   })
 
@@ -315,6 +315,42 @@ describe('drawPane', () => {
       expect(offered(paged(0, 70, { showFull: false }).all).filter((k) => k.endsWith('-page'))).toEqual([])
       const small = model({ detail: { ...detail, full: 'one' } }, { expanded: true, showFull: true })
       expect(offered(draw(small, 70, 30).all).filter((k) => k.endsWith('-page'))).toEqual([])
+    })
+
+    test('the shorter last page is drawn as tall as the others, padded on the output ground, each line the pane wide', () => {
+      const per = paged(0).layout.full!.lines.length
+      const odd = Array.from({ length: 2 * per + 1 }, (_, i) => `out ${i}`).join('\n')
+      const at = (fullPage: number) => {
+        const m = model({ detail: { ...detail, full: odd } }, { expanded: true, showFull: true })
+        const layout = layoutOf(m, 70, 30, { searching: false, showKeys: false, keyRows: 0, fullPage })
+        const lines = (pane.drawPane(el, m, 70, layout) as Node).children as Node[]
+        return { lines, texts: lines.map(drawnText), layout }
+      }
+      const first = at(0)
+      const last = at(2)
+      expect(last.layout.full!.lines).toHaveLength(1)
+      const block = (lines: Node[]) => {
+        const keys = lines.map((n) => String(n.props.key))
+        return lines.slice(keys.indexOf('full-title'), keys.indexOf('full-more') + 1)
+      }
+      expect(block(first.lines)).toHaveLength(ROWS.fullTitle + per + ROWS.fullMore)
+      expect(block(last.lines)).toHaveLength(block(first.lines).length)
+      // What follows the block starts on the same row on both pages.
+      expect(last.lines.map((n) => n.props.key).indexOf('full-more')).toBe(first.lines.map((n) => n.props.key).indexOf('full-more'))
+      // The padding is blank and on the same ground as the output lines.
+      const outputBg = block(last.lines)[1]!.props.backgroundColor
+      expect(outputBg).toBeDefined()
+      const pads = block(last.lines).slice(2, -1)
+      expect(pads).toHaveLength(per - 1)
+      for (const pad of pads) {
+        expect(drawnText(pad).trim()).toBe('')
+        expect(pad.props.backgroundColor).toBe(outputBg)
+        for (const n of walk(pad)) if (n.props.backgroundColor !== undefined) expect(n.props.backgroundColor).toBe(outputBg)
+      }
+      for (const { texts } of [first, last]) {
+        expect(texts).toHaveLength(30)
+        for (const t of texts) expect(cells(t)).toBe(70)
+      }
     })
 
     test('dropped for width, the paging keys keep their hotkeys on hidden twins', () => {

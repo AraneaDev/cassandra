@@ -222,7 +222,7 @@ describe('paging the full output', () => {
     const per = first.lines.length
     expect(per).toBeGreaterThan(1)
     expect(per).toBeLessThan(60)
-    expect(first).toEqual({ lines: Array.from({ length: per }, (_, i) => `out ${i}`), first: 0, total: 60, page: 0, pages: Math.ceil(60 / per) })
+    expect(first).toEqual({ lines: Array.from({ length: per }, (_, i) => `out ${i}`), first: 0, total: 60, page: 0, pages: Math.ceil(60 / per), per })
     expect(at(1).lines).toEqual(Array.from({ length: per }, (_, i) => `out ${per + i}`))
     expect(at(1).first).toBe(per)
     const pages = first.pages
@@ -242,7 +242,7 @@ describe('paging the full output', () => {
 
   test('output that fits is one page; without extras the first page shows', () => {
     const small = at(4, { ...d, full: 'one\ntwo' })
-    expect(small).toEqual({ lines: ['one', 'two'], first: 0, total: 2, page: 0, pages: 1 })
+    expect(small).toEqual({ lines: ['one', 'two'], first: 0, total: 2, page: 0, pages: 1, per: 2 })
     expect(layoutOf(showing, 70, 30).full).toEqual(at(0))
   })
 
@@ -250,6 +250,29 @@ describe('paging the full output', () => {
     const closed = layoutOf({ ...showing, view: { ...showing.view, showFull: false } }, 70, 30)
     const page = layoutOf(showing, 70, 30)
     expect(closed.list.rows - page.list.rows).toBe(ROWS.fullTitle + page.full!.lines.length + ROWS.fullMore)
+  })
+
+  test('every page takes the rows of a whole page, the shorter last one too, so the list keeps the same rows', () => {
+    const per = at(0).lines.length
+    // One line past two whole pages: the last page holds a single line.
+    const odd = { ...d, full: Array.from({ length: 2 * per + 1 }, (_, i) => `out ${i}`).join('\n') }
+    const laid = (fullPage: number) => layoutOf({ ...showing, detail: odd }, 70, 30, { searching: false, showKeys: false, keyRows: 0, fullPage })
+    const first = laid(0)
+    const last = laid(2)
+    expect(first.full!.pages).toBe(3)
+    expect(last.full!.lines).toEqual([`out ${2 * per}`])
+    expect(first.full!.per).toBe(per)
+    expect(last.full!.per).toBe(per)
+    expect(last.list.rows).toBe(first.list.rows)
+    const closed = layoutOf({ ...showing, detail: odd, view: { ...showing.view, showFull: false } }, 70, 30)
+    expect(closed.list.rows - last.list.rows).toBe(ROWS.fullTitle + per + ROWS.fullMore)
+  })
+
+  test('output on one page takes only its own lines', () => {
+    const small = layoutOf({ ...showing, detail: { ...d, full: 'one\ntwo' } }, 70, 30)
+    const closed = layoutOf({ ...showing, detail: { ...d, full: 'one\ntwo' }, view: { ...showing.view, showFull: false } }, 70, 30)
+    expect(small.full!.per).toBe(2)
+    expect(closed.list.rows - small.list.rows).toBe(ROWS.fullTitle + 2)
   })
 })
 

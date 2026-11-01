@@ -103,8 +103,10 @@ Open a row with Enter and it shows, in place, why the call failed (with its exit
 whether it would warn now with the workspace then and now, when it was first and last seen,
 which session it failed in, its fix note, and why a retest is not offered when it is not.
 `o` adds the full output the record kept. Output longer than the pane shows a page at a
-time, under a dim `lines A–B of N`; `n` and `p` turn the pages, and moving the marker,
-switching tab or closing the row starts it again from its first page.
+time, under a dim `lines A–B of N`, and every page takes the same rows, so the list below
+stays put; `n` and `p` turn the pages. A page belongs to the record it was turned on:
+moving the marker, switching tab or closing the row starts it again from its first page,
+and so does another record taking the marker after a forget or a search.
 
 | Key | Does |
 |---|---|

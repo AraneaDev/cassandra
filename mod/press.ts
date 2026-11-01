@@ -11,7 +11,7 @@ import {
   KEY_CANCEL, KEY_CONFIRM, KEY_DISMISS, KEY_DOWN, KEY_FORGET, KEY_FORGET_ALL, KEY_FULL, KEY_HELP, KEY_NEXT_PAGE, KEY_PREV_PAGE, KEY_RETEST, KEY_RETEST_CANCEL, KEY_RETEST_CONFIRM, KEY_SEARCH,
   KEY_SEARCH_CLEAR, KEY_SEARCH_FIELD, KEY_TABKEY_PREFIX, KEY_TAB_PREFIX, KEY_TWIN_PREFIX, KEY_UP, ROW_KEY_PREFIX,
 } from './pane.tsx'
-import { TAB_IDS, readView, type PaneStore } from './view.ts'
+import { TAB_IDS, pageFor, readView, type PaneStore } from './view.ts'
 
 /**
  * What the pane's presses, inputs and focus moves act through, built by the mod
@@ -55,7 +55,7 @@ export async function selectRow(host: PaneHost, key: string | undefined): Promis
   try {
     const hash = await rowHash(host, host.io(), key)
     if (hash === null) return
-    if (hash !== ((await host.store.get('selected')) ?? null)) await host.store.set('fullPage', 0)
+    if (hash !== ((await host.store.get('selected')) ?? null)) await firstPage(host.store)
     await host.store.set('selected', hash)
   } catch {
     // The selection stays where it was.
@@ -71,7 +71,7 @@ async function pressRow(host: PaneHost, io: Io, key: string, drawn: DrawnPane | 
   const { store } = host
   const hash = await rowHash(host, io, key)
   if (hash === null) return
-  await store.set('fullPage', 0)
+  await firstPage(store)
   if (drawn && hash === markedRow(drawn, (await store.get('selected')) ?? null)) {
     await store.set('selected', hash)
     await store.set('expanded', !((await store.get('expanded')) ?? false))
@@ -92,7 +92,7 @@ async function moveMarker(store: PaneStore, drawn: DrawnPane | undefined, by: 1 
   const to = steppedRow(drawn, (await store.get('selected')) ?? null, by)
   await store.set('selected', to)
   await store.set('showFull', false)
-  await store.set('fullPage', 0)
+  await firstPage(store)
   await store.set('confirmRetest', null)
   return `${ROW_KEY_PREFIX}${to.slice(0, 8)}`
 }
@@ -108,7 +108,7 @@ async function switchTab(host: PaneHost, io: Io, cwd: string, tab: PaneTab): Pro
   const model = await paneModel(io, cwd, { ...view, tab }, await host.sessionId())
   await store.set('tab', tab)
   await store.set('confirmRetest', null)
-  await store.set('fullPage', 0)
+  await firstPage(store)
   if (model.selected === view.selected) return
   await store.set('selected', model.selected)
   await store.set('expanded', false)
@@ -117,12 +117,20 @@ async function switchTab(host: PaneHost, io: Io, cwd: string, tab: PaneTab): Pro
 
 /**
  * `n` or `p`: show the next or previous page of the full output this surface drew, stopping
- * at its first and last page. Nothing drawn here, or no full output drawn, turns nothing.
- * Rejects on a state failure.
+ * at its first and last page. The page is kept for the record drawn, so another record
+ * shows its first. Nothing drawn here, or no full output drawn, turns nothing. Rejects on
+ * a state failure.
  */
 async function turnPage(store: PaneStore, drawn: DrawnPane | undefined, by: 1 | -1): Promise<void> {
   if (!drawn || drawn.fullPages === 0) return
-  await store.set('fullPage', turnedPage(drawn, (await store.get('fullPage')) ?? 0, by))
+  await store.set('fullPage', turnedPage(drawn, await pageFor(store, drawn.selected), by))
+  await store.set('fullPageOf', drawn.selected)
+}
+
+/** Start the full output from its first page, on whichever record shows it next. Rejects on a state failure. */
+async function firstPage(store: PaneStore): Promise<void> {
+  await store.set('fullPage', 0)
+  await store.set('fullPageOf', null)
 }
 
 /** The tab a tab's Button or its hidden twin names; null for any other key. */
@@ -286,7 +294,7 @@ export async function onPanePress(host: PaneHost, e: PressEvent, drawn: DrawnByS
       case KEY_FULL: {
         const full = !((await store.get('showFull')) ?? false)
         await store.set('showFull', full)
-        await store.set('fullPage', 0)
+        await firstPage(store)
         if (full) await store.set('expanded', true)
         return done
       }

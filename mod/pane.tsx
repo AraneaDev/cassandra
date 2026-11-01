@@ -391,7 +391,8 @@ const NO_RETEST: Record<Extract<PaneDetail['retest'], { ok: false }>['why'], str
 
 /**
  * The open detail's full output, on the marked row's ground: its title, the page of its lines
- * the layout gave it, and, when it runs to more than one page, which lines of how many show.
+ * the layout gave it, blank lines filling a shorter last page to a whole one, and, when it
+ * runs to more than one page, which lines of how many show.
  */
 function fullLines(f: Frame, full: NonNullable<PaneLayout['full']>): Line[] {
   const bg = { bg: MARKED_BG }
@@ -399,7 +400,7 @@ function fullLines(f: Frame, full: NonNullable<PaneLayout['full']>): Line[] {
   const range = `lines ${full.first + 1}–${full.first + full.lines.length} of ${full.total}`
   return [
     line(f, 'full-title', [indent, { text: 'full output', color: SECONDARY, bold: true }], bg),
-    ...full.lines.map((t, i) => line(f, `full-${i}`, [indent, { text: t }], bg)),
+    ...exactly(f, 'full', full.lines.map((t, i) => line(f, `full-${i}`, [indent, { text: t }], bg)), full.per, MARKED_BG),
     ...(full.pages > 1 ? [line(f, 'full-more', [indent, { text: range, color: SECONDARY }], bg)] : []),
   ]
 }

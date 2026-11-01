@@ -96,9 +96,10 @@ export interface PaneLayout {
   /**
    * The open detail's full output, one page of it: its `lines`, the index of the first of
    * them in the whole (`first` of `total` lines), and which `page` of `pages` this is. More
-   * than one page and a dim line counts the lines shown. Null when not shown.
+   * than one page and a dim line counts the lines shown. Every page takes `per` rows for its
+   * lines, the shorter last one too, so the rows below stay put while paging. Null when not shown.
    */
-  full: { lines: string[]; first: number; total: number; page: number; pages: number } | null
+  full: { lines: string[]; first: number; total: number; page: number; pages: number; per: number } | null
 }
 
 /**
@@ -252,7 +253,8 @@ export function layoutOf(model: PaneModel, columns: number, rows: number, extras
   }
   let taken = detail === 'full' ? fullRows : detail === 'compact' ? COMPACT_DETAIL_ROWS : 0
   // The full output opens under the detail: its title and as many lines as leave one list
-  // row. Output that does not fit is paged, a line of its own counting the lines shown.
+  // row. Output that does not fit is paged, a line of its own counting the lines shown, and
+  // every page takes the rows of a whole one.
   let full: PaneLayout['full'] = null
   if (model.view.showFull && detail !== 'none' && model.detail !== null) {
     const body = fullBody(model.detail, innerOf(columns))
@@ -262,8 +264,8 @@ export function layoutOf(model: PaneModel, columns: number, rows: number, extras
       const pages = Math.ceil(body.length / per)
       const page = Math.min(pages - 1, Math.max(0, Math.trunc(extras.fullPage) || 0))
       const lines = body.slice(page * per, (page + 1) * per)
-      full = { lines, first: page * per, total: body.length, page, pages }
-      taken += FULL_TITLE_ROWS + lines.length + (pages > 1 ? FULL_MORE_ROWS : 0)
+      full = { lines, first: page * per, total: body.length, page, pages, per }
+      taken += FULL_TITLE_ROWS + per + (pages > 1 ? FULL_MORE_ROWS : 0)
     }
   }
   return {
