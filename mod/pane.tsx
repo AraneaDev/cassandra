@@ -387,6 +387,7 @@ const NO_RETEST: Record<Extract<PaneDetail['retest'], { ok: false }>['why'], str
   'denied': 'not offered for a denied call',
   'no-input': 'not possible: the call\'s input was not kept',
   'too-large': 'not possible: the call\'s input was too large to keep',
+  'secret': 'not possible: the call looked like it held a secret, so its input was not kept',
 }
 
 /**

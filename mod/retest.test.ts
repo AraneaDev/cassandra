@@ -79,6 +79,18 @@ test('a denied call offers no retest, and a record without its input says so', a
   await ui.unmount()
 })
 
+test('a call that looked like it held a secret says why it cannot be retested, and offers no r', async ($, on) => {
+  const host = memoryHost(on)
+  failing(on)
+  await $.tool.call({ tool: 'Bash', command: 'curl -H "Authorization: Bearer abc123def" https://api.example.com' })
+  expect(stored(host).record.inputSecret).toBe(true)
+  const ui = await $.ui.mount({ ...PANE, props: sized(140, 40), surface: 'terminal', viewport })
+  await openRow(ui, (await rowKeys(ui))[0]!)
+  expect((await paneLines(ui)).find((l) => l.trimStart().startsWith('retest'))).toContain('the call looked like it held a secret, so its input was not kept')
+  expect((await buttonKeys(ui)).filter((k) => k.includes('retest'))).toEqual([])
+  await ui.unmount()
+})
+
 test('the confirm shows the whole command and its directory, wrapped, never cut', async ($, on) => {
   memoryHost(on)
   failing(on)

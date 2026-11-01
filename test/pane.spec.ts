@@ -25,7 +25,7 @@ beforeEach(async () => {
   await io.writeText(`${cwd}/a.txt`, 'one')
 })
 
-type Extra = Partial<Pick<FailureRecord, 'input' | 'cwd' | 'inputTooLarge' | 'errorFull' | 'gitHead' | 'dirty' | 'stateStamp' | 'stateKind' | 'sessionId'>>
+type Extra = Partial<Pick<FailureRecord, 'input' | 'cwd' | 'inputTooLarge' | 'inputSecret' | 'errorFull' | 'gitHead' | 'dirty' | 'stateStamp' | 'stateKind' | 'sessionId'>>
 
 async function seed(command: string, lastSeen: string, excerpt = '', kind: 'failure' | 'denial' = 'failure', extra: Extra = {}): Promise<string> {
   const stamp = await stateStamp(io, cwd)
@@ -246,7 +246,9 @@ test('retest availability', async () => {
   const old = await seed('old', '2026-10-30T10:00:00.000Z')
   const big = await seed('big', '2026-10-30T10:00:00.000Z', '', 'failure', { inputTooLarge: true, cwd })
   const ok = await seed('ok', '2026-10-30T10:00:00.000Z', '', 'failure', { input: { command: 'ok' }, cwd: `${cwd}/sub` })
+  const secret = await seed('secret', '2026-10-30T10:00:00.000Z', '', 'failure', { inputSecret: true })
   const retest = async (selected: string) => (await paneModel(io, cwd, { ...view, selected }, 's1')).detail?.retest
+  expect(await retest(secret)).toEqual({ ok: false, why: 'secret' })
   expect(await retest(denied)).toEqual({ ok: false, why: 'denied' })
   expect(await retest(old)).toEqual({ ok: false, why: 'no-input' })
   expect(await retest(big)).toEqual({ ok: false, why: 'too-large' })

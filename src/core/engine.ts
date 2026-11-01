@@ -6,6 +6,7 @@ import { stateStamp, unchanged } from './freshness.ts'
 import type { Io } from './io.ts'
 import { findRepoRoot, pathsFor } from './paths.ts'
 import { deleteRecord, readRecord, upsertRecord } from './record.ts'
+import { inputLooksSecret, redactSecrets } from './redact.ts'
 import { packageScope } from './scope.ts'
 import { compactionCount } from './session.ts'
 import { appendStat, attributeBoundary, type BriefBoundary } from './stats.ts'
@@ -27,7 +28,8 @@ const DIRTY_MAX = 200
  * written to disk and later handed back to the model as `additionalContext`, so it is
  * treated as untrusted throughout: ASCII control characters, which carry terminal escape
  * sequences and can hide or rewrite what is displayed, become spaces before anything else
- * happens, and the result is collapsed and capped. The warning template then quotes it,
+ * happens, and the result is collapsed and capped. Likely secrets were redacted before
+ * either (see `record`). The warning template then quotes it,
  * and labels it as tool output rather than instruction.
  * Also used for an agent's stated reason when it resolves a failure.
  */
@@ -168,7 +170,13 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
   const earlier = await readRecord(io, paths, hash)
   const { hashes, stats } = stamp.git ? await dirtyHashes(io, await findRepoRoot(io, call.cwd), stamp.git.dirty, earlier) : { hashes: {}, stats: {} }
   const inputJson = JSON.stringify(call.input)
-  const full = sanitiseFull(reason)
+  // Redacted before sanitising: collapsing and capping could cut a secret past recognition.
+  const output = reason === undefined ? undefined : redactSecrets(reason)
+  const full = sanitiseFull(output)
+  // A call that looks like it holds a secret is matched by its hash and never kept for a retest.
+  const keep = inputLooksSecret(call.input)
+    ? { inputSecret: true as const }
+    : { ...(inputJson !== undefined && inputJson.length <= INPUT_MAX ? { input: call.input } : { inputTooLarge: true as const }), cwd: call.cwd }
   await upsertRecord(io, paths, hash, {
     tool: call.tool,
     display: displayFor(call.tool, call.input),
@@ -179,10 +187,9 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
     ...(stamp.coarse ? { stateCoarse: stamp.coarse } : {}),
     sessionId: call.sessionId,
     compactions: await compactionCount(io, paths, call.sessionId),
-    errorExcerpt: sanitiseExcerpt(reason),
+    errorExcerpt: sanitiseExcerpt(output),
     ...(full ? { errorFull: full } : {}),
-    ...(inputJson !== undefined && inputJson.length <= INPUT_MAX ? { input: call.input } : { inputTooLarge: true as const }),
-    cwd: call.cwd,
+    ...keep,
     agentId: call.agentId,
     ...(stamp.git
       ? {

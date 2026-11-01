@@ -508,3 +508,65 @@ test('full output keeps newlines and tabs, drops other control characters, and i
   expect(long.length).toBe(16384)
   expect(long.endsWith('...')).toBe(true)
 })
+
+describe('likely secrets', () => {
+  const secrets = [
+    'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+    'github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz',
+    'sk-proj-AbCdEfGhIjKlMnOpQrStUvWx',
+    'sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz_0123',
+    'AKIAIOSFODNN7EXAMPLE',
+    'xoxb-123456789012-1234567890123-AbCdEfGhIjKl',
+    'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U',
+    'Bearer QWxhZGRpbjpvcGVuU2VzYW1l',
+    '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----',
+    'password=hunter2xyz',
+    'api_key: hunter2xyz',
+    '--client-secret hunter2xyz',
+  ]
+  const stored = async (command: string) => readRecord(io, await pathsFor(io, cwd), (await fingerprint(io, 'Bash', { command }, ''))!)
+
+  test.each(secrets)('%p is redacted from the excerpt and the full output', async (secret) => {
+    await settle(io, call('bun run deploy'), { kind: 'failure', reason: `Exit code 1\nauth failed with ${secret}\nbye` }, null)
+    const rec = await stored('bun run deploy')
+    const value = secret.replace(/^(Bearer |password=|api_key: |--client-secret )/, '')
+    const firstLine = value.split('\n')[0]!
+    expect(rec?.errorExcerpt).toContain('[redacted]')
+    expect(rec?.errorExcerpt).not.toContain(firstLine)
+    expect(rec?.errorFull).toContain('[redacted]')
+    expect(rec?.errorFull).not.toContain(firstLine)
+    expect(rec?.errorFull).toEndWith('bye')
+  })
+
+  test('output with no secret in it is stored unchanged', async () => {
+    await settle(io, call('bun test'), { kind: 'failure', reason: 'Exit code 1\n3 tests failing' }, null)
+    const rec = await stored('bun test')
+    expect(rec?.errorExcerpt).toBe('Exit code 1 3 tests failing')
+    expect(rec?.errorFull).toBe('Exit code 1\n3 tests failing')
+    expect(rec?.input).toEqual({ command: 'bun test' })
+    expect(rec?.inputSecret).toBeUndefined()
+  })
+
+  test('the warning quotes the redacted excerpt', async () => {
+    await settle(io, call('bun run deploy'), { kind: 'failure', reason: 'token=s3cr3tvalue rejected' }, null)
+    const w = await check(io, call('bun run deploy'))
+    expect(w?.text).toContain('"token=[redacted] rejected"')
+    expect(w?.text).not.toContain('s3cr3tvalue')
+  })
+
+  test('a call whose input looks like it holds a secret keeps neither its input nor its directory', async () => {
+    const command = 'curl -H "Authorization: Bearer abc123def" https://api.example.com'
+    await settle(io, call(command), { kind: 'failure', reason: 'Exit code 22' }, null)
+    const rec = await stored(command)
+    expect(rec).not.toBeNull()
+    expect(rec?.input).toBeUndefined()
+    expect(rec?.cwd).toBeUndefined()
+    expect(rec?.inputSecret).toBe(true)
+    expect(rec?.inputTooLarge).toBeUndefined()
+    expect(rec?.display).toBe('curl -H "Authorization: Bearer [redacted]" https://api.example.com')
+    // Still matched, and still forgotten by a success.
+    expect(await check(io, call(command))).not.toBeNull()
+    expect(await settle(io, call(command), { kind: 'success' }, null)).toBe(true)
+    expect(await stored(command)).toBeNull()
+  })
+})

@@ -30,7 +30,7 @@ export interface PaneDetail {
   warnsNow: boolean; evidenceThen: string; evidenceNow: string
   firstSeen: string; lastSeen: string; tries: number
   session: string; fix: string | null
-  retest: { ok: true; tool: string; input: unknown; cwd: string } | { ok: false; why: 'denied' | 'no-input' | 'too-large' }
+  retest: { ok: true; tool: string; input: unknown; cwd: string } | { ok: false; why: 'denied' | 'no-input' | 'too-large' | 'secret' }
 }
 /** The warning this session raised last, for the record it was about. */
 export interface JustWarned { hash: string; at: string; display: string; count: number; lastSeen: string; reason: string | null; evidence: string; fix: string | null }
@@ -131,6 +131,7 @@ function evidenceNow(r: FailureRecord, stamp: StateStamp, same: boolean): string
 /** Why a record cannot be retested, or the exact call to run. */
 function retestOf(r: FailureRecord, cwd: string): PaneDetail['retest'] {
   if (r.kind === 'denial') return { ok: false, why: 'denied' }
+  if (r.inputSecret) return { ok: false, why: 'secret' }
   if (r.inputTooLarge) return { ok: false, why: 'too-large' }
   if (r.input === undefined) return { ok: false, why: 'no-input' }
   return { ok: true, tool: r.tool, input: r.input, cwd: typeof r.cwd === 'string' && r.cwd ? r.cwd : cwd }

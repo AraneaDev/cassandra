@@ -42,6 +42,10 @@ function listSync(dir: string): Listing {
   return { ok: true, entries }
 }
 
+/** Owner-only, for the files and directories the store is written to (see `nodeIo`). */
+const FILE_MODE = 0o600
+const DIR_MODE = 0o700
+
 /**
  * The `Io` the binary and the CLI run on.
  *
@@ -50,6 +54,11 @@ function listSync(dir: string): Listing {
  * parallel, and a concurrent reader that saw a half-written record would judge it
  * corrupt and delete it. The staging name carries the pid and a random suffix so two
  * writers cannot collide, and ends in `.tmp` so the record listing never reads one.
+ *
+ * Everything it writes is Cassandra's own store, which holds failure output and call
+ * inputs, so it is owner-only: files it creates are 0600 and directories it creates 0700
+ * (before the umask, which only ever takes more away). A record is rewritten through a
+ * fresh staging file, so one stored before this rule takes the mode at its next write.
  */
 export const nodeIo: Io = {
   async readText(path) {
@@ -61,10 +70,10 @@ export const nodeIo: Io = {
     }
   },
   async writeText(path, text) {
-    mkdirSync(dirname(path), { recursive: true })
+    mkdirSync(dirname(path), { recursive: true, mode: DIR_MODE })
     const staging = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
     try {
-      writeFileSync(staging, text)
+      writeFileSync(staging, text, { mode: FILE_MODE })
       renameSync(staging, path)
     } catch (err) {
       try {
@@ -76,8 +85,8 @@ export const nodeIo: Io = {
     }
   },
   async appendText(path, text) {
-    mkdirSync(dirname(path), { recursive: true })
-    appendFileSync(path, text)
+    mkdirSync(dirname(path), { recursive: true, mode: DIR_MODE })
+    appendFileSync(path, text, { mode: FILE_MODE })
   },
   async remove(path) {
     rmSync(path, { force: true })

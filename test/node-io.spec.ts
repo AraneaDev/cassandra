@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isMissingSubtree, nodeIo } from '../src/io/node.ts'
@@ -68,4 +68,14 @@ test('modIo removes its staging file when the host write rejects part-way', asyn
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('writes and appends are owner-only: files 0600, the directories they create 0700', async () => {
+  const root = tmp()
+  const mode = (p: string): number => statSync(p).mode & 0o777
+  await nodeIo.writeText(join(root, 'records', 'ab', 'abcd.json'), '{}')
+  await nodeIo.appendText(join(root, 'logs', 'stats.jsonl'), 'x\n')
+  expect(mode(join(root, 'records', 'ab', 'abcd.json'))).toBe(0o600)
+  expect(mode(join(root, 'logs', 'stats.jsonl'))).toBe(0o600)
+  for (const dir of ['records', 'records/ab', 'logs']) expect(mode(join(root, dir))).toBe(0o700)
 })

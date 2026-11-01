@@ -40,6 +40,9 @@ function hex(buffer: ArrayBuffer): string {
  * unreadable" for a failed listing is decided by asking whether the directory exists.
  * Every one of those subprocesses sits on a rare path (a failure, a warning, a forget),
  * never on the hot miss path, which is one hash and one read.
+ *
+ * `$.fs.write` takes no file mode, so a file this front end creates gets the engine's
+ * default permissions, not the owner-only ones `nodeIo` sets.
  */
 export function modIo($: ModHost): Io {
   const run = async (argv: readonly string[], cwd: string, stdin?: string): Promise<RunResult | null> => {
