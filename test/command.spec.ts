@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const command = readFileSync(join(import.meta.dir, '..', 'commands', 'cassandra.md'), 'utf8')
+const command = readFileSync(join(import.meta.dir, '..', 'commands', 'report.md'), 'utf8')
 
 describe('the slash command', () => {
   it('has frontmatter with a description', () => {

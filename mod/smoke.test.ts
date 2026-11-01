@@ -30,12 +30,14 @@ test('the query tool is answered through the real engine', async ($) => {
   expect(String(r.result)).toBe('cassandra: could not answer.')
 })
 
-// The test kit's `$` has no `fs`, so the answer is the mod's own fallback text rather than
-// the usage: this proves `/cassandra` reaches the mod's `command.run` hook and resolves
-// with text. The real usage text is covered by test/mod.spec.ts and the end-to-end run.
+// A run from the test kit carries a plugin origin, so the answer is the refusal: this proves
+// `/cassandra` reaches the mod's `command.run` hook and resolves with text, and that the args
+// the old subcommands took no longer list or forget anything. The person's own origins, which
+// open the pane, are covered by test/mod.spec.ts.
 test('/cassandra is answered by the mod through the real engine', async ($) => {
-  const r = await $.command.run({ command: 'cassandra', args: 'nope' })
-  expect(typeof r.text).toBe('string')
-  expect(r.text).toBe('could not read what this project remembers.')
-  expect(r.exitCode).toBe(1)
+  for (const args of [undefined, 'list', 'forget --all']) {
+    const r = await $.command.run({ command: 'cassandra', args })
+    expect(r.text).toBe('The pane opens only from your own /cassandra command.')
+    expect(r.exitCode).toBe(1)
+  }
 })

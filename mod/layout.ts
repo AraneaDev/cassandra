@@ -17,8 +17,13 @@ export const FULL_INDENT_CELLS = 3
 
 /** The cells set in from either edge of a pane `columns` wide, as the drawing frames it. */
 export const padOf = (columns: number): number => Math.min(tierOf(columns) === 'narrow' ? 1 : 2, Math.floor(columns / 2))
-/** The cells between the pane's insets. */
-export const innerOf = (columns: number): number => Math.max(0, columns - 2 * padOf(columns))
+/** Cells a card's body rows are set in from either side of its title rule: two on medium and wide, none narrow. */
+const CARD_INSET_CELLS = 2
+/** The cells set in from either edge of a card's body rows: the pane's inset, and the card's own on medium and wide. */
+export const cardPadOf = (columns: number): number =>
+  Math.min(padOf(columns) + (tierOf(columns) === 'narrow' ? 0 : CARD_INSET_CELLS), Math.floor(columns / 2))
+/** The cells a card's body rows have between their insets. */
+export const cardInnerOf = (columns: number): number => Math.max(0, columns - 2 * cardPadOf(columns))
 
 /** `label` and then `text`, its lines and their overflow wrapped to `room` cells, each continued line unlabelled. */
 function labelled(label: string, text: string, room: number): LabelledLine[] {
@@ -69,17 +74,23 @@ export function fullBody(detail: PaneDetail, inner: number): string[] {
 /** What the pane shows, decided from its model and its size. Pure data; the drawing follows it. */
 export interface PaneLayout {
   tier: Tier; tooShort: boolean
+  /** The pane's rows: the drawing fills the body with blank rows to this, so the key bar ends the pane. */
+  height: number
+  /** Whether each card has a blank row before it; a short pane gives those rows to the list. */
+  gaps: boolean
   header: { branch: boolean; commit: boolean }
   counters: 'tiles' | 'short' | 'in-header'
   tabs: 'names' | 'digits'
   justWarned: boolean
   /** Whether the History card's title rule has a row; on the shortest pane it gives it to the list. */
   historyTitle: boolean
+  /** Whether the History card has its blank row under the title; the shortest panes give it to the list. */
+  historyGap: boolean
   /** Whether the last action's notice has its own row above the key bar, taken from the list. */
   notice: boolean
   /** The search row under the History title, taken from the list: the open field, the applied query, or none. */
   search: 'field' | 'query' | null
-  /** Rows the key list takes from the list (its title and as many of its rows as fit), 0 when closed. */
+  /** Rows the key list takes from the list (its gap, title, the blank under it and as many of its rows as fit), 0 when closed. */
   keys: number
   /**
    * Records `start` .. `start + count` of `model.rows`; `more` records follow the window.
@@ -115,14 +126,14 @@ type Window = Omit<PaneLayout['list'], 'rows'>
 
 /** Header, tabs, one list row and the key bar: below this only a one-line fallback fits. */
 export const PANE_MIN_LINES = 4
-/** Below this many rows the counters move into the header line. */
+/** Below this many rows the counters move into the header line, and the cards lose the blank row before them. */
 const COUNTERS_IN_HEADER_BELOW = 22
 const NARROW_BELOW = 56
 const WIDE_FROM = 100
 
 /** Rows each part of the pane costs: the layout budgets these, and the drawing draws exactly these. */
 export const ROWS = {
-  header: 1, tabs: 1, tiles: 3, shortCounters: 1, justWarned: 7, historyTitle: 1, notice: 1, search: 1, keysTitle: 1, keyBar: 1,
+  header: 1, tabs: 1, tiles: 4, shortCounters: 1, cardGap: 1, titleGap: 1, justWarned: 7, historyTitle: 1, notice: 1, search: 1, keysTitle: 1, keyBar: 1,
   fullDetail: 9, compactDetail: 3, retestGap: 1, retestTitle: 1, fullTitle: 1, fullMore: 1,
 } as const
 const HEADER_ROWS = ROWS.header
@@ -133,13 +144,16 @@ const JUST_WARNED_ROWS = ROWS.justWarned
 const HISTORY_TITLE_ROWS = ROWS.historyTitle
 const NOTICE_ROWS = ROWS.notice
 const SEARCH_ROWS = ROWS.search
+const CARD_GAP_ROWS = ROWS.cardGap
+const TITLE_GAP_ROWS = ROWS.titleGap
 const KEYS_TITLE_ROWS = ROWS.keysTitle
 const KEY_BAR_ROWS = ROWS.keyBar
 const FULL_DETAIL_ROWS = ROWS.fullDetail
 const COMPACT_DETAIL_ROWS = ROWS.compactDetail
-/** The retest confirm's blank line above it and its title rule. */
-const RETEST_HEAD_ROWS = ROWS.retestGap + ROWS.retestTitle
-const FULL_TITLE_ROWS = ROWS.fullTitle
+/** The retest confirm's blank line above it, its title rule and the blank line under that. */
+const RETEST_HEAD_ROWS = ROWS.retestGap + ROWS.retestTitle + ROWS.titleGap
+/** The full output's title and the blank line under it. */
+const FULL_TITLE_ROWS = ROWS.fullTitle + ROWS.titleGap
 const FULL_MORE_ROWS = ROWS.fullMore
 
 /**
@@ -207,22 +221,27 @@ export function layoutOf(model: PaneModel, columns: number, rows: number, extras
   const tier = tierOf(columns)
   const tooShort = rows < PANE_MIN_LINES
   const counters: PaneLayout['counters'] = tooShort || rows < COUNTERS_IN_HEADER_BELOW
-    ? 'in-header' : tier === 'wide' ? 'tiles' : 'short'
+    ? 'in-header' : tier === 'narrow' ? 'short' : 'tiles'
   const tabs: PaneLayout['tabs'] = tier === 'narrow' || tooShort ? 'digits' : 'names'
   if (tooShort) {
     return {
-      tier, tooShort, header: { branch: false, commit: false }, counters, tabs, justWarned: false,
-      historyTitle: false, notice: false, search: null, keys: 0, list: { start: 0, count: 0, more: model.rows.length, rows: 0 }, detail: 'none',
+      tier, tooShort, height: rows, gaps: false, header: { branch: false, commit: false }, counters, tabs, justWarned: false,
+      historyTitle: false, historyGap: false, notice: false, search: null, keys: 0, list: { start: 0, count: 0, more: model.rows.length, rows: 0 }, detail: 'none',
       retest: null, full: null,
     }
   }
+  // A short pane gives the blank row before each card to the list first, never a line that says something.
+  const gaps = rows >= COUNTERS_IN_HEADER_BELOW
+  const gap = gaps ? CARD_GAP_ROWS : 0
   const counterRows = counters === 'tiles' ? TILES_ROWS : counters === 'short' ? SHORT_COUNTERS_ROWS : 0
-  const chrome = HEADER_ROWS + TABS_ROWS + counterRows + HISTORY_TITLE_ROWS + KEY_BAR_ROWS
+  const chrome = HEADER_ROWS + TABS_ROWS + counterRows + KEY_BAR_ROWS + gap + HISTORY_TITLE_ROWS + TITLE_GAP_ROWS
   let available = rows - chrome
   // The card goes first when it would leave the list nothing.
-  const justWarned = model.justWarned !== null && available - JUST_WARNED_ROWS >= 1
-  if (justWarned) available -= JUST_WARNED_ROWS
-  // With nothing left the history title gives up its row to the one list row.
+  const justWarned = model.justWarned !== null && available - gap - JUST_WARNED_ROWS >= 1
+  if (justWarned) available -= gap + JUST_WARNED_ROWS
+  // With nothing left the history title gives up the blank under it, then its own row, to the one list row.
+  const historyGap = available >= 1
+  if (!historyGap) available += TITLE_GAP_ROWS
   const historyTitle = available >= 1
   if (!historyTitle) available += HISTORY_TITLE_ROWS
   // The search row comes before the notice: an open field must stay where it can be typed in.
@@ -233,7 +252,7 @@ export function layoutOf(model: PaneModel, columns: number, rows: number, extras
   const pending = model.detail?.retest
   let retest: PaneLayout['retest'] = null
   if (pending?.ok === true && model.view.confirmRetest !== null && model.view.confirmRetest === model.selected) {
-    const lines = retestBody(pending, innerOf(columns))
+    const lines = retestBody(pending, cardInnerOf(columns))
     retest = lines !== null && available - RETEST_HEAD_ROWS - lines.length >= 1 ? { lines } : 'too-small'
   }
   if (retest !== null && retest !== 'too-small') available -= RETEST_HEAD_ROWS + retest.lines.length
@@ -242,8 +261,9 @@ export function layoutOf(model: PaneModel, columns: number, rows: number, extras
   const notice = (Boolean(model.view.notice) || retest === 'too-small') && available - NOTICE_ROWS >= 1
   if (notice) available -= NOTICE_ROWS
   // The key list takes what it can and leaves one list row; its title alone is not worth a row.
-  const keyRoom = extras.showKeys ? Math.min(KEYS_TITLE_ROWS + extras.keyRows, available - 1) : 0
-  const keys = keyRoom > KEYS_TITLE_ROWS ? keyRoom : 0
+  const keyHead = gap + KEYS_TITLE_ROWS + TITLE_GAP_ROWS
+  const keyRoom = extras.showKeys ? Math.min(keyHead + extras.keyRows, available - 1) : 0
+  const keys = keyRoom > keyHead ? keyRoom : 0
   available -= keys
   let detail: PaneLayout['detail'] = 'none'
   const fullRows = model.detail === null ? FULL_DETAIL_ROWS : fullDetailRows(model.detail)
@@ -252,12 +272,12 @@ export function layoutOf(model: PaneModel, columns: number, rows: number, extras
     else if (available - COMPACT_DETAIL_ROWS >= 1) detail = 'compact'
   }
   let taken = detail === 'full' ? fullRows : detail === 'compact' ? COMPACT_DETAIL_ROWS : 0
-  // The full output opens under the detail: its title and as many lines as leave one list
+  // The full output opens under the detail: its title, a blank line and as many lines as leave one list
   // row. Output that does not fit is paged, a line of its own counting the lines shown, and
   // every page takes the rows of a whole one.
   let full: PaneLayout['full'] = null
   if (model.view.showFull && detail !== 'none' && model.detail !== null) {
-    const body = fullBody(model.detail, innerOf(columns))
+    const body = fullBody(model.detail, cardInnerOf(columns))
     const room = available - taken - FULL_TITLE_ROWS - 1
     const per = body.length <= room ? body.length : room - FULL_MORE_ROWS
     if (per >= 1) {
@@ -269,8 +289,8 @@ export function layoutOf(model: PaneModel, columns: number, rows: number, extras
     }
   }
   return {
-    tier, tooShort, header: { branch: tier !== 'narrow', commit: tier === 'wide' },
-    counters, tabs, justWarned, historyTitle, notice, search, keys, list: { ...windowOf(model, available - taken), rows: available - taken }, detail,
+    tier, tooShort, height: rows, gaps, header: { branch: tier !== 'narrow', commit: tier === 'wide' },
+    counters, tabs, justWarned, historyTitle, historyGap, notice, search, keys, list: { ...windowOf(model, available - taken), rows: available - taken }, detail,
     retest, full,
   }
 }

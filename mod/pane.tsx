@@ -1,6 +1,6 @@
 import type { PaneDetail, PaneModel, PaneRow, PaneTab } from '../src/core/pane.ts'
 import { cells, fit, padTo, spaces } from './draw-text.ts'
-import { FULL_INDENT_CELLS, RETEST_LABEL_CELLS, ROWS, fullDetailRows, padOf, type PaneLayout } from './layout.ts'
+import { FULL_INDENT_CELLS, RETEST_LABEL_CELLS, ROWS, cardPadOf, fullDetailRows, padOf, type PaneLayout } from './layout.ts'
 
 export { fit } from './draw-text.ts'
 
@@ -52,7 +52,7 @@ export const KEY_SEARCH_CLEAR = 'search-clear'
 const HEADING = 'text'
 /** Secondary text: labels, times, notes. */
 const SECONDARY = 'inactive'
-/** Rules. */
+/** Rules, and the frame of the counter band. */
 const FAINT = 'subtle'
 /** The active tab's ground. */
 const ACCENT = 'suggestion'
@@ -136,6 +136,12 @@ const joined = (groups: Seg[][], gap: number): Seg[] => groups.flatMap((g, i) =>
 
 /** How the pane is laid across its width: the cells either side, and the room between. */
 interface Frame { columns: number; pad: number; inner: number }
+
+/** A frame `pad` cells in from either edge of a pane `columns` wide. */
+const frameOf = (columns: number, pad: number): Frame => ({ columns, pad, inner: Math.max(0, columns - 2 * pad) })
+
+/** The pane's two frames: its own (header, tabs, title rules, the band, the bar) and its cards' body rows. */
+interface Frames { pane: Frame; body: Frame }
 
 /** A line of `segs` set in from either edge, cut and padded to exactly the pane's width. */
 function line(f: Frame, key: string, segs: Seg[], over: Pick<Line, 'bg' | 'button'> = {}): Line {
@@ -271,7 +277,44 @@ export function twinTarget(element: string, focused: string | null): string | nu
   return before === undefined ? null : `${KEY_TAB_PREFIX}${before.id}`
 }
 
-/** The four counters: a row of figures over a row of labels, then a blank line; or one short line. */
+/** The rule between two tiles of the counter band: a space, the rule, a space. */
+const TILE_RULE = ' │ '
+
+/** `widths` with `extra` cells shared out evenly, the first ones taking the remainder. */
+function share(widths: number[], extra: number): number[] {
+  const each = Math.floor(Math.max(0, extra) / widths.length)
+  const rest = Math.max(0, extra) - each * widths.length
+  return widths.map((w, i) => w + each + (i < rest ? 1 : 0))
+}
+
+/**
+ * The counters as one framed band `f.inner` wide: its rounded top edge, a line of figures, a
+ * line of labels, its bottom edge, a faint rule between the tiles. Each tile is as wide as its
+ * label or figure, the room left shared out evenly. The long labels while they fit, then the
+ * short ones; past that the tiles share the room alike and their labels are cut.
+ */
+function band(f: Frame, all: ReadonlyArray<[number, string, string, string]>): Line[] {
+  const inner = Math.max(0, f.inner - 4)
+  const rules = (all.length - 1) * cells(TILE_RULE)
+  const needs = (label: 2 | 3) => all.map((k) => Math.max(cells(k[label]), cells(String(k[0]))))
+  const own = (label: 2 | 3) => needs(label).reduce((a, b) => a + b, 0) + rules
+  const label: 2 | 3 = own(2) <= inner ? 2 : 3
+  const widths = own(label) <= inner
+    ? share(needs(label), inner - own(label))
+    : share(all.map(() => 0), inner - rules)
+  const frame = (text: string): Seg => ({ text, color: FAINT })
+  const tiles = (cell: (k: [number, string, string, string], w: number) => Seg): Seg[] =>
+    [frame('│ '), ...all.flatMap((k, i) => [...(i === 0 ? [] : [frame(TILE_RULE)]), cell(k, widths[i]!)]), frame(' │')]
+  const edge = (left: string, right: string): Seg[] => [frame(`${left}${'─'.repeat(Math.max(0, f.inner - 2))}${right}`)]
+  return [
+    line(f, 'tiles-top', edge('╭', '╮')),
+    line(f, 'tiles-figures', tiles(([n, color], w) => ({ text: padTo(fit(String(n), w), w), bold: true, color: n > 0 ? color : HEADING }))),
+    line(f, 'tiles-labels', tiles((k, w) => ({ text: padTo(fit(k[label], w), w), color: SECONDARY }))),
+    line(f, 'tiles-end', edge('╰', '╯')),
+  ]
+}
+
+/** The four counters: one framed band, or one short line. */
 function counters(f: Frame, model: PaneModel, layout: PaneLayout): Line[] {
   const c = model.counters
   // Each counter's figure, colour, tile label, short label and narrow label.
@@ -288,24 +331,25 @@ function counters(f: Frame, model: PaneModel, layout: PaneLayout): Line[] {
     return [line(f, 'counters', set.find((segs) => width(segs) <= f.inner) ?? set[set.length - 1]!)]
   }
   if (layout.counters !== 'tiles') return []
-  const slot = Math.floor(f.inner / all.length)
-  const widths = all.map((_, i) => slot + (i < f.inner - slot * all.length ? 1 : 0))
-  const figures = all.map(([n, color], i): Seg => ({ text: padTo(String(n), widths[i]!), bold: true, color: n > 0 ? color : HEADING }))
-  const labels = all.map(([, , label], i): Seg => ({ text: padTo(fit(label, widths[i]! - 1), widths[i]!), color: SECONDARY }))
-  return exactly(f, 'tiles', [line(f, 'tiles-figures', figures), line(f, 'tiles-labels', labels)], ROWS.tiles)
+  return exactly(f, 'tiles', band(f, all.map(([n, color, long, short]) => [n, color, long, short])), ROWS.tiles)
 }
 
 /** A label padded to its column, dim, then its value. */
 const field = (label: string, labelWidth: number, value: Seg[]): Seg[] => [{ text: padTo(label, labelWidth), color: SECONDARY }, ...value]
 
-/** The Just warned card: what was run, what it matched, why that failed, the evidence and the fix. */
-function justWarned(f: Frame, model: PaneModel): Line[] {
+/**
+ * The Just warned card: its title, a blank row, then what was run, what it matched, why that
+ * failed, the evidence and the fix, its body set in from the title.
+ */
+function justWarned(fs: Frames, model: PaneModel): Line[] {
   const w = model.justWarned
   if (w === null) return []
+  const f = fs.body
   const note: Seg[] = [{ text: clock(w.at), color: SECONDARY }, { text: ' ' }, key(KEY_DISMISS, 'Dismiss', 'd')]
   const lw = 10
   const lines = [
-    titleRule(f, 'warned-title', { text: '!', color: WARNING, bold: true }, 'Just warned', note),
+    titleRule(fs.pane, 'warned-title', { text: '!', color: WARNING, bold: true }, 'Just warned', note),
+    blankLine('warned-under'),
     line(f, 'warned-ran', field('you ran', lw, [{ text: w.display, color: HEADING }])),
     line(f, 'warned-matched', field('matched', lw, [{ text: `the same call, ${w.count}× before ` }, { text: `(last ${clock(w.lastSeen)})`, color: SECONDARY }])),
     line(f, 'warned-because', field('because', lw, [w.reason === null ? { text: '(no output captured)', color: SECONDARY } : { text: w.reason, color: ERROR }])),
@@ -325,7 +369,7 @@ const MIN_DISPLAY = 4
  */
 function rowLine(f: Frame, r: PaneRow, marked: boolean, open: boolean): Line {
   const markColor = r.state === 'warns' ? ERROR : r.state === 'denied' ? WARNING : SECONDARY
-  const head: Seg[] = [{ text: ` ${open ? '▾' : '▸'} `, color: markColor }, { text: `${r.time}  `, color: SECONDARY }]
+  const head: Seg[] = [{ text: `${open ? '▾' : '▸'} `, color: markColor }, { text: `${r.time}  `, color: SECONDARY }]
   const tail: Seg[] = [{ text: ` ×${r.count}`, color: SECONDARY }]
   if (r.state === 'stale') tail.push({ text: '  stale', color: SECONDARY })
   if (r.state === 'denied') tail.push({ text: '  denied', color: WARNING })
@@ -391,8 +435,8 @@ const NO_RETEST: Record<Extract<PaneDetail['retest'], { ok: false }>['why'], str
 }
 
 /**
- * The open detail's full output, on the marked row's ground: its title, the page of its lines
- * the layout gave it, blank lines filling a shorter last page to a whole one, and, when it
+ * The open detail's full output, on the marked row's ground: its title, a blank row, the page
+ * of its lines the layout gave it, blank lines filling a shorter last page to a whole one, and, when it
  * runs to more than one page, which lines of how many show.
  */
 function fullLines(f: Frame, full: NonNullable<PaneLayout['full']>): Line[] {
@@ -401,21 +445,23 @@ function fullLines(f: Frame, full: NonNullable<PaneLayout['full']>): Line[] {
   const range = `lines ${full.first + 1}–${full.first + full.lines.length} of ${full.total}`
   return [
     line(f, 'full-title', [indent, { text: 'full output', color: SECONDARY, bold: true }], bg),
+    line(f, 'full-under', [], bg),
     ...exactly(f, 'full', full.lines.map((t, i) => line(f, `full-${i}`, [indent, { text: t }], bg)), full.per, MARKED_BG),
     ...(full.pages > 1 ? [line(f, 'full-more', [indent, { text: range, color: SECONDARY }], bg)] : []),
   ]
 }
 
 /**
- * The retest confirm: its title rule, then the whole call as the layout wrapped it, each
- * label dim and the call's text plain. Run and Cancel are the key bar's.
+ * The retest confirm: a blank row, its title rule, a blank row, then the whole call as the
+ * layout wrapped it, each label dim and the call's text plain. Run and Cancel are the key bar's.
  */
-function retestLines(f: Frame, lines: NonNullable<Exclude<PaneLayout['retest'], 'too-small'>>['lines']): Line[] {
+function retestLines(fs: Frames, lines: NonNullable<Exclude<PaneLayout['retest'], 'too-small'>>['lines']): Line[] {
   const note: Seg[] = [{ text: 'runs through your permission settings', color: SECONDARY }]
   return [
     blankLine('retest-gap'),
-    titleRule(f, 'retest-title', { text: '↻', color: WARNING, bold: true }, 'Retest', note),
-    ...lines.map((l, i) => line(f, `retest-${i}`, [{ text: padTo(l.label, RETEST_LABEL_CELLS), color: SECONDARY }, { text: l.text, color: HEADING }])),
+    titleRule(fs.pane, 'retest-title', { text: '↻', color: WARNING, bold: true }, 'Retest', note),
+    blankLine('retest-under'),
+    ...lines.map((l, i) => line(fs.body, `retest-${i}`, [{ text: padTo(l.label, RETEST_LABEL_CELLS), color: SECONDARY }, { text: l.text, color: HEADING }])),
   ]
 }
 
@@ -455,7 +501,7 @@ function listLines(f: Frame, model: PaneModel, layout: PaneLayout): Line[] {
     if (marked && open) out.push(...detailLines(f, model.detail!, layout.detail as 'full' | 'compact'))
     if (marked && open && layout.full !== null) out.push(...fullLines(f, layout.full))
   })
-  if (moreLine) out.push(line(f, 'more', [{ text: ` ${more} more ↓`, color: SECONDARY }]))
+  if (moreLine) out.push(line(f, 'more', [{ text: `${more} more ↓`, color: SECONDARY }]))
   return out
 }
 
@@ -488,11 +534,18 @@ function historyNote(model: PaneModel, layout: PaneLayout): Seg[] {
   return [count, { text: ' matching ', color: SECONDARY }, { text: model.view.query, color: HEADING, bold: true }]
 }
 
-/** The key list `h` opens, in the rows the layout gave it: its title, the rates, then the keys. */
-function keyList(f: Frame, model: PaneModel, rows: number, searchable: boolean): Line[] {
-  const title = titleRule(f, 'keys-title', { text: '?', color: SECONDARY }, 'Keys', [])
-  const body = keyListRows(model, searchable).slice(0, rows - 1).map((t, i) => line(f, `keys-${i}`, [{ text: t, color: i === 0 ? SECONDARY : HEADING }]))
-  return [title, ...body]
+/**
+ * The key list `h` opens, in the rows the layout gave it: a blank row when the cards have one
+ * before them, its title, a blank row, the rates, then the keys.
+ */
+function keyList(fs: Frames, model: PaneModel, layout: PaneLayout, searchable: boolean): Line[] {
+  const head = [
+    ...(layout.gaps ? [blankLine('keys-gap')] : []),
+    titleRule(fs.pane, 'keys-title', { text: '?', color: SECONDARY }, 'Keys', []),
+    blankLine('keys-under'),
+  ]
+  const body = keyListRows(model, searchable).slice(0, layout.keys - head.length).map((t, i) => line(fs.body, `keys-${i}`, [{ text: t, color: i === 0 ? SECONDARY : HEADING }]))
+  return [...head, ...body]
 }
 
 /**
@@ -604,8 +657,9 @@ const textProps = (s: Seg): Record<string, unknown> => ({
 
 /**
  * Draws the pane as an element tree, top to bottom: header, tabs, counters, the Just warned
- * card, the History card and the key bar, each in exactly the rows `layout` budgets, every
- * line exactly `columns` cells so nothing wraps. Pure: no I/O. Buttons carry a no-op
+ * card, the History card and the key bar, each in exactly the rows `layout` budgets, the body
+ * filled with blank rows so the key bar is the pane's last row, every line exactly `columns`
+ * cells so nothing wraps. Pure: no I/O. Buttons carry a no-op
  * `onPress` and are told apart by key; keyed text sits in a keyed Box, because Text drops
  * its key. A store that cannot be read, or a body shorter than the pane's least, draws one line.
  */
@@ -620,23 +674,31 @@ export function drawPane(el: Elements, model: PaneModel, columns: number, layout
   if (model.error) return one(model.error)
   if (layout.tooShort) return one(TOO_SHORT)
 
-  const pad = padOf(columns)
-  const f: Frame = { columns, pad, inner: Math.max(0, columns - 2 * pad) }
+  const f = frameOf(columns, padOf(columns))
+  const fs: Frames = { pane: f, body: frameOf(columns, cardPadOf(columns)) }
   const glyph: Seg = { text: '◷', color: SECONDARY }
   const tab = TABS.find((t) => t.id === model.view.tab)?.name ?? 'History'
-  const lines: Line[] = [
+  const gap = (k: string): Line[] => (layout.gaps ? [blankLine(k)] : [])
+  const body: Line[] = [
     header(f, model, layout),
     tabs(f, model, layout),
     ...counters(f, model, layout),
-    ...(layout.justWarned ? justWarned(f, model) : []),
-    ...(layout.historyTitle ? [titleRule(f, 'history-title', glyph, tab, historyNote(model, layout))] : []),
-    ...(layout.search === null ? [] : [searchLine(f, model, layout.search)]),
-    ...listLines(f, model, layout),
-    ...(layout.keys > 0 ? keyList(f, model, layout.keys, Input !== undefined) : []),
-    ...(layout.retest !== null && layout.retest !== 'too-small' ? retestLines(f, layout.retest.lines) : []),
+    ...(layout.justWarned ? [...gap('warned-gap'), ...justWarned(fs, model)] : []),
+    ...(layout.historyTitle ? [...gap('history-gap'), titleRule(f, 'history-title', glyph, tab, historyNote(model, layout))] : []),
+    ...(layout.historyTitle && layout.historyGap ? [blankLine('history-under')] : []),
+    ...(layout.search === null ? [] : [searchLine(fs.body, model, layout.search)]),
+    ...listLines(fs.body, model, layout),
+    ...(layout.keys > 0 ? keyList(fs, model, layout, Input !== undefined) : []),
+    ...(layout.retest !== null && layout.retest !== 'too-small' ? retestLines(fs, layout.retest.lines) : []),
+  ]
+  const footer: Line[] = [
     ...(layout.notice && noticeOf(model, layout) ? [noticeLine(f, noticeOf(model, layout)!)] : []),
     keyBar(f, model, layout, Input !== undefined),
   ]
+  // The key bar ends the pane: blank rows fill a shorter body, and a taller one never pushes it out.
+  const room = Math.max(0, layout.height - footer.length)
+  const shown = body.slice(0, room)
+  const lines: Line[] = [...shown, ...Array.from({ length: room - shown.length }, (_, i) => blankLine(`fill-${i}`)), ...footer]
 
   const drawSeg = (s: Seg): unknown => {
     if (s.field !== undefined) {

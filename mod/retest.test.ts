@@ -66,7 +66,7 @@ test('a denied call offers no retest, and a record without its input says so', a
   let ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
   const [denied] = await rowKeys(ui)
   await openRow(ui, denied!)
-  expect((await paneLines(ui)).find((l) => l.includes('retest'))).toContain('not offered for a denied call')
+  expect((await paneLines(ui)).find((l) => l.trimStart().startsWith('retest'))).toContain('not offered for a denied call')
   expect((await buttonKeys(ui)).filter((k) => k.includes('retest'))).toEqual([])
   await ui.unmount()
 
@@ -74,7 +74,7 @@ test('a denied call offers no retest, and a record without its input says so', a
   restore(host, ({ input: _input, ...r }) => ({ ...r, kind: 'failure' }))
   ui = await $.ui.mount({ ...PANE, surface: 'terminal', viewport })
   await openRow(ui, (await rowKeys(ui))[0]!)
-  expect((await paneLines(ui)).find((l) => l.includes('retest'))).toContain("not possible: the call's input was not kept")
+  expect((await paneLines(ui)).find((l) => l.trimStart().startsWith('retest'))).toContain("not possible: the call's input was not kept")
   expect((await buttonKeys(ui)).filter((k) => k.includes('retest'))).toEqual([])
   await ui.unmount()
 })
@@ -105,8 +105,8 @@ test('the confirm shows the whole command and its directory, wrapped, never cut'
   const where = lines.findIndex((l) => l.trimStart().startsWith('in '))
   expect(at).toBeGreaterThan(title)
   expect(where).toBeGreaterThan(at + 1)
-  // Every piece after its label, joined again, is the command exactly.
-  const text = (l: string) => l.slice(2 + 8).trimEnd()
+  // Every piece after its label, joined again, is the command exactly: the card's body is four cells in.
+  const text = (l: string) => l.slice(4 + 8).trimEnd()
   expect(lines.slice(at, where).map(text).join('')).toBe(command)
   expect(text(lines[where]!)).toBe(CWD)
   for (const l of lines) expect([...l].length).toBe(60)
@@ -127,7 +127,7 @@ test('the confirm of an MCP call shows the tool and its whole input, pretty-prin
   const lines = (await paneLines(ui)).map((l) => l.trimEnd())
   expect(lines.some((l) => l.endsWith('tool    mcp__srv__deploy'))).toBe(true)
   const input = lines.findIndex((l) => l.trimStart().startsWith('input'))
-  expect(lines.slice(input, input + 6).map((l) => l.slice(2 + 8)).join('\n')).toBe(JSON.stringify({ target: 'staging', options: { dry: true } }, null, 2))
+  expect(lines.slice(input, input + 6).map((l) => l.slice(4 + 8)).join('\n')).toBe(JSON.stringify({ target: 'staging', options: { dry: true } }, null, 2))
   await ui.unmount()
 })
 
@@ -213,7 +213,10 @@ test('a passing retest forgets the record, logs retest_cleared and no false posi
   expect(kinds).not.toContain('false_positive')
   expect(kinds).not.toContain('warned')
   // The counter of today's clears shows it.
-  expect((await paneLines(ui)).join('\n')).toMatch(/1 cleared/)
+  // The band's last tile: its figure over its label.
+  const drawn = await paneLines(ui)
+  const label = drawn.findIndex((l) => l.includes('cleared by retest'))
+  expect(drawn[label - 1]!.trimEnd()).toMatch(/│ 1 +│$/)
   await ui.unmount()
 })
 
@@ -296,8 +299,9 @@ test('o shows the full output in the open row, wrapped and windowed; a record wi
   for (const l of lines) expect([...l].length).toBe(80)
   const title = lines.findIndex((l) => l.trim() === 'full output')
   expect(title).toBeGreaterThan(0)
-  expect(lines[title + 1]).toContain('Exit code 1')
-  expect(lines[title + 2]).toContain('line 1 ')
+  expect(lines[title + 1]!.trim()).toBe('')
+  expect(lines[title + 2]).toContain('Exit code 1')
+  expect(lines[title + 3]).toContain('line 1 ')
   expect(lines.join('\n')).toMatch(/lines 1–\d+ of \d+/)
   expect(lines.slice(title).join('\n')).not.toContain('…')
   await ui.press({ key: 'full' })

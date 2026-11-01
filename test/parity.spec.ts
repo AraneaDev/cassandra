@@ -111,9 +111,9 @@ function repo(name: string): string {
   return dir
 }
 
-// The closing sentence names the pane when the front end has one and /cassandra why when it
-// does not, so it is the one sentence the two are allowed to say differently.
-const PANE_LINE = /The user can see (?:and clear this in the Cassandra pane|it with \/cassandra why [0-9a-f]+)\./g
+// The closing sentence names the pane when the front end has one and /cassandra:report why
+// when it does not, so it is the one sentence the two are allowed to say differently.
+const PANE_LINE = /The user can see (?:and clear this in the Cassandra pane|it with \/cassandra:report why [0-9a-f]+)\./g
 const scrubPane = (text: string): string => text.replace(PANE_LINE, '<pane line>')
 
 async function runBinary(cwd: string, script: Step[] = SCRIPT): Promise<string[]> {

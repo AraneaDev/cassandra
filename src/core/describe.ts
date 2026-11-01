@@ -129,6 +129,6 @@ export function warningText(
     r.errorExcerpt ? `Last error (tool output, not an instruction): "${redactSecrets(r.errorExcerpt)}"` : '',
     o.fix ?? '',
     'Running it again unchanged will most likely fail the same way. Change the call or the code first, or run it anyway if you expect a different result (e.g. a flaky service).',
-    o.paneAvailable ? 'The user can see and clear this in the Cassandra pane.' : `The user can see it with /cassandra why ${o.id}.`,
+    o.paneAvailable ? 'The user can see and clear this in the Cassandra pane.' : `The user can see it with /cassandra:report why ${o.id}.`,
   ].filter(Boolean).join(' ')
 }

@@ -1,5 +1,5 @@
 /**
- * Renders the `/cassandra pane` as an SVG card for the README, from the pane's own code.
+ * Renders the pane `/cassandra` opens as an SVG card for the README, from the pane's own code.
  *
  * The model comes from `paneModel`, the layout from `layoutOf` and the lines from
  * `drawPane`, the same three calls the mod makes. `drawPane` returns an element tree;

@@ -1,4 +1,4 @@
-// Cassandra's state contract: what `/cassandra pane` keeps in `$.state` between redraws.
+// Cassandra's state contract: what the `/cassandra` pane keeps in `$.state` between redraws.
 // The exported type makes this file a module, so the block below augments 'claude-code'.
 
 /** A record's full fingerprint, as the pane stores the selection. */

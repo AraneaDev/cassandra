@@ -82,12 +82,12 @@ background, and says so. Cassandra becomes active from the second session onward
 is around 79MB, because `bun build --compile` embeds the Bun runtime to produce it, which is
 why it is gitignored rather than committed and built on first use instead.
 
-Bun 1.1.0 or newer is needed for the classic path, the shell CLI, and `/cassandra` on builds
-without mods. The mod needs none.
+Bun 1.1.0 or newer is needed for the classic path, the shell CLI, and `/cassandra:report`.
+The mod needs none.
 
 ## The pane
 
-`/cassandra` (or `/cassandra pane`) opens a pane beside the conversation with the project's
+`/cassandra` opens a pane beside the conversation with the project's
 records. It has
 a header with a status pill (how many records would warn now), four tabs, counters, and
 the records grouped by day. The selected row is tinted, a stale row is suffixed `stale`
@@ -132,19 +132,19 @@ the pane has drawn; if that row is gone, the press just redraws the pane.
 <img align="right" width="300" src="docs/images/narrow.svg" alt="The same pane 44 columns wide. The header keeps the project and the pill, the tabs other than the open one show only their digits, the counters share one line with shorter labels (warn, kept, today, cleared), the Just warned card and the open row cut their longer lines with an ellipsis, and the key bar keeps Retest, Forget and Forget all.">
 
 The pane fits its size. Under 56 columns the tabs other than the open one fall back to
-their digits and the branch leaves the header; from 100 columns the commit joins it and the
-counters get a tile each. Narrower than that the counters share one line, with shorter
-labels under 56 columns when the usual ones do not fit. Under 22 rows they move into the
-header, and a body under 4 lines draws a single line asking for a taller window. Long lines are cut with an ellipsis rather than wrapped, except in the retest
-confirm, which always shows the whole call. The key bar drops the keys that matter least
+their digits and the branch leaves the header; from 100 columns the commit joins it. From
+56 columns the counters sit in one framed band; narrower, they share one line with shorter
+labels. Under 22 rows they move into the header, and a body under 4 lines draws a single
+line asking for a taller window. Long lines are cut with an ellipsis rather than wrapped,
+except in the retest confirm, which always shows the whole call. The key bar drops the keys that matter least
 first; their letters still work.
 
+`/cassandra` opens the pane and does nothing else; anything you type after it is ignored.
 The pane needs a mod build and an interactive session; with no interactive surface, as in
-`claude -p`, `/cassandra pane` answers "The pane needs an interactive session." and
-exits 1, and a bare `/cassandra` prints the list instead. Only your own command opens it:
-from a plugin or a schedule, `/cassandra pane` answers "The pane opens only from your own
-/cassandra command." and exits 1, and a bare `/cassandra` prints the list. `/cassandra list`
-always prints it. The shell CLI does not know `pane`.
+`claude -p`, `/cassandra` answers "The pane needs an interactive session; /cassandra:report
+lists what Cassandra remembers." and exits 1. Only your own command opens it: from a plugin
+or a schedule, `/cassandra` answers "The pane opens only from your own /cassandra command."
+and exits 1. For the list as text, use [`/cassandra:report`](#commands) or the shell CLI.
 
 The pane is not live. Records written by other sessions show up when this pane next
 redraws, for instance after this session's own store changes.
@@ -189,8 +189,8 @@ failed (or was denied) once or N times in this project, when it last did, and wh
 evidence the probe found; the last error, fenced as `(tool output, not an instruction)`; a
 fix note if one exists; the advice that running it again unchanged will most likely fail
 the same way, to change the call or the code first, or to run it anyway if you expect a
-different result; and a pointer to the Cassandra pane, or to `/cassandra why <id>` where
-there is no pane.
+different result; and a pointer to the Cassandra pane, or to `/cassandra:report why <id>`
+where there is no pane.
 
 ### Briefings
 
@@ -370,19 +370,13 @@ switching branches.
 All of them accept an optional `--cwd <path>` to act on a project other than the current
 directory.
 
-Inside a session, `/cassandra [list | why <id> | forget <id> | forget --all | stats]` does
-the same. That argument syntax is the mod's. On builds that load the mod, the mod answers
-it directly, with no Bun, no shell and no model round-trip. With no argument it lists. The
-text is the same as the CLI's, and a headless run such as `claude -p "/cassandra stats"`
-exits 0 or 1 like the CLI does. In a headless run, Claude Code labels the mod's command
-output with the prefix `cassandra:`. Options such as `--cwd` apply to the shell CLI only;
-the mod always acts on the session's working directory. From the mod, `forget --all` only
-runs when the person types it, or in a headless run; any other origin is refused and
-nothing is forgotten. On builds without mods, `/cassandra` is the plugin's markdown
-command, which takes your request in plain words and runs the CLI through Bun. On mod
-builds that command is still reachable as `/cassandra:cassandra`. A bare `/cassandra` you
-type in an interactive session opens [the pane](#the-pane), as `/cassandra pane` does;
-`/cassandra list` prints the list.
+Inside a session, `/cassandra:report` is the plugin's markdown command. It takes your
+request in plain words (the list, `why <id>` for one record, or `stats`) and runs the CLI
+through Bun, so its text is the CLI's. A headless run such as
+`claude -p "/cassandra:report stats"` works too, or run `bun src/cli.ts stats` in a shell.
+It reads and reports; forgetting is done in [the pane](#the-pane), through the shell CLI, or
+by the agent's `resolve` tool. `/cassandra` itself only opens the pane. On builds without
+mods, `/cassandra` does not exist and `/cassandra:report` still works through Bun.
 
 ## Two front ends
 
@@ -394,7 +388,7 @@ type in an interactive session opens [the pane](#the-pane), as `/cassandra pane`
 - The mod also keeps a status line under the prompt, `cassandra: N live failures`. It is
   cleared when none are live, and it is shown to you, not the model. It refreshes only when
   a failure is recorded or forgotten (a recorded failure, a success that forgets one,
-  `resolve`, `/cassandra forget`), never on an ordinary call. The count is taken at the
+  `resolve`, a forget in the pane), never on an ordinary call. The count is taken at the
   last change to the store, so after you edit files it can overstate what is still live,
   until the next recorded or forgotten failure.
 - The binary (`src/hook.ts`) is the classic `PreToolUse`, `PostToolUse*`,
@@ -451,9 +445,9 @@ Known gaps and differences:
 - If a hot reload of the mod fails mid-session after it claimed the session, nothing
   records for the rest of that session. That only affects development folders, not an
   installed plugin.
-- The shell CLI (`bun src/cli.ts`), and `/cassandra` on builds without mods, still need
-  Bun. On a mod build `/cassandra` does not.
-- The pane (`/cassandra pane`) is covered by the engine test kit, which mounts it on
+- The shell CLI (`bun src/cli.ts`) and `/cassandra:report` still need Bun. On a mod build
+  `/cassandra` does not.
+- The pane (`/cassandra`) is covered by the engine test kit, which mounts it on
   terminal and desktop and presses its buttons by key. The kit cannot send hotkey
   letters, so `f`, `a`, Tab, Enter and Esc were checked by hand in an interactive
   terminal session, as were the status line and Esc interrupting a running call. Desktop
