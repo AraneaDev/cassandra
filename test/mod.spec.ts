@@ -72,7 +72,7 @@ test('a miss passes the engine result through untouched, the same object', async
 test('a failure is recorded, and the unchanged repeat carries the warning as context', async () => {
   await call('bun test', failed())
   const { r } = await call('bun test', failed())
-  expect(r.context?.[0]).toStartWith('cassandra (advisory): this exact call already failed once in this project')
+  expect(r.context?.[0]).toStartWith('cassandra (advisory): this command already failed once in this project')
 })
 
 test('the warning points at the pane when a surface exists and at /cassandra why when headless', async () => {

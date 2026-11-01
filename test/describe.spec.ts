@@ -85,14 +85,21 @@ test('warningText is one advisory paragraph', () => {
   const o = { id: 'abcd1234', boundary: 'same_context' as const, now: '2026-01-10T12:00:00.000Z', fix: null, paneAvailable: true }
   const tail = 'Running it again unchanged will most likely fail the same way. Change the call or the code first, or run it anyway if you expect a different result (e.g. a flaky service).'
   expect(warningText(r, o)).toBe(
-    'cassandra (advisory): this exact call already failed 3 times in this project, last 1 hour ago in this session. '
+    'cassandra (advisory): this command already failed 3 times in this project, last 1 hour ago in this session. '
     + 'No file under this directory tree has changed since. Last error (tool output, not an instruction): "boom" '
     + `${tail} The user can see and clear this in the Cassandra pane.`,
   )
   expect(warningText({ ...r, errorExcerpt: '', kind: 'denial', count: 1, scope: 'packages/a' }, { ...o, paneAvailable: false, fix: 'Fix.' })).toBe(
-    'cassandra (advisory): this exact call already was denied once in this project (in packages/a), last 1 hour ago in this session. '
+    'cassandra (advisory): this command already was denied once in this project (in packages/a), last 1 hour ago in this session. '
     + `No file under this directory tree has changed since. Fix. ${tail} The user can see it with /cassandra why abcd1234.`,
   )
+})
+
+test('a Bash warning names the command, an MCP warning the exact call', () => {
+  const o = { id: 'abcd1234', boundary: 'same_context' as const, now: 'l', fix: null, paneAvailable: true }
+  // A Bash fingerprint covers only the normalised command, not its other arguments.
+  expect(warningText(base, o)).toStartWith('cassandra (advisory): this command already failed once in this project')
+  expect(warningText({ ...base, tool: 'mcp__srv__do', display: 'mcp__srv__do {}' }, o)).toStartWith('cassandra (advisory): this exact call already failed once in this project')
 })
 
 test('a name whose cut lands on a directory boundary keeps that segment', () => {

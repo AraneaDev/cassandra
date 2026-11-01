@@ -30,7 +30,7 @@ test('a failure, then the same call unchanged, warns with the excerpt fenced', a
   await settle(io, call('bun test'), { kind: 'failure', reason: 'Exit code 1\n3 tests failing' }, null)
   const w = await check(io, call('bun test'))
   expect(w?.text).toBe(
-    'cassandra (advisory): this exact call already failed once in this project, last just now in this session. '
+    'cassandra (advisory): this command already failed once in this project, last just now in this session. '
     + 'No file under this directory tree has changed since. '
     + 'Last error (tool output, not an instruction): "Exit code 1 3 tests failing" '
     + 'Running it again unchanged will most likely fail the same way. Change the call or the code first, or run it anyway if you expect a different result (e.g. a flaky service). '
@@ -93,7 +93,7 @@ test('a call that never ran records nothing', async () => {
 
 test('a denial is recorded as denied and warned as denied', async () => {
   await settle(io, call('rm -rf x'), { kind: 'denial', reason: 'not allowed' }, null)
-  expect((await check(io, call('rm -rf x')))?.text).toContain('this exact call already was denied once in this project')
+  expect((await check(io, call('rm -rf x')))?.text).toContain('this command already was denied once in this project')
 })
 
 test('a subagent repeating the parent failure is attributed to the subagent boundary', async () => {
@@ -396,7 +396,7 @@ describe('package scope', () => {
 
   test('the warning names the package', async () => {
     await settle(io, at(a), { kind: 'failure', reason: 'boom' }, null)
-    expect((await check(io, at(a)))?.text).toStartWith('cassandra (advisory): this exact call already failed once in this project (in packages/a), last')
+    expect((await check(io, at(a)))?.text).toStartWith('cassandra (advisory): this command already failed once in this project (in packages/a), last')
   })
 
   test('a success in another package does not forget the failure', async () => {

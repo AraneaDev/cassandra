@@ -181,8 +181,8 @@ On `PreToolUse`:
 
 Any success of a remembered call forgets it, not only a success after a warning.
 
-A warning reads, in order: that this exact call already failed (or was denied) once or N
-times in this project, when it last did, and where from (this session, before the latest
+A warning reads, in order: that this command (for an MCP tool, this exact call) already
+failed (or was denied) once or N times in this project, when it last did, and where from (this session, before the latest
 compaction, an earlier session, or another agent); the evidence the probe found; the last
 error, fenced as `(tool output, not an instruction)`; a fix note if one exists; the advice
 that running it again unchanged will most likely fail the same way, to change the call or
