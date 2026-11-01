@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Entry, Io, Listing } from '../core/io.ts'
@@ -46,6 +46,24 @@ function listSync(dir: string): Listing {
 const FILE_MODE = 0o600
 const DIR_MODE = 0o700
 
+/** Store roots `ownStore` named, and those already made owner-only in this process. */
+const storeRoots = new Set<string>()
+const ownedRoots = new Set<string>()
+
+/** Make the store root `path` lies under owner-only, once per process. Never throws. */
+function ownRootOf(path: string): void {
+  for (const root of storeRoots) {
+    if (ownedRoots.has(root) || !(path === root || path.startsWith(`${root}/`))) continue
+    ownedRoots.add(root)
+    try {
+      mkdirSync(root, { recursive: true, mode: DIR_MODE })
+      chmodSync(root, DIR_MODE)
+    } catch {
+      // The files keep their own modes; the write goes ahead.
+    }
+  }
+}
+
 /**
  * The `Io` the binary and the CLI run on.
  *
@@ -57,8 +75,8 @@ const DIR_MODE = 0o700
  *
  * Everything it writes is Cassandra's own store, which holds failure output and call
  * inputs, so it is owner-only: files it creates are 0600 and directories it creates 0700
- * (before the umask, which only ever takes more away). A record is rewritten through a
- * fresh staging file, so one stored before this rule takes the mode at its next write.
+ * (before the umask, which only ever takes more away), and the store's root is made 0700
+ * at the first write under it (see `Io.ownStore`), which covers files written before.
  */
 export const nodeIo: Io = {
   async readText(path) {
@@ -70,6 +88,7 @@ export const nodeIo: Io = {
     }
   },
   async writeText(path, text) {
+    ownRootOf(path)
     mkdirSync(dirname(path), { recursive: true, mode: DIR_MODE })
     const staging = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
     try {
@@ -85,6 +104,7 @@ export const nodeIo: Io = {
     }
   },
   async appendText(path, text) {
+    ownRootOf(path)
     mkdirSync(dirname(path), { recursive: true, mode: DIR_MODE })
     appendFileSync(path, text, { mode: FILE_MODE })
   },
@@ -116,5 +136,8 @@ export const nodeIo: Io = {
   },
   now() {
     return new Date().toISOString()
+  },
+  ownStore(root) {
+    storeRoots.add(root)
   },
 }

@@ -59,4 +59,11 @@ export interface Io {
   homeDir(): Promise<string>
   /** The current time, ISO 8601. */
   now(): string
+  /**
+   * Note that `root` is the store's root directory. It does nothing then: the first write
+   * under it in this process makes it owner-only (0700), so no other user can reach a file
+   * inside, whatever that file's own mode. Best effort: a failure to do so never fails the
+   * write. Never throws.
+   */
+  ownStore(root: string): void
 }

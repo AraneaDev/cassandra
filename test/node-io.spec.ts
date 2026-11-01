@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { settle } from '../src/core/engine.ts'
 import { isMissingSubtree, nodeIo } from '../src/io/node.ts'
 
 const roots: string[] = []
@@ -78,4 +79,43 @@ test('writes and appends are owner-only: files 0600, the directories they create
   expect(mode(join(root, 'records', 'ab', 'abcd.json'))).toBe(0o600)
   expect(mode(join(root, 'logs', 'stats.jsonl'))).toBe(0o600)
   for (const dir of ['records', 'records/ab', 'logs']) expect(mode(join(root, dir))).toBe(0o700)
+})
+
+test('the store root is made owner-only at its first write under it, old files inside it included', async () => {
+  const root = join(tmp(), 'store')
+  mkdirSync(join(root, 'old'), { recursive: true, mode: 0o755 })
+  chmodSync(root, 0o755)
+  writeFileSync(join(root, 'old', 'record.json'), '{}', { mode: 0o644 })
+  const mode = (p: string): number => statSync(p).mode & 0o777
+  nodeIo.ownStore(root)
+  // Registering touches nothing, and a write elsewhere leaves the root as it was.
+  expect(mode(root)).toBe(0o755)
+  await nodeIo.writeText(join(tmp(), 'elsewhere.txt'), 'x')
+  expect(mode(root)).toBe(0o755)
+  await nodeIo.appendText(join(root, 'stats.jsonl'), 'x\n')
+  expect(mode(root)).toBe(0o700)
+})
+
+test('a store root that does not exist yet is created owner-only by the first write into it', async () => {
+  const root = join(tmp(), 'fresh', 'store')
+  nodeIo.ownStore(root)
+  await nodeIo.writeText(join(root, 'p', 'records', 'ab', 'x.json'), '{}')
+  expect(statSync(root).mode & 0o777).toBe(0o700)
+})
+
+test('recording a failure makes the data root owner-only', async () => {
+  const home = join(tmp(), 'home')
+  mkdirSync(home, { mode: 0o755 })
+  chmodSync(home, 0o755)
+  const work = tmp()
+  writeFileSync(join(work, 'a.txt'), 'one')
+  const saved = process.env.CASSANDRA_HOME
+  process.env.CASSANDRA_HOME = home
+  try {
+    expect(await settle(nodeIo, { tool: 'Bash', input: { command: 'bun test' }, cwd: work, sessionId: 's1' }, { kind: 'failure', reason: 'boom' }, null)).toBe(true)
+  } finally {
+    if (saved === undefined) delete process.env.CASSANDRA_HOME
+    else process.env.CASSANDRA_HOME = saved
+  }
+  expect(statSync(home).mode & 0o777).toBe(0o700)
 })

@@ -7,6 +7,13 @@ import { basename, dirname, isAbsolute, join, normalize } from './path.ts'
  * directory to fall back on, which every caller treats as silence.
  */
 export async function dataRoot(io: Io): Promise<string> {
+  const root = await resolveDataRoot(io)
+  // Owner-only from the store's first write: see `Io.ownStore`.
+  io.ownStore(root)
+  return root
+}
+
+async function resolveDataRoot(io: Io): Promise<string> {
   const explicit = (await io.env('CASSANDRA_HOME')) ?? (await io.env('CLAUDE_PLUGIN_DATA'))
   if (explicit) {
     await rememberDataRoot(io, explicit)

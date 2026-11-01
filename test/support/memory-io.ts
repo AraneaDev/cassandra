@@ -84,6 +84,8 @@ export function memoryIo(): MemoryIo {
     now() {
       return io.clock.now
     },
+    // No permissions to keep in memory.
+    ownStore() {},
   }
   return io
 }

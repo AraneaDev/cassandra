@@ -237,9 +237,14 @@ after a key such as `password=`, `api_key:` or `--token`. That covers the excerp
 output and the call as the record names it. It goes by shape only, so a secret of no known
 shape is kept as it is. A call whose input looks like it holds a secret is not kept: its
 record has neither the input nor the directory, so it cannot be retested, and the pane says
-why. The binary writes the store owner-only, files 0600 in directories 0700. The mod writes
-through Claude Code's file API, which takes no file mode, so a file the mod creates gets
-the default permissions.
+why.
+
+Both front ends make the store's data directory owner-only (0700) at the first write into
+it, so other users on the machine cannot reach any file inside it, files written by older
+versions included. The binary also creates its files 0600 and its directories 0700. The
+mod sets the directory with `chmod 700`; Claude Code's file API takes no file mode, so a
+file the mod creates keeps the default permissions inside that directory. This is best
+effort: when the mode cannot be set, Cassandra still records the failure.
 
 ### The freshness probe
 

@@ -27,6 +27,14 @@ export interface ModHost {
   }
 }
 
+/**
+ * Store roots `ownStore` named, and those already made owner-only. Module-wide, not per
+ * `modIo`, because the mod builds a fresh one for every call: one chmod per root while the
+ * mod is loaded.
+ */
+const storeRoots = new Set<string>()
+const ownedRoots = new Set<string>()
+
 function hex(buffer: ArrayBuffer): string {
   return [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
@@ -42,7 +50,9 @@ function hex(buffer: ArrayBuffer): string {
  * never on the hot miss path, which is one hash and one read.
  *
  * `$.fs.write` takes no file mode, so a file this front end creates gets the engine's
- * default permissions, not the owner-only ones `nodeIo` sets.
+ * default permissions, not the owner-only ones `nodeIo` sets. The store's root is made
+ * owner-only instead, with `chmod 700` after the first write under it (see `Io.ownStore`),
+ * which keeps every file inside it from other users whatever the file's own mode.
  */
 export function modIo($: ModHost): Io {
   const run = async (argv: readonly string[], cwd: string, stdin?: string): Promise<RunResult | null> => {
@@ -51,6 +61,15 @@ export function modIo($: ModHost): Io {
       return { exitCode: r.exitCode, stdout: r.stdout }
     } catch {
       return null
+    }
+  }
+  // After the write, since the engine creates the directories as it writes.
+  const ownRootOf = async (path: string): Promise<void> => {
+    for (const root of storeRoots) {
+      if (ownedRoots.has(root) || !(path === root || path.startsWith(`${root}/`))) continue
+      ownedRoots.add(root)
+      // Best effort: a refused chmod leaves the files' own modes, and the write stands.
+      await run(['chmod', '700', '--', root], '/')
     }
   }
   const must = (r: RunResult | null, what: string): void => {
@@ -94,9 +113,11 @@ export function modIo($: ModHost): Io {
         await run(['rm', '-f', '--', staging], '/')
         must(moved, `could not move ${staging} into place`)
       }
+      await ownRootOf(path)
     },
     async appendText(path, text) {
       must(await run(['sh', '-c', 'mkdir -p -- "$(dirname -- "$1")" && cat >> "$1"', 'sh', path], '/', text), `could not append to ${path}`)
+      await ownRootOf(path)
     },
     async remove(path) {
       must(await run(['rm', '-f', '--', path], '/'), `could not remove ${path}`)
@@ -137,6 +158,9 @@ export function modIo($: ModHost): Io {
     },
     now() {
       return new Date().toISOString()
+    },
+    ownStore(root) {
+      storeRoots.add(root)
     },
   }
 }
