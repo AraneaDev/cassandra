@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.30](https://github.com/AraneaDev/cassandra/compare/v0.0.29...v0.0.30) (2026-11-01)
+
+
+### Features
+
+* **pane:** open the pane on a bare /cassandra you type ([#76](https://github.com/AraneaDev/cassandra/issues/76)) ([b00a12d](https://github.com/AraneaDev/cassandra/commit/b00a12dbc581d0d9bd7f4b4a8c52d00e6055cc8c))
+
 ## [0.0.29](https://github.com/AraneaDev/cassandra/compare/v0.0.28...v0.0.29) (2026-11-01)
 
 
