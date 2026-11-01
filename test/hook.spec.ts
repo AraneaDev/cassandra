@@ -195,7 +195,9 @@ test('control characters are stripped from a stored excerpt', async () => {
   expect(stored).not.toContain('\u007f')
   expect(/[\u0000-\u001F\u007F]/.test(stored)).toBe(false)
   expect(stored).toContain('boom')
-  expect(stored).toContain('[31m red')
+  // The colour code is dropped whole, not left behind as `[31m`.
+  expect(stored).toContain('boom red')
+  expect(stored).not.toContain('[31m')
 })
 
 test('a replayed excerpt is fenced and labelled as tool output, not an instruction', async () => {

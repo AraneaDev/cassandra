@@ -174,7 +174,7 @@ async function record(io: Io, call: Call, kind: RecordKind, reason: string | und
   const output = reason === undefined ? undefined : redactSecrets(reason)
   const full = sanitiseFull(output)
   // A call that looks like it holds a secret is matched by its hash and never kept for a retest.
-  const keep = inputLooksSecret(call.input)
+  const keep = inputLooksSecret(call.input, call.tool)
     ? { inputSecret: true as const }
     : { ...(inputJson !== undefined && inputJson.length <= INPUT_MAX ? { input: call.input } : { inputTooLarge: true as const }), cwd: call.cwd }
   await upsertRecord(io, paths, hash, {

@@ -38,6 +38,48 @@ test.each([
   expect(redactSecrets(text)).toBe(text)
 })
 
+const G = '\x1b[32m'
+const OFF = '\x1b[0m'
+
+test.each([
+  ['a GitHub token', `${G}ghp_abcdefghijklmnopqrstuvwxyz0123456789${OFF}`],
+  ['a GitHub fine-grained token', `${G}github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz`],
+  ['an sk- key', `${G}sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz_0123`],
+  ['an AWS access key id', `${G}AKIAIOSFODNN7EXAMPLE${OFF}`],
+  ['a Slack token', `${G}xoxb-123456789012-1234567890123-AbCdEfGhIjKl`],
+  ['a JWT', `${G}eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U`],
+  ['a Bearer token', `${G}Bearer QWxhZGRpbjpvcGVu`],
+  ['a PEM private key', `${G}-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----`],
+  ['key=value', '\x1b[1mTOKEN=hunter2secret'],
+  ['--key value', `${G}--password hunter2secret`],
+  ['URL credentials', `${G}https://tim:hunter2secret@example.com`],
+  ['Basic credentials', `${G}Authorization: Basic dGltOmh1bnRlcjJzZWNyZXQ=`],
+])('redacts %s behind a colour code', (_what, text) => {
+  const out = redactSecrets(text)
+  expect(out).toContain('[redacted]')
+  for (const secret of ['ghp_abc', 'github_pat_11', 'sk-ant', 'AKIAIOSF', 'xoxb-1', 'eyJhbGci', 'QWxhZGRp', 'MIIE', 'hunter2secret', 'dGltOmh1']) expect(out).not.toContain(secret)
+})
+
+test('a colour code is dropped, and the text around it kept', () => {
+  expect(redactSecrets('\x1b[31mFAIL\x1b[0m src/a.test.ts')).toBe('FAIL src/a.test.ts')
+})
+
+test.each([
+  ['URL credentials', 'fatal: could not read from https://tim:s3cr3t@github.com/a/b.git', 'fatal: could not read from https://[redacted]@github.com/a/b.git'],
+  ['a database URL', 'connect postgres://app:p%40ss@db:5432/x failed', 'connect postgres://[redacted]@db:5432/x failed'],
+  ['Basic credentials', 'sent Authorization: Basic dGltOnNlY3JldA== and got 401', 'sent Authorization: Basic [redacted] and got 401'],
+])('redacts %s', (_what, input, expected) => {
+  expect(redactSecrets(input)).toBe(expected)
+})
+
+test.each([
+  'see https://example.com/docs@v2 for details',
+  'git@github.com:a/b.git',
+  'the basic idea: run it twice',
+])('leaves %p unchanged too', (text) => {
+  expect(redactSecrets(text)).toBe(text)
+})
+
 test('redaction is idempotent', () => {
   const once = redactSecrets('GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789')
   expect(redactSecrets(once)).toBe(once)
@@ -51,10 +93,19 @@ test('an input looks secret when any of it would be redacted', () => {
   expect(inputLooksSecret({ command: 'bun test' })).toBe(false)
   expect(inputLooksSecret({ command: 'grep -r "token:" src' })).toBe(false)
   expect(inputLooksSecret(undefined)).toBe(false)
+  // A colour code alone is not a secret.
+  expect(inputLooksSecret({ command: 'printf "\x1b[32mok\x1b[0m"' })).toBe(false)
+  expect(inputLooksSecret({ command: 'echo \u001b[32mok' })).toBe(false)
+})
+
+test('for Bash only the command is judged; an MCP input is judged whole', () => {
+  expect(inputLooksSecret({ command: 'bun test', description: 'check the token: value path' }, 'Bash')).toBe(false)
+  expect(inputLooksSecret({ command: 'TOKEN=abc123 bun test', description: 'run tests' }, 'Bash')).toBe(true)
+  expect(inputLooksSecret({ query: 'x', description: 'token: abc123' }, 'mcp__srv__do')).toBe(true)
 })
 
 test('a long run of identifier-like text is scanned in linear time', () => {
-  for (const unit of ['a_', 'a-', '-a', 'x_token']) {
+  for (const unit of ['a_', 'a-', '-a', 'x_token', 'a', 'a://', 'x://u:p', 'Authorization: Basic ', '\x1b[', 'u:p@']) {
     const text = unit.repeat(65536 / unit.length)
     const t0 = performance.now()
     redactSecrets(text)

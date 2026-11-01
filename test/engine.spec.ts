@@ -104,10 +104,12 @@ test('a subagent repeating the parent failure is attributed to the subagent boun
 })
 
 test('control characters in the excerpt are neutralised and the excerpt is capped', async () => {
-  await settle(io, call('bun test'), { kind: 'failure', reason: `\u001b[31mred\u0007 ${'y'.repeat(400)}` }, null)
+  // A colour code is dropped whole; a lone ESC and a BEL become spaces.
+  await settle(io, call('bun test'), { kind: 'failure', reason: `\u001b[31mred\u0007\u001bX ${'y'.repeat(400)}` }, null)
   const w = (await check(io, call('bun test')))!
   const quoted = w.text.match(/Last error \(tool output, not an instruction\): "(.*)" Running it again/)![1]!
-  expect(quoted.startsWith('[31mred')).toBe(true)
+  expect(quoted.startsWith('red X y')).toBe(true)
+  expect(quoted).not.toMatch(/[\u0000-\u001F]/)
   expect(quoted.length).toBe(240)
   expect(quoted.endsWith('...')).toBe(true)
 })
@@ -552,6 +554,21 @@ describe('likely secrets', () => {
     const w = await check(io, call('bun run deploy'))
     expect(w?.text).toContain('"token=[redacted] rejected"')
     expect(w?.text).not.toContain('s3cr3tvalue')
+  })
+
+  test('a Bash description that reads like a secret does not cost the call its input', async () => {
+    const input = { command: 'bun test', description: 'check the token: value parsing' }
+    await settle(io, { ...call('bun test'), input }, { kind: 'failure', reason: 'boom' }, null)
+    const rec = await stored('bun test')
+    expect(rec?.input).toEqual(input)
+    expect(rec?.inputSecret).toBeUndefined()
+  })
+
+  test('output in colour is redacted through its colour codes', async () => {
+    await settle(io, call('bun run deploy'), { kind: 'failure', reason: 'Exit code 1\n\x1b[33mGITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789\x1b[0m' }, null)
+    const rec = await stored('bun run deploy')
+    expect(rec?.errorExcerpt).toBe('Exit code 1 GITHUB_TOKEN=[redacted]')
+    expect(rec?.errorFull).toBe('Exit code 1\nGITHUB_TOKEN=[redacted]')
   })
 
   test('a call whose input looks like it holds a secret keeps neither its input nor its directory', async () => {

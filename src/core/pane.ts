@@ -5,6 +5,7 @@ import type { Io } from './io.ts'
 import { basename } from './path.ts'
 import { findRepoRoot, pathsFor, type Paths } from './paths.ts'
 import { listRecords, readRecord } from './record.ts'
+import { redactSecrets } from './redact.ts'
 import { compactionCount } from './session.ts'
 import { attributeBoundary, countToday, readStats, warningRates, type PaneCounters, type StatEvent } from './stats.ts'
 import type { FailureRecord, StateStamp } from './types.ts'
@@ -155,7 +156,10 @@ async function fixOf(io: Io, paths: Paths, hash: string): Promise<string | null>
   return note ? fixSentence(note) : null
 }
 
-const reasonOf = (r: FailureRecord): string | null => oneLine(r.errorExcerpt).slice(0, REASON_CAP) || null
+// Redacted again as read, for a record an older version stored before redaction.
+const reasonOf = (r: FailureRecord): string | null => oneLine(redactSecrets(r.errorExcerpt)).slice(0, REASON_CAP) || null
+/** The call as the pane shows it, on one line and redacted. */
+const displayOf = (r: FailureRecord): string => oneLine(redactSecrets(r.display))
 
 /**
  * What the Just warned card keeps of a warning raised now in `sessionId`: the record as it
@@ -202,13 +206,13 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, sessionId: 
     const query = view.query.trim().toLowerCase()
     const shown = sorted.filter((r) =>
       (view.tab === 'history' || r.state === (view.tab === 'warnings' ? 'warns' : view.tab))
-      && (!query || oneLine(r.record.display).toLowerCase().includes(query)))
+      && (!query || displayOf(r.record).toLowerCase().includes(query)))
     const rows: PaneRow[] = shown.map(({ hash, record, state }) => {
       const group = dayGroup(record.lastSeen, now)
       return {
         hash,
         id: hash.slice(0, 8),
-        display: oneLine(record.display),
+        display: displayOf(record),
         where: inScope(record),
         state,
         count: record.count,
@@ -229,7 +233,7 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, sessionId: 
       detail = {
         exitCode: exitCodeOf(r.errorExcerpt),
         reason: reasonOf(r),
-        full: typeof r.errorFull === 'string' && r.errorFull ? r.errorFull : null,
+        full: typeof r.errorFull === 'string' && r.errorFull ? redactSecrets(r.errorFull) : null,
         warnsNow: chosen.same,
         evidenceThen: evidenceThen(r),
         evidenceNow: evidenceNow(r, stamp, chosen.same),
@@ -252,7 +256,7 @@ export async function paneModel(io: Io, cwd: string, view: PaneView, sessionId: 
     if (last && warned && ours) {
       const r = warned.record
       justWarned = {
-        hash: last.hash, at: last.at, display: oneLine(r.display), count: last.count ?? r.count, lastSeen: last.lastSeen ?? r.lastSeen,
+        hash: last.hash, at: last.at, display: displayOf(r), count: last.count ?? r.count, lastSeen: last.lastSeen ?? r.lastSeen,
         reason: await keptOr(last.reason, () => reasonOf(r)), evidence: last.evidence ?? evidence(r),
         fix: await keptOr(last.fix, () => fixOf(io, paths, last.hash)),
       }

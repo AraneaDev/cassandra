@@ -241,6 +241,17 @@ test('the detail carries the fix note', async () => {
   expect((await paneModel(io, cwd, view, 's1')).detail?.fix).toBe(fixSentence(note))
 })
 
+test('a record an older version stored in plaintext shows redacted in the row, the detail and the full output', async () => {
+  const command = 'curl -u tim:x https://tim:hunter2secret@api.example.com'
+  const hash = await seed(command, '2026-10-30T10:00:00.000Z', 'Exit code 22 TOKEN=hunter2secret', 'failure', { errorFull: 'Exit code 22\nTOKEN=hunter2secret' })
+  const m = await paneModel(io, cwd, { ...view, selected: hash }, 's1')
+  expect(m.rows[0]!.display).toBe('curl -u tim:x https://[redacted]@api.example.com')
+  expect(m.detail?.reason).toBe('Exit code 22 TOKEN=[redacted]')
+  expect(m.detail?.full).toBe('Exit code 22\nTOKEN=[redacted]')
+  // A search cannot find the call by its secret either.
+  expect((await paneModel(io, cwd, { ...view, query: 'hunter2' }, 's1')).rows).toEqual([])
+})
+
 test('retest availability', async () => {
   const denied = await seed('denied', '2026-10-30T10:00:00.000Z', '', 'denial', { input: { command: 'denied' }, cwd })
   const old = await seed('old', '2026-10-30T10:00:00.000Z')

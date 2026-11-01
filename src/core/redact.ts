@@ -31,6 +31,15 @@ const WHOLE: readonly RegExp[] = [
   /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
 ]
 
+/**
+ * An ANSI CSI sequence (`\x1b[32m` and the like). Dropped before matching: an SGR code ends
+ * in a letter, which would otherwise read as part of the name before a secret and hide it.
+ */
+const CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g
+/** `scheme://user:pass@`, the `user:pass` only; a scheme is only tried from the start of a name. */
+const URL_CREDENTIALS = /(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/g
+/** `Authorization: Basic <base64>`, the credentials only. */
+const BASIC = /(?<![A-Za-z0-9_-])(authorization\s*:\s*basic\s+)[A-Za-z0-9+/]+=*/gi
 /** `Bearer <token>`, the token only. */
 const BEARER = /(?<![A-Za-z0-9])(bearer\s+)[A-Za-z0-9._~+/=-]+/gi
 /** Where a name starts: not inside another name. */
@@ -41,26 +50,40 @@ const KEY_VALUE = new RegExp(String.raw`(${NAME_START}${KEY_NAME}["']?\s*[:=]\s*
 /** `--key value` and `--key=value`, the value only; a following flag is not a value. */
 const FLAG_VALUE = new RegExp(String.raw`(${NAME_START}--${KEY_NAME}(?:=|\s+))(?!-)${VALUE}`, 'gi')
 
-/** The text with every likely secret replaced by `[redacted]`. Idempotent. */
+/** The text without its ANSI CSI sequences. */
+const withoutColour = (text: string): string => text.replace(CSI, '')
+
+/** The text with its ANSI CSI sequences dropped and every likely secret replaced by `[redacted]`. Idempotent. */
 export function redactSecrets(text: string): string {
-  let out = text
+  let out = withoutColour(text)
   for (const re of WHOLE) out = out.replace(re, REDACTED)
   return out
+    .replace(URL_CREDENTIALS, `$1${REDACTED}@`)
+    .replace(BASIC, `$1${REDACTED}`)
     .replace(BEARER, `$1${REDACTED}`)
     .replace(KEY_VALUE, `$1${REDACTED}`)
     .replace(FLAG_VALUE, `$1${REDACTED}`)
 }
 
 /**
- * Whether any of a call's input would be redacted: its JSON (which catches a secret under a
- * key, `{"password": "…"}`), or any one string in it (which catches one the JSON escaping
- * hides, behind an escaped newline).
+ * Whether redaction would change any of a call's input beyond dropping colour codes. For
+ * Bash only the command is judged, since the rest (a model-written `description`, flags)
+ * is never run as such and must not cost the call its retest; any other tool's input is
+ * judged whole: its JSON (which catches a secret under a key, `{"password": "…"}`) and
+ * every string in it (which catches one the JSON escaping hides, behind an escaped newline).
  */
-export function inputLooksSecret(input: unknown): boolean {
+export function inputLooksSecret(input: unknown, tool = ''): boolean {
+  if (tool === 'Bash') {
+    const command = input !== null && typeof input === 'object' ? (input as { command?: unknown }).command : undefined
+    return typeof command === 'string' && changes(command)
+  }
   const json = JSON.stringify(input)
   if (json === undefined) return false
-  if (redactSecrets(json) !== json) return true
+  if (changes(json)) return true
   const strings = (v: unknown): string[] =>
     typeof v === 'string' ? [v] : Array.isArray(v) ? v.flatMap(strings) : v !== null && typeof v === 'object' ? Object.values(v).flatMap(strings) : []
-  return strings(input).some((s) => redactSecrets(s) !== s)
+  return strings(input).some(changes)
 }
+
+/** Whether redaction replaces anything in the text, colour codes aside. */
+const changes = (text: string): boolean => redactSecrets(text) !== withoutColour(text)

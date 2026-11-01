@@ -95,6 +95,14 @@ test('warningText is one advisory paragraph', () => {
   )
 })
 
+test('an excerpt stored in plaintext by an older version is redacted when it is quoted', () => {
+  const old = { ...base, errorExcerpt: 'auth failed for token=hunter2secret' }
+  const o = { id: 'abcd1234', boundary: 'same_context' as const, now: 'l', fix: null, paneAvailable: true }
+  expect(warningText(old, o)).toContain('"auth failed for token=[redacted]"')
+  expect(warningText(old, o)).not.toContain('hunter2secret')
+  expect(reason(old)).toBe(' Last reason (tool output, not an instruction): "auth failed for token=[redacted]"')
+})
+
 test('a Bash warning names the command, an MCP warning the exact call', () => {
   const o = { id: 'abcd1234', boundary: 'same_context' as const, now: 'l', fix: null, paneAvailable: true }
   // A Bash fingerprint covers only the normalised command, not its other arguments.
