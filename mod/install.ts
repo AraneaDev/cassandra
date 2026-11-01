@@ -10,7 +10,7 @@ import { listRecords } from '../src/core/record.ts'
 import { modIo, type ModHost } from '../src/io/mod.ts'
 import { TRACKED, outcomeOf, toolInput } from './calls.ts'
 import { drawnOf, type DrawnBySurface } from './drawn.ts'
-import type { CommandEvent, ModEngine, ModOn, Next, PaneRenderEvent, PaneState, ToolCallEvent, ToolCallOutcome } from './engine.ts'
+import type { CommandEvent, ModEngine, ModOn, Next, OpenArgs, PaneRenderEvent, PaneState, ToolCallEvent, ToolCallOutcome } from './engine.ts'
 import { layoutOf, type PaneExtras } from './layout.ts'
 import { drawPane, twinTarget } from './pane.tsx'
 import { onPaneInput, onPanePress, selectRow, type PaneHost } from './press.ts'
@@ -274,7 +274,8 @@ async function dropEmptyConfirm($: ModEngine, io: Io): Promise<void> {
 /**
  * Open the pane, unless nothing can show one (a surface list that cannot be read counts as
  * none). Neither confirmation survives into a fresh open, nor an open search field, nor an
- * old notice, nor a later page of the full output. Rejects on a host failure.
+ * old notice, nor a later page of the full output. Opens on a transparent ground, on the
+ * engine's own where that is refused. Rejects on a host failure.
  */
 async function openPane($: ModEngine): Promise<{ text: string; exitCode: number }> {
   if ((await $.session.surfaces().catch(() => [])).length === 0) return { text: PANE_HEADLESS, exitCode: 1 }
@@ -284,7 +285,10 @@ async function openPane($: ModEngine): Promise<{ text: string; exitCode: number 
   await $.state.set(NOTICE, null)
   await $.state.set(FULL_PAGE, 0)
   await $.state.set(FULL_PAGE_OF, null)
-  await $.ui.open({ id: PANE_ID, title: 'Cassandra', focus: true, closeOnEscape: true })
+  // Transparent: the pane lies on the terminal's own background, as the chat beside it does.
+  // An engine from before `backgroundColor` refuses it, and gets the pane on its own fill.
+  const pane: OpenArgs = { id: PANE_ID, title: 'Cassandra', focus: true, closeOnEscape: true }
+  await $.ui.open({ ...pane, backgroundColor: 'transparent' }).catch(() => $.ui.open(pane))
   return { text: PANE_OPENED, exitCode: 0 }
 }
 

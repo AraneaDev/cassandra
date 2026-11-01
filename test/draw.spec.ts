@@ -88,7 +88,7 @@ describe('drawPane', () => {
       for (const [columns, rows] of [...SIZES, [24, 8], [56, 22], [99, 21], [100, 22], [160, 60]] as Array<[number, number]>) {
         for (let r = PANE_MIN_LINES; r <= rows; r++) {
           const { texts } = draw(m, columns, r)
-          expect(texts.length).toBeLessThanOrEqual(r)
+          expect(texts.length).toBe(r)
           for (const t of texts) expect(cells(t)).toBe(columns)
         }
       }
@@ -151,13 +151,16 @@ describe('drawPane', () => {
     expect(draw(model({}, { tab: 'stale' }), 120, 50).texts.some((t) => t.includes('◷ Stale'))).toBe(true)
   })
 
-  test('counters: tiles when wide and tall, one short line when medium, in the header when short', () => {
-    const wide = draw(model(), 120, 50)
-    expect(wide.texts[2]).toMatch(/^ {2}2 +4 +3 +1 +$/)
-    expect(wide.texts[3]).toMatch(/warn now +remembered +warnings today +cleared by retest/)
-    expect(wide.texts[4]!.trim()).toBe('')
-    const medium = draw(model(), 70, 30)
-    expect(medium.texts[2]).toContain('2 warn now   4 remembered   3 today   1 cleared')
+  test('counters: a framed band when medium or wide and tall, one short line when narrow, in the header when short', () => {
+    for (const columns of [70, 120]) {
+      const tall = draw(model(), columns, 50)
+      expect(tall.texts[2]!.trim()).toMatch(/^╭─+╮$/)
+      expect(tall.texts[3]).toMatch(/│ 2 +│ 4 +│ 3 +│ 1 +│/)
+      expect(tall.texts[4]).toMatch(/│ warn now +│ remembered +│ warnings today +│ cleared by retest +│/)
+      expect(tall.texts[5]!.trim()).toMatch(/^╰─+╯$/)
+      expect(tall.texts[6]!.trim()).toBe('')
+    }
+    expect(draw(model(), 40, 30).texts[2]).toContain('2 warn  4 kept  3 today  1 cleared')
     const short = draw(model(), 70, 15)
     expect(short.texts[0]).toContain('4 remembered')
     expect(short.texts[2]).toContain('◷ History')
@@ -172,22 +175,24 @@ describe('drawPane', () => {
     expect(walk(lines[at]!).find((n) => n.type === 'Text' && text(n).startsWith('──'))!.props.color).toBe('subtle')
   })
 
-  test('the Just warned card takes its seven rows: what ran, what matched, because, still bad, the fix, a blank', () => {
+  test('the Just warned card takes its seven rows: its title, a blank, what ran, what matched, because, still bad, the fix', () => {
     const m = model({ justWarned: { ...warned, fix: 'Use bun run test.' } })
     const { texts, all } = draw(m, 70, 30)
     const at = texts.findIndex((t) => t.includes('! Just warned'))
     expect(texts[at]).toContain('d: Dismiss ──')
-    expect(texts.slice(at + 1, at + ROWS.justWarned - 1).map((t) => t.trim().split(/\s{2,}| /)[0])).toEqual(['you', 'matched', 'because', 'still', 'fix'])
-    expect(texts[at + 1]).toContain('bun test case-0')
-    expect(texts[at + 2]).toContain('the same call, 3× before')
-    expect(texts[at + ROWS.justWarned - 1]!.trim()).toBe('')
-    expect(texts[at + ROWS.justWarned]).toContain('◷ History')
+    expect(texts[at + 1]!.trim()).toBe('')
+    expect(texts.slice(at + 2, at + ROWS.justWarned).map((t) => t.trim().split(/\s{2,}| /)[0])).toEqual(['you', 'matched', 'because', 'still', 'fix'])
+    expect(texts[at + 2]).toContain('bun test case-0')
+    expect(texts[at + 3]).toContain('the same call, 3× before')
+    // The blank row before the next card, then History.
+    expect(texts[at + ROWS.justWarned]!.trim()).toBe('')
+    expect(texts[at + ROWS.justWarned + 1]).toContain('◷ History')
     expect(byKey(all, pane.KEY_DISMISS)?.props.hotkey).toBe('d')
-    // Without a fix note, blank lines keep the card's rows.
+    // Without a fix note, a blank line keeps the card's rows.
     const plain = draw(model({ justWarned: warned }), 70, 30).texts
     const top = plain.findIndex((t) => t.includes('! Just warned'))
-    expect(plain.slice(top + 5, top + ROWS.justWarned).map((t) => t.trim())).toEqual(['', ''])
-    expect(plain[top + ROWS.justWarned]).toContain('◷ History')
+    expect(plain.slice(top + 6, top + ROWS.justWarned + 1).map((t) => t.trim())).toEqual(['', ''])
+    expect(plain[top + ROWS.justWarned + 1]).toContain('◷ History')
   })
 
   test('day groups under bold labels, a blank line between them, the marked row tinted', () => {
@@ -203,7 +208,7 @@ describe('drawPane', () => {
     expect(rows.map(tint)).toEqual([true, false, false, false])
     expect(text(rows[2]!)).toMatch(/×2 {2}stale +$/)
     expect(text(rows[3]!)).toMatch(/×2 {2}denied +$/)
-    expect(text(rows[0]!)).toMatch(/^ {2} ▸ 12:39 {2}bun test case-0 +×2 +$/)
+    expect(text(rows[0]!)).toMatch(/^ {4}▸ 12:39 {2}bun test case-0 +×2 {4}$/)
   })
 
   test('an expanded row opens in place: why it failed, would it warn now, seen, session and the fix', () => {
@@ -333,14 +338,14 @@ describe('drawPane', () => {
         const keys = lines.map((n) => String(n.props.key))
         return lines.slice(keys.indexOf('full-title'), keys.indexOf('full-more') + 1)
       }
-      expect(block(first.lines)).toHaveLength(ROWS.fullTitle + per + ROWS.fullMore)
+      expect(block(first.lines)).toHaveLength(ROWS.fullTitle + ROWS.titleGap + per + ROWS.fullMore)
       expect(block(last.lines)).toHaveLength(block(first.lines).length)
       // What follows the block starts on the same row on both pages.
       expect(last.lines.map((n) => n.props.key).indexOf('full-more')).toBe(first.lines.map((n) => n.props.key).indexOf('full-more'))
       // The padding is blank and on the same ground as the output lines.
       const outputBg = block(last.lines)[1]!.props.backgroundColor
       expect(outputBg).toBeDefined()
-      const pads = block(last.lines).slice(2, -1)
+      const pads = block(last.lines).slice(3, -1)
       expect(pads).toHaveLength(per - 1)
       for (const pad of pads) {
         expect(drawnText(pad).trim()).toBe('')
@@ -401,7 +406,7 @@ describe('drawPane', () => {
     const many = Array.from({ length: 20 }, (_, i) => row(i))
     const m = model({ rows: many, total: 20 })
     const tall = draw(m, 70, 15)
-    expect(tall.texts.at(-2)).toMatch(/^ {3}\d+ more ↓ +$/)
+    expect(tall.texts.at(-2)).toMatch(/^ {4}\d+ more ↓ +$/)
     expect(tall.texts.at(-2)).toContain(`${tall.layout.list.more} more ↓`)
     const least = draw(m, 70, PANE_MIN_LINES).texts
     expect(least).toHaveLength(PANE_MIN_LINES)
@@ -416,7 +421,7 @@ describe('drawPane', () => {
     const m = model({ rows: [r], total: 1 })
     const narrow = text(byKey(draw(m, 40, 15).all, 'row:00000000ffffffff')!)
     expect(cells(narrow)).toBe(40)
-    expect(narrow).toBe('  ▸ 12:39  bun run … (in packages/a) ×2 ')
+    expect(narrow).toBe(' ▸ 12:39  bun run t… (in packages/a) ×2 ')
     expect(text(byKey(draw(m, 120, 50).all, 'row:00000000ffffffff')!)).toContain('bun run test --coverage --watch (in packages/a)')
     for (const columns of [24, 12]) for (const t of draw(m, columns, 15).texts) expect(cells(t)).toBe(columns)
   })
@@ -477,7 +482,8 @@ describe('search, the key list and the hidden twins', () => {
       expect(typeof field.props.onSubmit).toBe('function')
       expect(field.props.onSubmit()).toBeUndefined()
       const at = texts.findIndex((t) => t.includes('search'))
-      expect(texts[at - 1]).toContain('History')
+      expect(texts[at - 1]!.trim()).toBe('')
+      expect(texts[at - 2]).toContain('History')
       if (columns > 40) expect(byKey(all, pane.KEY_SEARCH_CLEAR)?.props.hotkey).toBe('x')
     }
   })
@@ -511,12 +517,13 @@ describe('search, the key list and the hidden twins', () => {
 
   test('the key list opens under the list, rates first, and never pushes the pane past its rows', () => {
     for (const [columns, rows] of [[40, 15], [80, 30], [120, 50]] as const) {
-      const { texts, layout } = drawWith(model(), columns, rows, { showKeys: true })
-      expect(texts.length).toBeLessThanOrEqual(rows)
+      const { lines, texts, layout } = drawWith(model(), columns, rows, { showKeys: true })
+      expect(texts.length).toBe(rows)
       for (const t of texts) expect(cells(t)).toBe(columns)
       const title = texts.findIndex((t) => t.includes('Keys'))
-      expect(texts[title + 1]).toContain('fp 4.0%')
-      expect(texts.slice(title).length - 1).toBe(layout.keys)
+      expect(texts[title + 1]!.trim()).toBe('')
+      expect(texts[title + 2]).toContain('fp 4.0%')
+      expect(lines.filter((l) => String(l.props.key).startsWith('keys-'))).toHaveLength(layout.keys)
     }
   })
 
@@ -563,11 +570,11 @@ describe('keyListRows', () => {
     const m = model()
     const rows = 30
     const layout = layoutOf(m, 80, rows, { searching: false, showKeys: true, keyRows: pane.keyListRows(m, false).length, fullPage: 0 })
-    const texts = ((pane.drawPane(el, m, 80, layout) as Node).children as Node[]).map(drawnText)
+    const lines = (pane.drawPane(el, m, 80, layout) as Node).children as Node[]
+    const texts = lines.map(drawnText)
     expect(texts.some((t) => t.includes('search the calls'))).toBe(false)
     expect(texts.some((t) => t.includes('clear the search'))).toBe(true)
-    const title = texts.findIndex((t) => t.includes('Keys'))
-    expect(texts.slice(title).length - 1).toBe(layout.keys)
+    expect(lines.filter((l) => String(l.props.key).startsWith('keys-'))).toHaveLength(layout.keys)
   })
 })
 
@@ -696,11 +703,6 @@ describe('spacing and narrow counters', () => {
       }
     }
   })
-
-  test('medium panes keep the short counter labels', () => {
-    const { texts } = draw(model(), 70, 30)
-    expect(texts[2]).toContain('2 warn now   4 remembered   3 today   1 cleared')
-  })
 })
 
 test('an open detail draws exactly fullDetailRows lines, with its fix and retest lines, in every combination', () => {
@@ -721,4 +723,120 @@ test('an open detail draws exactly fullDetailRows lines, with its fix and retest
       expect(block.every((t) => t.trim() !== '')).toBe(true)
     }
   }
+})
+
+describe('the design: cards, the counter band, the footer and the ground', () => {
+  const showing = (columns: number, rows: number, extras: Partial<{ showKeys: boolean }> = {}, over: Partial<PaneModel> = {}, view: Partial<PaneView> = {}) => {
+    const m = model(over, view)
+    const layout = layoutOf(m, columns, rows, { searching: false, showKeys: extras.showKeys ?? false, keyRows: pane.keyListRows(m, false).length, fullPage: 0 })
+    const lines = (pane.drawPane(el, m, columns, layout) as Node).children as Node[]
+    return { lines, keys: lines.map((l) => String(l.props.key)), texts: lines.map(drawnText), layout }
+  }
+
+  test('every card has one blank row between its title and its first body row', () => {
+    for (const [columns, rows] of [[40, 40], [70, 50], [120, 60]] as const) {
+      const cards = [
+        showing(columns, rows, {}, { justWarned: warned, detail: { ...detail, full: 'one\ntwo' } }, { expanded: true, showFull: true }),
+        showing(columns, rows, {}, {}, { confirmRetest: row(0).hash }),
+        showing(columns, rows, { showKeys: true }),
+      ]
+      const titles = ['warned-title', 'history-title', 'full-title', 'retest-title', 'keys-title']
+      for (const title of titles) {
+        const drawn = cards.find((c) => c.keys.includes(title))!
+        const at = drawn.keys.indexOf(title)
+        expect(drawn.texts[at + 1]!.trim()).toBe('')
+        expect(drawn.texts[at + 2]!.trim()).not.toBe('')
+      }
+    }
+  })
+
+  test('medium and wide, a blank row stands before each card', () => {
+    const { keys, texts } = showing(70, 40, {}, { justWarned: warned })
+    for (const title of ['warned-title', 'history-title']) expect(texts[keys.indexOf(title) - 1]!.trim()).toBe('')
+  })
+
+  test('medium and wide, the four counters are one framed band, the tiles spread evenly', () => {
+    for (const columns of [56, 70, 99, 120]) {
+      const { lines, texts, layout } = showing(columns, 40)
+      expect(layout.counters).toBe('tiles')
+      const pad = ' '.repeat(2)
+      expect(texts[2]).toBe(`${pad}╭${'─'.repeat(columns - 6)}╮${pad}`)
+      expect(texts[5]).toBe(`${pad}╰${'─'.repeat(columns - 6)}╯${pad}`)
+      for (const at of [3, 4]) {
+        expect(texts[at]!.startsWith(`${pad}│ `)).toBe(true)
+        expect(texts[at]!.endsWith(` │${pad}`)).toBe(true)
+        expect(cells(texts[at]!)).toBe(columns)
+      }
+      // The rules between the tiles stand in the same columns on the figure and the label line.
+      const bars = (t: string) => [...t].flatMap((c, i) => (c === '│' ? [i] : []))
+      expect(bars(texts[3]!)).toHaveLength(5)
+      expect(bars(texts[3]!)).toEqual(bars(texts[4]!))
+      expect(texts[3]!.split('│').slice(1, 5).map((s) => s.trim())).toEqual(['2', '4', '3', '1'])
+      const labels = texts[4]!.split('│').slice(1, 5).map((s) => s.trim())
+      expect(labels).toEqual(columns >= 70 ? ['warn now', 'remembered', 'warnings today', 'cleared by retest'] : ['warn now', 'remembered', 'today', 'cleared'])
+      // Each tile is its label wide, the room left shared out evenly between them.
+      const slots = bars(texts[3]!).slice(1).map((b, i) => b - bars(texts[3]!)[i]! - 3)
+      const spare = slots.map((w, i) => w - cells(labels[i]!))
+      expect(Math.max(...spare) - Math.min(...spare)).toBeLessThanOrEqual(1)
+      expect(slots.reduce((a, b) => a + b, 0) + 9).toBe(columns - 8)
+      // The frame and the rules between tiles in the frame colour; the figures bold in their colours.
+      for (const at of [2, 3, 4, 5]) {
+        for (const n of walk(lines[at]!).filter((x) => x.type === 'Text' && /[╭╮╰╯│─]/.test(text(x)))) expect(n.props.color).toBe('subtle')
+      }
+      const figure = walk(lines[3]!).find((n) => n.type === 'Text' && text(n).trim() === '2')!
+      expect([figure.props.bold, figure.props.color]).toEqual([true, 'error'])
+    }
+    // Narrow keeps its one summary line.
+    const narrow = showing(40, 40)
+    expect(narrow.layout.counters).toBe('short')
+    expect(narrow.texts[2]).not.toContain('╭')
+    expect(narrow.texts[2]).toContain('2 warn')
+  })
+
+  test('the key bar ends the pane at every height, filled with blank rows over a short list', () => {
+    const many = Array.from({ length: 40 }, (_, i) => row(i))
+    for (const m of [model(), model({ rows: [], total: 0, hashes: [], selected: null, detail: null }), model({ rows: many, total: 40 })]) {
+      for (const columns of [40, 70, 120]) {
+        for (const rows of [PANE_MIN_LINES, 5, 8, 15, 21, 22, 30, 50, 60]) {
+          const { lines, texts } = showing(columns, rows, {}, m)
+          expect(texts).toHaveLength(rows)
+          expect(lines.at(-1)!.props.key).toBe('action-row')
+          for (const t of texts) expect(cells(t)).toBe(columns)
+        }
+      }
+    }
+    // The fill sits above the bar, blank and on no ground.
+    const { lines, keys } = showing(70, 40)
+    const fill = lines.filter((l, i) => keys[i]!.startsWith('fill-'))
+    expect(fill.length).toBeGreaterThan(0)
+    expect(keys.lastIndexOf(keys.filter((k) => k.startsWith('fill-')).at(-1)!)).toBe(lines.length - 2)
+    for (const l of fill) for (const n of walk(l)) expect(n.props.backgroundColor).toBeUndefined()
+  })
+
+  test('rows that are not tinted paint no ground: only the marked row, its detail, the pills, the tab and the bar do', () => {
+    const { lines } = showing(120, 50, {}, { justWarned: warned }, { expanded: true })
+    const tinted = new Set(['userMessageBackground', 'composerSidebarBackground'])
+    for (const l of lines) {
+      const bg = l.props.backgroundColor
+      if (bg !== undefined) expect(tinted.has(bg)).toBe(true)
+      if (bg === undefined) {
+        for (const n of walk(l)) if (n.props.backgroundColor !== undefined) expect(['error', 'success', 'suggestion']).toContain(n.props.backgroundColor)
+      }
+    }
+    const root = pane.drawPane(el, model(), 70, layoutOf(model(), 70, 30)) as Node
+    expect(root.props.backgroundColor).toBeUndefined()
+  })
+
+  test('medium and wide, card body rows sit two cells further in than the title rule; narrow, level with it', () => {
+    for (const [columns, title, body] of [[40, 1, 1], [70, 2, 4], [120, 2, 4]] as const) {
+      const { keys, texts } = showing(columns, 40, {}, { justWarned: warned })
+      const lead = (k: string) => texts[keys.indexOf(k)]!.match(/^ */)![0].length
+      expect(lead('history-title')).toBe(title)
+      expect(lead('warned-title')).toBe(title)
+      expect(lead('warned-ran')).toBe(body)
+      expect(lead(`group-${row(0).hash}`)).toBe(body)
+      expect(lead(`row-${row(0).hash}`)).toBe(body)
+      expect(texts[keys.indexOf(`row-${row(0).hash}`)]!.endsWith(' '.repeat(body))).toBe(true)
+    }
+  })
 })

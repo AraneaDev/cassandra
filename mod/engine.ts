@@ -42,6 +42,8 @@ export interface OpenArgs {
   title: string
   focus: boolean
   closeOnEscape: boolean
+  /** What the surface paints under the pane's body; `transparent` paints nothing. An engine from before it refuses it. */
+  backgroundColor?: 'transparent'
 }
 
 /** The slice of `$` the hooks use: the core's, the session's identity and its append, tool registration, state and the pane. */

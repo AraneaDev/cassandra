@@ -245,7 +245,9 @@ test('h opens the key list, rates first, within the pane; h again closes it', as
     for (const l of lines) expect([...l].length).toBe(columns)
     const title = lines.findIndex((l) => l.includes('Keys'))
     expect(title).toBeGreaterThan(0)
-    expect(lines[title + 1]).toContain('No warning raised yet, so no rates.')
+    // A blank row under the title, then the rates.
+    expect(lines[title + 1]!.trim()).toBe('')
+    expect(lines[title + 2]).toContain('No warning raised yet, so no rates.')
     expect(await rowKeys(ui)).not.toHaveLength(0)
     await ui.press({ key: help })
     expect((await paneLines(ui)).join('\n')).not.toContain('No warning raised yet')

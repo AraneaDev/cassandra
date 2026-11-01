@@ -16,32 +16,58 @@ function model(n: number, over: { selected?: number; expanded?: boolean; warned?
   }
 }
 
-test('narrow and short: no branch, short counters inside the header, digit tabs', () => {
+test('narrow and short: no branch, short counters inside the header, digit tabs, no blank row before a card', () => {
   expect(layoutOf(model(20), 40, 15)).toEqual({
-    tier: 'narrow', tooShort: false, header: { branch: false, commit: false }, counters: 'in-header',
-    tabs: 'digits', justWarned: false, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 9, more: 11, rows: 11 }, detail: 'none', retest: null, full: null,
+    tier: 'narrow', tooShort: false, height: 15, gaps: false, header: { branch: false, commit: false }, counters: 'in-header',
+    tabs: 'digits', justWarned: false, historyTitle: true, historyGap: true, notice: false, search: null, keys: 0, list: { start: 0, count: 8, more: 12, rows: 10 }, detail: 'none', retest: null, full: null,
   })
 })
 
-test('medium: branch, short counters, tab names', () => {
+test('medium: branch, the counter band, tab names, a blank row before each card', () => {
+  // 30 rows less header, tabs, the band's 4, the key bar, and gap, title and blank of History: 20; Just warned takes its gap and 7.
   expect(layoutOf(model(10, { warned: true }), 70, 30)).toEqual({
-    tier: 'medium', tooShort: false, header: { branch: true, commit: false }, counters: 'short',
-    tabs: 'names', justWarned: true, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 18 }, detail: 'none', retest: null, full: null,
+    tier: 'medium', tooShort: false, height: 30, gaps: true, header: { branch: true, commit: false }, counters: 'tiles',
+    tabs: 'names', justWarned: true, historyTitle: true, historyGap: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 12 }, detail: 'none', retest: null, full: null,
   })
 })
 
-test('wide: branch, commit and tile counters', () => {
+test('wide: branch, commit and the counter band', () => {
   expect(layoutOf(model(10, { selected: 0, expanded: true }), 120, 50)).toEqual({
-    tier: 'wide', tooShort: false, header: { branch: true, commit: true }, counters: 'tiles',
-    tabs: 'names', justWarned: false, historyTitle: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 34 }, detail: 'full', retest: null, full: null,
+    tier: 'wide', tooShort: false, height: 50, gaps: true, header: { branch: true, commit: true }, counters: 'tiles',
+    tabs: 'names', justWarned: false, historyTitle: true, historyGap: true, notice: false, search: null, keys: 0, list: { start: 0, count: 10, more: 0, rows: 31 }, detail: 'full', retest: null, full: null,
   })
+})
+
+test('narrow and tall: the counters keep their one short line', () => {
+  expect(layoutOf(model(10), 40, 50).counters).toBe('short')
+  expect(layoutOf(model(10), 55, 50).counters).toBe('short')
+  expect(layoutOf(model(10), 56, 50).counters).toBe('tiles')
+})
+
+test('the counter band costs four rows: its top edge, figures, labels and bottom edge', () => {
+  expect(ROWS.tiles).toBe(4)
+  // Tall medium against short medium: the band, and the blank rows before the History card.
+  expect(layoutOf(model(0), 70, 22).list.rows).toBe(22 - 1 - 1 - ROWS.tiles - 1 - ROWS.cardGap - ROWS.historyTitle - ROWS.titleGap)
+  expect(layoutOf(model(0), 70, 21).list.rows).toBe(21 - 1 - 1 - 1 - ROWS.historyTitle - ROWS.titleGap)
+})
+
+test('every card title has a blank row under it, budgeted from the list', () => {
+  // At the least height that still has a title, the blank row under it gives way to the one list row.
+  const least = layoutOf(model(10), 70, PANE_MIN_LINES + 1)
+  expect([least.historyTitle, least.historyGap, least.list.rows]).toEqual([true, false, 1])
+  const roomy = layoutOf(model(10), 70, PANE_MIN_LINES + 2)
+  expect([roomy.historyTitle, roomy.historyGap, roomy.list.rows]).toEqual([true, true, 1])
+})
+
+test('the layout carries the pane height, so the drawing can end the pane in the key bar', () => {
+  for (const rows of [PANE_MIN_LINES, 8, 15, 22, 50]) expect(layoutOf(model(2), 70, rows).height).toBe(rows)
 })
 
 test('below the minimum height only the one-line fallback is left', () => {
   expect(PANE_MIN_LINES).toBe(4)
   expect(layoutOf(model(10), 120, 3)).toEqual({
-    tier: 'wide', tooShort: true, header: { branch: false, commit: false }, counters: 'in-header',
-    tabs: 'digits', justWarned: false, historyTitle: false, notice: false, search: null, keys: 0, list: { start: 0, count: 0, more: 10, rows: 0 }, detail: 'none', retest: null, full: null,
+    tier: 'wide', tooShort: true, height: 3, gaps: false, header: { branch: false, commit: false }, counters: 'in-header',
+    tabs: 'digits', justWarned: false, historyTitle: false, historyGap: false, notice: false, search: null, keys: 0, list: { start: 0, count: 0, more: 10, rows: 0 }, detail: 'none', retest: null, full: null,
   })
 })
 
@@ -54,32 +80,33 @@ test('the width tiers switch at 56 and 100 columns', () => {
 
 test('the window follows the selection', () => {
   const layout = layoutOf(model(40, { selected: 35 }), 70, 15)
-  expect(layout.list.count).toBe(9)
+  expect(layout.list.count).toBe(8)
   expect(layout.list.start).toBeLessThanOrEqual(35)
   expect(layout.list.start + layout.list.count).toBeGreaterThan(35)
-  expect(layout.list.start).toBe(27)
+  expect(layout.list.start).toBe(28)
   expect(layout.list.more).toBe(40 - 36)
   expect(layoutOf(model(40, { selected: 39 }), 70, 15).list.more).toBe(0)
 })
 
 test('header, tabs, counters, list, the more line and key bar fit the rows at 40x15', () => {
   const layout = layoutOf(model(20), 40, 15)
-  // header + tabs (counters sit in the header) + history title + day label + records + more line + key bar
-  const used = 1 + 1 + 0 + 1 + 1 + layout.list.count + (layout.list.more > 0 ? 1 : 0) + 1
+  // header + tabs (counters sit in the header) + history title and the blank under it + day label + records + more line + key bar
+  const used = 1 + 1 + 0 + 2 + 1 + layout.list.count + (layout.list.more > 0 ? 1 : 0) + 1
   expect(used).toBeLessThanOrEqual(15)
 })
 
 test('day-group labels and the blank line between groups cost rows inside the window', () => {
   const groups = ['Today', 'Today', 'Yesterday', 'Yesterday', 'Monday', 'Monday']
-  // 15 rows, in-header counters: 11 list rows. Today (1+2) + blank+Yesterday (2+2) + blank+Monday (2+2) = 11.
-  expect(layoutOf(model(6, { groups }), 70, 15).list).toEqual({ start: 0, count: 6, more: 0, rows: 11 })
-  expect(layoutOf(model(6, { groups }), 70, 14).list).toEqual({ start: 0, count: 4, more: 2, rows: 10 })
+  // 16 rows, in-header counters: 11 list rows. Today (1+2) + blank+Yesterday (2+2) + blank+Monday (2+2) = 11.
+  expect(layoutOf(model(6, { groups }), 70, 16).list).toEqual({ start: 0, count: 6, more: 0, rows: 11 })
+  expect(layoutOf(model(6, { groups }), 70, 15).list).toEqual({ start: 0, count: 4, more: 2, rows: 10 })
 })
 
 test('Just warned keeps its rows and the list gives way', () => {
   const plain = layoutOf(model(40), 70, 30)
   const warned = layoutOf(model(40, { warned: true }), 70, 30)
-  expect(plain.list.count - warned.list.count).toBe(7)
+  // Its rows, and the blank row before it.
+  expect(plain.list.count - warned.list.count).toBe(ROWS.cardGap + ROWS.justWarned)
   // without room for it next to one list row, the card is dropped
   expect(layoutOf(model(40, { warned: true }), 70, 8).justWarned).toBe(false)
 })
@@ -96,7 +123,7 @@ test('an expanded detail on a short pane drops to compact before the list loses 
 })
 
 test('an empty list has an empty window', () => {
-  expect(layoutOf(model(0), 70, 30).list).toEqual({ start: 0, count: 0, more: 0, rows: 25 })
+  expect(layoutOf(model(0), 70, 30).list).toEqual({ start: 0, count: 0, more: 0, rows: 20 })
 })
 
 test('a notice takes its own row from the list, while one list row is left', () => {
@@ -107,7 +134,8 @@ test('a notice takes its own row from the list, while one list row is left', () 
   expect(plain.list.rows - noticed.list.rows).toBe(1)
   expect(layoutOf(m('x'), 40, PANE_MIN_LINES).notice).toBe(false)
   expect(layoutOf(m('x'), 40, PANE_MIN_LINES + 1).notice).toBe(false)
-  expect(layoutOf(m('x'), 40, PANE_MIN_LINES + 2).notice).toBe(true)
+  expect(layoutOf(m('x'), 40, PANE_MIN_LINES + 2).notice).toBe(false)
+  expect(layoutOf(m('x'), 40, PANE_MIN_LINES + 3).notice).toBe(true)
 })
 
 test('at the minimum height the History title gives its row to the one list row', () => {
@@ -136,8 +164,9 @@ test('an open search field or an applied query takes one row from the list, befo
 
 test('the key list takes its title and rows from the list, leaves one list row, and is not drawn as a bare title', () => {
   const keys = (rows: number) => layoutOf(model(20), 70, rows, { searching: false, showKeys: true, keyRows: 12, fullPage: 0 })
-  expect(keys(40).keys).toBe(13)
-  expect(keys(40).list.rows).toBe(layoutOf(model(20), 70, 40).list.rows - 13)
+  // Its 12 rows under the blank row before it, its title and the blank under that.
+  expect(keys(40).keys).toBe(ROWS.cardGap + ROWS.keysTitle + ROWS.titleGap + 12)
+  expect(keys(40).list.rows).toBe(layoutOf(model(20), 70, 40).list.rows - keys(40).keys)
   expect(keys(12).keys).toBe(layoutOf(model(20), 70, 12).list.rows - 1)
   expect(keys(12).list.rows).toBe(1)
   // Room for the title alone: no key list.
@@ -204,7 +233,7 @@ test('the retest confirm budgets a blank row above its title', () => {
   expect(layout.retest).not.toBeNull()
   expect(layout.retest).not.toBe('too-small')
   const lines = (layout.retest as { lines: unknown[] }).lines.length
-  expect(layoutOf(base, 70, 30).list.rows - layout.list.rows).toBe(ROWS.retestGap + ROWS.retestTitle + lines)
+  expect(layoutOf(base, 70, 30).list.rows - layout.list.rows).toBe(ROWS.retestGap + ROWS.retestTitle + ROWS.titleGap + lines)
 })
 
 describe('paging the full output', () => {
@@ -249,7 +278,7 @@ describe('paging the full output', () => {
   test('the list keeps the rows the page does not take: the paged block costs its title, its lines and the note', () => {
     const closed = layoutOf({ ...showing, view: { ...showing.view, showFull: false } }, 70, 30)
     const page = layoutOf(showing, 70, 30)
-    expect(closed.list.rows - page.list.rows).toBe(ROWS.fullTitle + page.full!.lines.length + ROWS.fullMore)
+    expect(closed.list.rows - page.list.rows).toBe(ROWS.fullTitle + ROWS.titleGap + page.full!.lines.length + ROWS.fullMore)
   })
 
   test('every page takes the rows of a whole page, the shorter last one too, so the list keeps the same rows', () => {
@@ -265,14 +294,14 @@ describe('paging the full output', () => {
     expect(last.full!.per).toBe(per)
     expect(last.list.rows).toBe(first.list.rows)
     const closed = layoutOf({ ...showing, detail: odd, view: { ...showing.view, showFull: false } }, 70, 30)
-    expect(closed.list.rows - last.list.rows).toBe(ROWS.fullTitle + per + ROWS.fullMore)
+    expect(closed.list.rows - last.list.rows).toBe(ROWS.fullTitle + ROWS.titleGap + per + ROWS.fullMore)
   })
 
   test('output on one page takes only its own lines', () => {
     const small = layoutOf({ ...showing, detail: { ...d, full: 'one\ntwo' } }, 70, 30)
     const closed = layoutOf({ ...showing, detail: { ...d, full: 'one\ntwo' }, view: { ...showing.view, showFull: false } }, 70, 30)
     expect(small.full!.per).toBe(2)
-    expect(closed.list.rows - small.list.rows).toBe(ROWS.fullTitle + 2)
+    expect(closed.list.rows - small.list.rows).toBe(ROWS.fullTitle + ROWS.titleGap + 2)
   })
 })
 

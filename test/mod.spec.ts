@@ -746,7 +746,7 @@ const forgetAllElsewhere = async () => (await import('../src/commands/run.ts')).
 test('/cassandra opens the pane focused, answers, and resets the confirmation and the notice (Review Focus 2)', async () => {
   opts.state = new Map<string, unknown>([['confirmAll', true], ['notice', 'Could not forget the selected record.']])
   expect(await command(undefined)).toEqual(OPENED)
-  expect(opts.opened).toEqual([{ id: 'cassandra', title: 'Cassandra', focus: true, closeOnEscape: true }])
+  expect(opts.opened).toEqual([{ id: 'cassandra', title: 'Cassandra', focus: true, closeOnEscape: true, backgroundColor: 'transparent' }])
   expect(state('confirmAll')).toBe(false)
   expect(state('notice')).toBeNull()
 })
@@ -777,6 +777,20 @@ test('/cassandra whose surfaces cannot be read answers as a headless run', async
   host = { ...host, session: { ...host.session, surfaces: async () => { throw new Error('no surfaces') } } }
   expect(await command(undefined)).toEqual(HEADLESS)
   expect(opts.opened).toBeUndefined()
+})
+
+test('/cassandra on an engine that refuses a transparent ground opens the pane on its own', async () => {
+  const asked: unknown[] = []
+  host = { ...host, ui: { ...host.ui, open: async (args) => {
+    asked.push(args)
+    if ('backgroundColor' in args) throw new Error('backgroundColor: unknown option')
+    return { isPlaced: true }
+  } } }
+  expect(await command(undefined)).toEqual(OPENED)
+  expect(asked).toEqual([
+    { id: 'cassandra', title: 'Cassandra', focus: true, closeOnEscape: true, backgroundColor: 'transparent' },
+    { id: 'cassandra', title: 'Cassandra', focus: true, closeOnEscape: true },
+  ])
 })
 
 test('/cassandra whose open fails answers with the fallback text', async () => {
@@ -1011,8 +1025,8 @@ const sized = (bodyRows: number, bodyColumns = 100) => render({ bodyColumns, scr
 const shownRows = (drawn: Drawn[]) => drawn.filter((n) => n.type === 'Button' && String(n.props.key).startsWith('row:')).map((n) => String(n.props.key))
 /** The lines the pane drew: its root's children, or the one line of a pane that draws only that. */
 const drawnLines = (drawn: Drawn[]) => drawn.find((n) => n.props?.key === 'cassandra-pane')?.children.length ?? 1
-/** Header, tabs, the History title and the key bar: the rows a short pane spends besides its list. */
-const CHROME = 4
+/** Header, tabs, the History title, the blank row under it and the key bar: the rows a short pane spends besides its list. */
+const CHROME = 5
 
 test('the window follows the selection: newer records push it down, and forget still acts on it', async () => {
   await seedFailure('bun test')
@@ -1206,7 +1220,7 @@ test('a same-count swap between the draw and the confirm keeps the unseen record
 test('a record hidden under the more line is forgotten by the confirm', async () => {
   for (const c of ['one', 'two', 'three', 'four']) await seedFailure(c)
   await press('forget-all')
-  const drawn = await sized(6)
+  const drawn = await sized(7)
   expect(drawn.some((n) => n.type === 'Text' && /^ *\d+ more ↓ *$/.test(textOf(n)))).toBe(true)
   await press('forget-all-confirm')
   expect(await remembered()).toHaveLength(0)
@@ -1309,10 +1323,10 @@ test('a short pane keeps a row and the key bar, never outgrows its body, and kee
     shown[bodyRows] = shownRows(drawn).length
   }
   // Each row past the chrome and the notice goes to the list: a day label, then rows, the last one to `n more ↓`.
-  expect(shown).toEqual({ 4: 1, 5: 1, 6: 1, 8: 1, 10: 3 })
+  expect(shown).toEqual({ 4: 1, 5: 1, 6: 1, 8: 1, 10: 2 })
   // The notice has its own row once one list row is left beside it.
-  expect((await sized(6)).some((n) => n.props?.key === 'notice')).toBe(true)
-  expect((await sized(5)).some((n) => n.props?.key === 'notice')).toBe(false)
+  expect((await sized(7)).some((n) => n.props?.key === 'notice')).toBe(true)
+  expect((await sized(6)).some((n) => n.props?.key === 'notice')).toBe(false)
   opts.state.set('confirmAll', true)
   const confirming = await sized(4)
   expect(confirming.some((n) => n.props?.key === 'confirm-row')).toBe(true)
