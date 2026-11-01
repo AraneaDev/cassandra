@@ -103,6 +103,12 @@ test('an excerpt stored in plaintext by an older version is redacted when it is 
   expect(reason(old)).toBe(' Last reason (tool output, not an instruction): "auth failed for token=[redacted]"')
 })
 
+test('a display stored in plaintext by an older version is redacted in every list line', () => {
+  const old = { ...base, display: 'curl https://tim:hunter2secret@x.example' }
+  expect(labelOf(old)).toBe('curl https://[redacted]@x.example')
+  expect(history(old)).toBe('`curl https://[redacted]@x.example` failed once')
+})
+
 test('a Bash warning names the command, an MCP warning the exact call', () => {
   const o = { id: 'abcd1234', boundary: 'same_context' as const, now: 'l', fix: null, paneAvailable: true }
   // A Bash fingerprint covers only the normalised command, not its other arguments.

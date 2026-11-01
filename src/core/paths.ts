@@ -14,7 +14,12 @@ export async function dataRoot(io: Io): Promise<string> {
   return root
 }
 
-/** The data root, and whether Cassandra owns it (anything but a CASSANDRA_HOME). */
+/**
+ * The data root, and whether Cassandra owns it: the plugin data directory, or the default
+ * `~/.cassandra`. A CASSANDRA_HOME is not, and neither is any other root the pointer names,
+ * since the pointer does not say where that root came from (one naming the plugin data
+ * directory is made owner-only by the front end that sees CLAUDE_PLUGIN_DATA).
+ */
 async function resolveDataRoot(io: Io): Promise<{ root: string; owned: boolean }> {
   const home = await io.env('CASSANDRA_HOME')
   const explicit = home ?? (await io.env('CLAUDE_PLUGIN_DATA'))
@@ -23,8 +28,9 @@ async function resolveDataRoot(io: Io): Promise<{ root: string; owned: boolean }
     return { root: explicit, owned: home === undefined }
   }
   const base = await homeBase(io)
-  const remembered = await readRememberedDataRoot(io, base)
-  return { root: remembered ?? join(base, '.cassandra'), owned: true }
+  const fallback = join(base, '.cassandra')
+  const root = (await readRememberedDataRoot(io, base)) ?? fallback
+  return { root, owned: root === fallback }
 }
 
 /**

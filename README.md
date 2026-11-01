@@ -237,8 +237,8 @@ the `user:password` in a URL, PEM private keys, and the value after a key such a
 `password=`, `api_key:` or `--token`. Colour codes are dropped first, so they cannot hide a
 secret. That covers the excerpt, the full output, the call as the record names it and the
 `resolve` reason. The excerpt, the full output and the call are redacted again whenever the
-warning or the pane shows them, so a record written by an older version shows no plaintext
-there either. It goes by shape only, so a secret of no known shape is kept as it is. A call
+warning, a briefing, the pane or the CLI (`list`, `why`) shows them, so a record written by
+an older version shows no plaintext there either. It goes by shape only, so a secret of no known shape is kept as it is. A call
 whose input looks like it holds a secret is not kept (for Bash only the command is judged):
 its record has neither the input nor the directory, so it cannot be retested, and the pane
 says why.

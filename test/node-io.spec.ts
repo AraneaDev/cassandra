@@ -104,8 +104,8 @@ test('a store root that does not exist yet is created owner-only by the first wr
 })
 
 /** Record one failure through `nodeIo` with exactly these root variables set, and return the root's mode. */
-async function recordUnder(vars: { CASSANDRA_HOME?: string; CLAUDE_PLUGIN_DATA?: string }, root: string): Promise<number> {
-  mkdirSync(root, { mode: 0o755 })
+async function recordUnder(vars: { CASSANDRA_HOME?: string; CLAUDE_PLUGIN_DATA?: string }, root: string, home = tmp()): Promise<number> {
+  mkdirSync(root, { recursive: true, mode: 0o755 })
   chmodSync(root, 0o755)
   const work = tmp()
   writeFileSync(join(work, 'a.txt'), 'one')
@@ -114,7 +114,7 @@ async function recordUnder(vars: { CASSANDRA_HOME?: string; CLAUDE_PLUGIN_DATA?:
   set('CASSANDRA_HOME', vars.CASSANDRA_HOME)
   set('CLAUDE_PLUGIN_DATA', vars.CLAUDE_PLUGIN_DATA)
   // The pointer to the data root goes under a home of the test's own.
-  set('HOME', tmp())
+  set('HOME', home)
   try {
     expect(await settle(nodeIo, { tool: 'Bash', input: { command: 'bun test' }, cwd: work, sessionId: 's1' }, { kind: 'failure', reason: 'boom' }, null)).toBe(true)
   } finally {
@@ -131,4 +131,15 @@ test('recording a failure makes the plugin data root owner-only', async () => {
 test('a root named by CASSANDRA_HOME keeps its own mode', async () => {
   const home = join(tmp(), 'home')
   expect(await recordUnder({ CASSANDRA_HOME: home }, home)).toBe(0o755)
+})
+
+test('a pointer naming a CASSANDRA_HOME directory leaves it its mode; the default directory is made owner-only', async () => {
+  const home = tmp()
+  const named = join(tmp(), 'named')
+  mkdirSync(join(home, '.cassandra'), { recursive: true })
+  writeFileSync(join(home, '.cassandra', 'data-root'), named)
+  // No variable set, as in a shell: the root comes from the pointer.
+  expect(await recordUnder({}, named, home)).toBe(0o755)
+  const bare = tmp()
+  expect(await recordUnder({}, join(bare, '.cassandra'), bare)).toBe(0o700)
 })
