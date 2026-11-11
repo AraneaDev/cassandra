@@ -6,7 +6,7 @@
 **Cassandra remembers the tool calls that already failed you.**
 
 [![Release](https://img.shields.io/github/v/release/AraneaDev/cassandra?label=release&include_prereleases)](https://github.com/AraneaDev/cassandra/releases)
-[![Tool page](https://img.shields.io/badge/tool%20page-aranea--development.nl-0b7285)](https://aranea-development.nl/en/tools/cassandra)
+[![Tool page](https://img.shields.io/badge/tool%20page-aranea.dev-0b7285)](https://aranea.dev/en/tools/cassandra)
 [![License](https://img.shields.io/github/license/AraneaDev/cassandra?label=license&color=yellow)](./LICENSE)
 [![Language](https://img.shields.io/github/languages/top/AraneaDev/cassandra)](https://github.com/AraneaDev/cassandra)
 [![Last commit](https://img.shields.io/github/last-commit/AraneaDev/cassandra?label=last%20commit)](https://github.com/AraneaDev/cassandra/commits/main)
@@ -557,4 +557,4 @@ MIT.
 ---
 
 Built by [Tim Schipper](https://tim-schipper.nl/en) and released as open source under
-[Aranea Development](https://aranea-development.nl).
+[aranea.dev](https://aranea.dev).
